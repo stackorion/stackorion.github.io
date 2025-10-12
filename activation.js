@@ -3,8 +3,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const submitButton = document.getElementById('submit-button');
     const messageContainer = document.getElementById('message-container');
     
-    // This is a placeholder. We will create this API endpoint in the next step.
-    const API_ENDPOINT = 'https://lustroom-downloader-backend.onrender.com/api/v1/activate'; 
+    // Updated to use the staging API endpoint
+    const API_ENDPOINT = 'https://echo-chamber-staging.onrender.com/api/v1/activate'; 
 
     form.addEventListener('submit', function(event) {
         event.preventDefault();
@@ -29,10 +29,18 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json().then(json => ({ status: response.status, body: json })))
         .then(result => {
             if (result.status >= 200 && result.status < 300) {
-                // Success
+                // Success - display the dynamic message from server
                 showMessage(result.body.message || 'Activation successful! You can now log in.', 'success');
                 form.reset();
                 submitButton.textContent = 'Account Created!';
+                
+                // Add a login button after successful activation
+                const loginButton = document.createElement('button');
+                loginButton.textContent = 'Go to Login';
+                loginButton.className = 'login-button';
+                loginButton.onclick = () => window.location.href = 'login.html';
+                form.parentElement.appendChild(loginButton);
+                
                 // Keep the button disabled on success to prevent re-submission
             } else {
                 // Error from the API

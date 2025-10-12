@@ -1,7 +1,5 @@
-// app.js
-
 // Configuration - IMPORTANT: This MUST match your live backend URL
-const API_BASE_URL = "https://lustroom-downloader-backend.onrender.com/api/v1";
+const API_BASE_URL = "https://echo-chamber-staging.onrender.com/api/v1";
 
 // --- State and Data Store ---
 let allPlatformsData = [];
@@ -9,8 +7,8 @@ let allTiersData = {};
 let currentContentData = null;
 let currentFilterState = { view: 'All', type: 'All', query: '' };
 let searchScope = 'platforms'; // Tracks search scope: 'platforms', 'tiers', or 'content'
-const userPlatformId = localStorage.getItem('user_platform_id');
-const userName = localStorage.getItem('user_name');
+let userInfo = null;
+let userSubscriptions = [];
 
 // --- Theme Manager ---
 class ThemeManager {
@@ -71,21 +69,45 @@ class ThemeManager {
     }
 }
 
+// --- NEW: Load user data from localStorage ---
+function loadUserData() {
+    try {
+        userInfo = JSON.parse(localStorage.getItem('user_info') || 'null');
+        userSubscriptions = JSON.parse(localStorage.getItem('user_subscriptions') || '[]');
+        return true;
+    } catch (error) {
+        console.error('Error loading user data:', error);
+        userInfo = null;
+        userSubscriptions = [];
+        return false;
+    }
+}
+
 // --- Subscription Status Renderer ---
 function renderSubscriptionStatus() {
     const subscriptionStatusDiv = document.getElementById('subscriptionStatus');
     if (!subscriptionStatusDiv) return;
 
-    const expiryDateStr = localStorage.getItem('lustroom_license_expiry');
-    const tierName = localStorage.getItem('lustroom_tier_name');
-
-    if (!expiryDateStr || !tierName) {
+    if (!userSubscriptions || userSubscriptions.length === 0) {
         subscriptionStatusDiv.style.display = 'none';
         return;
     }
 
     try {
-        const expiryDate = new Date(expiryDateStr);
+        // Find the subscription with the latest expiry date
+        const latestSubscription = userSubscriptions.reduce((latest, current) => {
+            if (!latest) return current;
+            const latestExpiry = new Date(latest.end_date);
+            const currentExpiry = new Date(current.end_date);
+            return currentExpiry > latestExpiry ? current : latest;
+        }, null);
+
+        if (!latestSubscription) {
+            subscriptionStatusDiv.style.display = 'none';
+            return;
+        }
+
+        const expiryDate = new Date(latestSubscription.end_date);
         const now = new Date();
         const diffTime = expiryDate - now;
         const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -104,7 +126,7 @@ function renderSubscriptionStatus() {
 
         // Build the new HTML structure for the enhanced display
         subscriptionStatusDiv.innerHTML = `
-            <span class="tier-name-display">${tierName}</span>
+            <span class="tier-name-display">${latestSubscription.tier_name}</span>
             <span class="status-divider">|</span>
             <span class="status-text">${statusText}</span>
         `;
@@ -114,29 +136,38 @@ function renderSubscriptionStatus() {
         subscriptionStatusDiv.style.display = 'flex'; // Use flexbox for alignment
 
     } catch (error) {
-        console.warn('Invalid license expiry date or tier name:', expiryDateStr, tierName);
+        console.warn('Invalid subscription data:', error);
         subscriptionStatusDiv.style.display = 'none';
     }
 }
 
 // --- NEW RENEWAL AND SUPPORT RENDERERS ---
 function renderRenewalBanner() {
-    const status = localStorage.getItem('lustroom_subscription_status');
     const existingBanner = document.getElementById('renewalBanner');
     if (existingBanner) {
         existingBanner.remove();
     }
 
-    if (status === 'expiring') {
-        const expiryDateStr = localStorage.getItem('lustroom_license_expiry');
-        const renewalUrl = localStorage.getItem('lustroom_renewal_url');
+    if (!userSubscriptions || userSubscriptions.length === 0) return;
 
-        if (!expiryDateStr || !renewalUrl) return; // Don't show if data is missing
-
-        const expiryDate = new Date(expiryDateStr);
+    // Find any expiring subscription
+    const expiringSubscription = userSubscriptions.find(sub => {
+        if (!sub.end_date) return false;
+        const expiryDate = new Date(sub.end_date);
         const now = new Date();
         const diffTime = expiryDate - now;
         const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return days <= 7 && days > 0;
+    });
+
+    if (expiringSubscription) {
+        const expiryDate = new Date(expiringSubscription.end_date);
+        const now = new Date();
+        const diffTime = expiryDate - now;
+        const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const renewalUrl = expiringSubscription.renewal_url;
+        
+        if (!renewalUrl) return; // Don't show if renewal URL is missing
         
         const banner = document.createElement('div');
         banner.id = 'renewalBanner';
@@ -156,7 +187,7 @@ function renderRenewalBanner() {
 
 function renderHeaderActions() {
     // --- 1. Handle Support Link ---
-    const supportUrl = localStorage.getItem('lustroom_support_url');
+    const supportUrl = userSubscriptions.length > 0 ? userSubscriptions[0].support_url : null;
     const supportLink = document.getElementById('supportLink');
 
     if (supportLink && supportUrl) {
@@ -174,7 +205,6 @@ function renderHeaderActions() {
         downloadAppButton.style.display = 'inline-block';
     }
 }
-
 
 // --- Logic for login.html ---
 if (document.getElementById('loginForm')) {
@@ -207,42 +237,43 @@ if (document.getElementById('loginForm')) {
             });
 
             const data = await response.json();
-            showLoading(false);
-
+            
             if (response.ok && data.status === 'success' && data.access_token) {
+                // Save token and basic user info
                 localStorage.setItem('lustroom_jwt', data.access_token);
                 localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
                 localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
+                localStorage.setItem('user_info', JSON.stringify(data.user_info));
                 
-                if (data.user_info) {
-                    if (data.user_info.platform_id) {
-                        localStorage.setItem('user_platform_id', data.user_info.platform_id);
+                // Make second call to get profile data with subscriptions
+                try {
+                    const profileResponse = await fetch(`${API_BASE_URL}/profile`, {
+                        headers: { 'Authorization': `Bearer ${data.access_token}` }
+                    });
+                    
+                    const profileData = await profileResponse.json();
+                    
+                    if (profileResponse.ok && profileData.status === 'success') {
+                        // Save subscriptions data
+                        localStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions));
+                        
+                        // Load user data into global variables
+                        loadUserData();
+                        
+                        // Redirect to main page
+                        window.location.href = 'links.html';
+                    } else {
+                        displayError("Failed to load user profile. Please try logging in again.");
+                        showLoading(false);
                     }
-                    if (data.user_info.name) {
-                        localStorage.setItem('user_name', data.user_info.name);
-                    }
-                    if (data.user_info.license_expiry) {
-                        localStorage.setItem('lustroom_license_expiry', data.user_info.license_expiry);
-                    }
-                    if (data.user_info.tier_name) {
-                        localStorage.setItem('lustroom_tier_name', data.user_info.tier_name);
-                    }
-                    // --- START: NEW LOCALSTORAGE ITEMS ---
-                    if (data.user_info.subscription_status) {
-                        localStorage.setItem('lustroom_subscription_status', data.user_info.subscription_status);
-                    }
-                    if (data.user_info.renewal_url) {
-                        localStorage.setItem('lustroom_renewal_url', data.user_info.renewal_url);
-                    }
-                    if (data.user_info.support_url) {
-                        localStorage.setItem('lustroom_support_url', data.user_info.support_url);
-                    }
-                    // --- END: NEW LOCALSTORAGE ITEMS ---
+                } catch (profileError) {
+                    console.error("Profile fetch error:", profileError);
+                    displayError("An error occurred while loading your profile. Please try again.");
+                    showLoading(false);
                 }
-
-                window.location.href = 'links.html';
             } else {
                 displayError(data.message || "Login failed. Please check your credentials.");
+                showLoading(false);
             }
         } catch (error) {
             showLoading(false);
@@ -518,6 +549,28 @@ if (document.getElementById('appContainer')) {
         addBackButtonListener('tiers', urlParams.get('platform_id'));
     }
 
+    // --- Gallery Skeleton ---
+    function renderGallerySkeleton() {
+        let skeletonHTML = `
+            <div class="view-header">
+                <button id="backButton" class="back-button">← Back</button>
+                <h2>Gallery</h2>
+            </div>
+            <div class="gallery-container">
+                <div class="gallery-skeleton">
+                    <div class="skeleton skeleton-gallery-title"></div>
+                    <div class="skeleton skeleton-gallery-description"></div>
+                    <div class="gallery-grid">`;
+        
+        for (let i = 0; i < 6; i++) {
+            skeletonHTML += `<div class="gallery-item-skeleton"><div class="skeleton skeleton-gallery-image"></div></div>`;
+        }
+        
+        skeletonHTML += `</div></div></div>`;
+        mainContent.innerHTML = skeletonHTML;
+        searchContainer.style.display = 'none';
+    }
+
     // --- Modal Logic ---
     const platformModal = document.getElementById('platformModal');
 
@@ -575,14 +628,15 @@ if (document.getElementById('appContainer')) {
     function renderPlatforms(platforms) {
         let platformsHTML = '<div class="platforms-grid">';
         platforms.forEach(platform => {
-            const isLocked = platform.id.toString() !== userPlatformId;
-            platformsHTML += `<div class="platform-card ${isLocked ? 'locked' : ''}" data-platform-id="${platform.id}"><div class="platform-thumbnail" style="background-image: url('${platform.thumbnail_url || ''}')"></div><div class="platform-name">${platform.name}</div>${isLocked ? '<div class="lock-icon">🔒</div>' : ''}</div>`;
+            // Check if user has any subscription to this platform
+            const hasSubscription = userSubscriptions.some(sub => sub.platform_id === platform.id);
+            platformsHTML += `<div class="platform-card ${!hasSubscription ? 'locked' : ''}" data-platform-id="${platform.id}"><div class="platform-thumbnail" style="background-image: url('${platform.thumbnail_url || ''}')"></div><div class="platform-name">${platform.name}</div>${!hasSubscription ? '<div class="lock-icon">🔒</div>' : ''}</div>`;
         });
         platformsHTML += '</div>';
 
         let welcomeHTML = '';
-        if (userName) {
-            welcomeHTML = `<div class="welcome-message">Welcome back, ${userName}!</div>`;
+        if (userInfo && userInfo.name) {
+            welcomeHTML = `<div class="welcome-message">Welcome back, ${userInfo.name}!</div>`;
         }
 
         mainContent.innerHTML = welcomeHTML + '<h2>Platforms</h2>' + platformsHTML;
@@ -603,7 +657,9 @@ if (document.getElementById('appContainer')) {
             </div>
             <div class="tiers-grid">`;
         tiers.forEach(tier => {
-            tiersHTML += `<div class="tier-card" data-tier-id="${tier.id}" data-searchable-text="${(tier.name + ' ' + (tier.description || '')).toLowerCase()}"><div class="tier-thumbnail" style="background-image: url('${tier.thumbnail_url || ''}')"></div><div class="tier-name">${tier.name}</div></div>`;
+            // Check if user has subscription to this tier
+            const hasSubscription = userSubscriptions.some(sub => sub.tier_id === tier.id);
+            tiersHTML += `<div class="tier-card ${!hasSubscription ? 'locked' : ''}" data-tier-id="${tier.id}" data-searchable-text="${(tier.name + ' ' + (tier.description || '')).toLowerCase()}"><div class="tier-thumbnail" style="background-image: url('${tier.thumbnail_url || ''}')"></div><div class="tier-name">${tier.name}</div>${!hasSubscription ? '<div class="lock-icon">🔒</div>' : ''}</div>`;
         });
         tiersHTML += '</div>';
         mainContent.innerHTML = tiersHTML;
@@ -704,6 +760,10 @@ if (document.getElementById('appContainer')) {
                 card.dataset.tierName = tierName;
                 card.dataset.platformId = platformId;
 
+                // Handle Gallery content type differently
+                const isGallery = link.content_type === 'Gallery';
+                const linkUrl = isGallery ? `links.html?view=gallery&slug=${link.url}` : (link.url || '#');
+
                 // Thumbnail section (if present)
                 if (link.thumbnail_url) {
                     const thumbnailContainer = document.createElement('div');
@@ -729,11 +789,20 @@ if (document.getElementById('appContainer')) {
                 // Title section with text-based badge for recent items without thumbnails
                 const title = document.createElement('h3');
                 const titleLink = document.createElement('a');
-                titleLink.href = link.url ? link.url : '#';
-                if (!link.url) titleLink.style.cursor = 'default';
+                titleLink.href = linkUrl;
+                if (!linkUrl || linkUrl === '#') titleLink.style.cursor = 'default';
                 titleLink.textContent = link.title || "Untitled Link";
-                titleLink.target = "_blank";
+                titleLink.target = isGallery ? "_self" : "_blank";
                 title.appendChild(titleLink);
+                
+                // Add icon for Gallery content type
+                if (isGallery) {
+                    const icon = document.createElement('span');
+                    icon.className = 'content-type-icon gallery-icon';
+                    icon.textContent = '🖼️';
+                    titleLink.prepend(icon);
+                }
+                
                 if (isRecentContent && !link.thumbnail_url) {
                     const newBadgeText = document.createElement('span');
                     newBadgeText.className = 'new-badge-text';
@@ -758,7 +827,7 @@ if (document.getElementById('appContainer')) {
                 }
                 cardContent.appendChild(metaInfo);
 
-                if (!link.locked) {
+                if (!link.locked && !isGallery) {
                     const actionsContainer = document.createElement('div');
                     actionsContainer.className = 'card-actions';
                     const copyButton = document.createElement('button');
@@ -931,7 +1000,16 @@ if (document.getElementById('appContainer')) {
     function handleTierClick(event, platformId) {
         const card = event.target.closest('.tier-card');
         if (!card) return;
+        
+        // Check if user has access to this tier
         const tierId = card.dataset.tierId;
+        const hasSubscription = userSubscriptions.some(sub => sub.tier_id === parseInt(tierId));
+        
+        if (!hasSubscription) {
+            // Show locked modal or message
+            alert("You don't have access to this tier. Please upgrade your subscription.");
+            return;
+        }
 
         history.pushState({view: 'content', platformId, tierId}, '', `?view=content&platform_id=${platformId}&tier_id=${tierId}`);
         router();
@@ -944,19 +1022,100 @@ if (document.getElementById('appContainer')) {
             if (backTo === 'tiers') {
                 history.pushState({view: 'tiers', platformId}, '', `?view=tiers&platform_id=${platformId}`);
                 router();
-            } else {
+            } else if (backTo === 'platforms') {
                 history.pushState({view: 'platforms'}, '', `links.html`);
                 router();
+            } else if (backTo === 'history') {
+                // Use history.back() for gallery view
+                history.back();
             }
         };
     }
 
+    // --- Gallery Functions ---
+    async function fetchAndDisplayGallery(slug) {
+        renderGallerySkeleton();
+        try {
+            const token = localStorage.getItem('lustroom_jwt');
+            const response = await fetch(`${API_BASE_URL}/gallery/${slug}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            
+            if (response.ok && data.status === 'success' && data.gallery) {
+                renderGallery(data.gallery);
+            } else if (response.status === 401 || response.status === 403) {
+                localStorage.clear();
+                window.location.href = 'login.html';
+            } else {
+                displayError(data.message || "Failed to fetch gallery.");
+            }
+        } catch (error) {
+            console.error("Fetch gallery error:", error);
+            displayError("An error occurred while fetching the gallery.");
+        }
+    }
+
+    function renderGallery(galleryData) {
+        mainContent.innerHTML = `
+            <div class="view-header">
+                <button id="backButton" class="back-button">← Back</button>
+                <h2>${galleryData.title} <span class="header-breadcrumb">/ ${galleryData.platform_name}</span></h2>
+            </div>
+            <div class="gallery-container">
+                <div class="gallery-info">
+                    <h3>${galleryData.title}</h3>
+                    <p>${galleryData.description || ''}</p>
+                </div>
+                <div class="gallery-grid" id="galleryGrid"></div>
+            </div>
+        `;
+        
+        const galleryGrid = document.getElementById('galleryGrid');
+        
+        galleryData.images.forEach((image, index) => {
+            const item = document.createElement('div');
+            item.className = 'gallery-item';
+            item.innerHTML = `
+                <a href="${image.url}" data-pswp-width="1200" data-pswp-height="800" data-pswp-index="${index}" target="_blank">
+                    <img src="${image.url}" alt="${image.title || `Image ${index + 1}`}" loading="lazy">
+                    <div class="gallery-caption">${image.title || `Image ${index + 1}`}</div>
+                </a>
+            `;
+            galleryGrid.appendChild(item);
+        });
+        
+        // Initialize PhotoSwipe
+        initPhotoSwipe();
+        
+        // Add back button listener using history.back()
+        addBackButtonListener('history');
+    }
+
+    function initPhotoSwipe() {
+        // Check if PhotoSwipe is loaded
+        if (typeof PhotoSwipeLightbox === 'undefined') {
+            console.error('PhotoSwipe not loaded');
+            return;
+        }
+        
+        const lightbox = new PhotoSwipeLightbox({
+            gallery: '#galleryGrid',
+            children: 'a',
+            pswpModule: PhotoSwipe
+        });
+        
+        lightbox.init();
+    }
+
     // --- Main Application Router ---
     async function router() {
-        // --- START: CORRECTED LOGIC ---
+        // Load user data at the start of router
+        loadUserData();
+        
+        // Render renewal banner and header actions
         renderRenewalBanner();
         renderHeaderActions();
-        // --- END: CORRECTED LOGIC ---
 
         if (!isTokenValid()) {
             window.location.href = 'login.html';
@@ -968,6 +1127,14 @@ if (document.getElementById('appContainer')) {
             const view = urlParams.get('view');
             const platformId = urlParams.get('platform_id');
             const tierId = urlParams.get('tier_id');
+            const slug = urlParams.get('slug');
+
+            // Handle gallery view
+            if (view === 'gallery' && slug) {
+                await fetchAndDisplayGallery(slug);
+                renderSubscriptionStatus();
+                return;
+            }
 
             if (view === 'tiers' || view === 'content') {
                 await ensurePlatformsData();
