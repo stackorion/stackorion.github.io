@@ -690,47 +690,64 @@ if (document.getElementById('appContainer')) {
     }
 
     // --- Content View Logic ---
-    async function fetchAndDisplayContent(platformId, tierId, tierName, platformName) {
-        searchScope = 'content';
-        renderContentSkeleton(tierName, platformName);
-        try {
-            const token = localStorage.getItem('lustroom_jwt');
-            const response = await fetch(`${API_BASE_URL}/get_patron_links?tier_id=${tierId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await response.json();
-            if (response.ok && data.status === 'success' && data.content) {
-                currentContentData = data.content;
-                currentFilterState = { view: 'All', type: 'All', query: '' };
+    // Add this to app.js - Replace the fetchAndDisplayContent function
 
-                mainContent.innerHTML = `
-                    <div class="view-header">
-                        <button id="backButton" class="back-button">← Back to Tiers</button>
-                        <h2>${tierName} <span class="header-breadcrumb">/ ${platformName}</span></h2>
-                    </div>
-                    <div id="filterContainer" class="filter-container"></div>
-                    <div id="linksContentContainer"></div>`;
-
-                const linksContentContainer = document.getElementById('linksContentContainer');
-                searchContainer.style.display = 'block';
-                searchInput.placeholder = `Search in ${tierName || 'Content'}`;
-                searchInput.value = '';
-                searchInput.addEventListener('input', debounce(handleSearchInput, 300));
-                addBackButtonListener('tiers', platformId);
-                renderContent(data.content, platformId);
-                setupFilters(data.content);
-                setupCopyButtonDelegation();
-            } else if (response.status === 401 || response.status === 403) {
-                localStorage.clear();
-                window.location.href = 'login.html';
-            } else {
-                displayError(data.message || "Failed to fetch content.");
+async function fetchAndDisplayContent(platformId, tierId, tierName, platformName) {
+    searchScope = 'content';
+    renderContentSkeleton(tierName, platformName);
+    try {
+        const token = localStorage.getItem('lustroom_jwt');
+        const response = await fetch(`${API_BASE_URL}/get_patron_links?tier_id=${tierId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        
+        // ===== DEBUG LOGGING =====
+        console.log('[DEBUG] Raw API response:', data);
+        if (data.content) {
+            console.log('[DEBUG] Content keys:', Object.keys(data.content));
+            for (const [tierName, links] of Object.entries(data.content)) {
+                const galleryLinks = links.filter(l => l.content_type === 'Gallery');
+                console.log(`[DEBUG] Tier "${tierName}": ${links.length} total links, ${galleryLinks.length} galleries`);
+                galleryLinks.forEach(g => {
+                    console.log(`[DEBUG] Gallery found: "${g.title}" (URL: ${g.url})`);
+                });
             }
-        } catch (error) {
-            console.error("Fetch content error:", error);
-            displayError("An error occurred while fetching content.");
         }
+        // ===== END DEBUG LOGGING =====
+        
+        if (response.ok && data.status === 'success' && data.content) {
+            currentContentData = data.content;
+            currentFilterState = { view: 'All', type: 'All', query: '' };
+
+            mainContent.innerHTML = `
+                <div class="view-header">
+                    <button id="backButton" class="back-button">← Back to Tiers</button>
+                    <h2>${tierName} <span class="header-breadcrumb">/ ${platformName}</span></h2>
+                </div>
+                <div id="filterContainer" class="filter-container"></div>
+                <div id="linksContentContainer"></div>`;
+
+            const linksContentContainer = document.getElementById('linksContentContainer');
+            searchContainer.style.display = 'block';
+            searchInput.placeholder = `Search in ${tierName || 'Content'}`;
+            searchInput.value = '';
+            searchInput.addEventListener('input', debounce(handleSearchInput, 300));
+            addBackButtonListener('tiers', platformId);
+            renderContent(data.content, platformId);
+            setupFilters(data.content);
+            setupCopyButtonDelegation();
+        } else if (response.status === 401 || response.status === 403) {
+            localStorage.clear();
+            window.location.href = 'login.html';
+        } else {
+            displayError(data.message || "Failed to fetch content.");
+        }
+    } catch (error) {
+        console.error("Fetch content error:", error);
+        displayError("An error occurred while fetching content.");
     }
+}
 
     function renderContent(contentData, platformId) {
         const linksContentContainer = document.getElementById('linksContentContainer');
