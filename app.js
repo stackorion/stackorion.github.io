@@ -690,64 +690,62 @@ if (document.getElementById('appContainer')) {
     }
 
     // --- Content View Logic ---
-    // Add this to app.js - Replace the fetchAndDisplayContent function
-
-async function fetchAndDisplayContent(platformId, tierId, tierName, platformName) {
-    searchScope = 'content';
-    renderContentSkeleton(tierName, platformName);
-    try {
-        const token = localStorage.getItem('lustroom_jwt');
-        const response = await fetch(`${API_BASE_URL}/get_patron_links?tier_id=${tierId}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await response.json();
-        
-        // ===== DEBUG LOGGING =====
-        console.log('[DEBUG] Raw API response:', data);
-        if (data.content) {
-            console.log('[DEBUG] Content keys:', Object.keys(data.content));
-            for (const [tierName, links] of Object.entries(data.content)) {
-                const galleryLinks = links.filter(l => l.content_type === 'Gallery');
-                console.log(`[DEBUG] Tier "${tierName}": ${links.length} total links, ${galleryLinks.length} galleries`);
-                galleryLinks.forEach(g => {
-                    console.log(`[DEBUG] Gallery found: "${g.title}" (URL: ${g.url})`);
-                });
+    async function fetchAndDisplayContent(platformId, tierId, tierName, platformName) {
+        searchScope = 'content';
+        renderContentSkeleton(tierName, platformName);
+        try {
+            const token = localStorage.getItem('lustroom_jwt');
+            const response = await fetch(`${API_BASE_URL}/get_patron_links?tier_id=${tierId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            
+            // ===== DEBUG LOGGING =====
+            console.log('[DEBUG] Raw API response:', data);
+            if (data.content) {
+                console.log('[DEBUG] Content keys:', Object.keys(data.content));
+                for (const [tierName, links] of Object.entries(data.content)) {
+                    const galleryLinks = links.filter(l => l.content_type === 'Gallery');
+                    console.log(`[DEBUG] Tier "${tierName}": ${links.length} total links, ${galleryLinks.length} galleries`);
+                    galleryLinks.forEach(g => {
+                        console.log(`[DEBUG] Gallery found: "${g.title}" (URL: ${g.url})`);
+                    });
+                }
             }
-        }
-        // ===== END DEBUG LOGGING =====
-        
-        if (response.ok && data.status === 'success' && data.content) {
-            currentContentData = data.content;
-            currentFilterState = { view: 'All', type: 'All', query: '' };
+            // ===== END DEBUG LOGGING =====
+            
+            if (response.ok && data.status === 'success' && data.content) {
+                currentContentData = data.content;
+                currentFilterState = { view: 'All', type: 'All', query: '' };
 
-            mainContent.innerHTML = `
-                <div class="view-header">
-                    <button id="backButton" class="back-button">← Back to Tiers</button>
-                    <h2>${tierName} <span class="header-breadcrumb">/ ${platformName}</span></h2>
-                </div>
-                <div id="filterContainer" class="filter-container"></div>
-                <div id="linksContentContainer"></div>`;
+                mainContent.innerHTML = `
+                    <div class="view-header">
+                        <button id="backButton" class="back-button">← Back to Tiers</button>
+                        <h2>${tierName} <span class="header-breadcrumb">/ ${platformName}</span></h2>
+                    </div>
+                    <div id="filterContainer" class="filter-container"></div>
+                    <div id="linksContentContainer"></div>`;
 
-            const linksContentContainer = document.getElementById('linksContentContainer');
-            searchContainer.style.display = 'block';
-            searchInput.placeholder = `Search in ${tierName || 'Content'}`;
-            searchInput.value = '';
-            searchInput.addEventListener('input', debounce(handleSearchInput, 300));
-            addBackButtonListener('tiers', platformId);
-            renderContent(data.content, platformId);
-            setupFilters(data.content);
-            setupCopyButtonDelegation();
-        } else if (response.status === 401 || response.status === 403) {
-            localStorage.clear();
-            window.location.href = 'login.html';
-        } else {
-            displayError(data.message || "Failed to fetch content.");
+                const linksContentContainer = document.getElementById('linksContentContainer');
+                searchContainer.style.display = 'block';
+                searchInput.placeholder = `Search in ${tierName || 'Content'}`;
+                searchInput.value = '';
+                searchInput.addEventListener('input', debounce(handleSearchInput, 300));
+                addBackButtonListener('tiers', platformId);
+                renderContent(data.content, platformId);
+                setupFilters(data.content);
+                setupCopyButtonDelegation();
+            } else if (response.status === 401 || response.status === 403) {
+                localStorage.clear();
+                window.location.href = 'login.html';
+            } else {
+                displayError(data.message || "Failed to fetch content.");
+            }
+        } catch (error) {
+            console.error("Fetch content error:", error);
+            displayError("An error occurred while fetching content.");
         }
-    } catch (error) {
-        console.error("Fetch content error:", error);
-        displayError("An error occurred while fetching content.");
     }
-}
 
     function renderContent(contentData, platformId) {
         const linksContentContainer = document.getElementById('linksContentContainer');
@@ -1018,21 +1016,21 @@ async function fetchAndDisplayContent(platformId, tierId, tierName, platformName
     }
 
     function handleTierClick(event, platformId) {
-    const card = event.target.closest('.tier-card');
-    if (!card) return;
-    
-    const tierId = card.dataset.tierId;
-    
-    // Check if tier is locked based on the CSS class
-    if (card.classList.contains('locked')) {
-        // Show a friendly message instead of navigating
-        alert("This tier is locked. You need a subscription to access this content. Check the platform info for upgrade options!");
-        return;
-    }
+        const card = event.target.closest('.tier-card');
+        if (!card) return;
+        
+        const tierId = card.dataset.tierId;
+        
+        // Check if tier is locked based on the CSS class
+        if (card.classList.contains('locked')) {
+            // Show a friendly message instead of navigating
+            alert("This tier is locked. You need a subscription to access this content. Check the platform info for upgrade options!");
+            return;
+        }
 
-    history.pushState({view: 'content', platformId, tierId}, '', `?view=content&platform_id=${platformId}&tier_id=${tierId}`);
-    router();
-}
+        history.pushState({view: 'content', platformId, tierId}, '', `?view=content&platform_id=${platformId}&tier_id=${tierId}`);
+        router();
+    }
 
     function addBackButtonListener(backTo, platformId = null) {
         const backButton = document.getElementById('backButton');
@@ -1061,6 +1059,8 @@ async function fetchAndDisplayContent(platformId, tierId, tierName, platformName
             });
             const data = await response.json();
             
+            console.log('[GALLERY DEBUG] API Response:', data);
+            
             if (response.ok && data.status === 'success' && data.gallery) {
                 renderGallery(data.gallery);
             } else if (response.status === 401 || response.status === 403) {
@@ -1076,6 +1076,8 @@ async function fetchAndDisplayContent(platformId, tierId, tierName, platformName
     }
 
     function renderGallery(galleryData) {
+        console.log('[GALLERY DEBUG] Rendering gallery:', galleryData);
+        
         mainContent.innerHTML = `
             <div class="view-header">
                 <button id="backButton" class="back-button">← Back</button>
@@ -1092,7 +1094,11 @@ async function fetchAndDisplayContent(platformId, tierId, tierName, platformName
         
         const galleryGrid = document.getElementById('galleryGrid');
         
+        console.log('[GALLERY DEBUG] Number of images:', galleryData.images.length);
+        
         galleryData.images.forEach((image, index) => {
+            console.log(`[GALLERY DEBUG] Image ${index}:`, image.url);
+            
             const item = document.createElement('div');
             item.className = 'gallery-item';
             item.innerHTML = `
@@ -1104,27 +1110,43 @@ async function fetchAndDisplayContent(platformId, tierId, tierName, platformName
             galleryGrid.appendChild(item);
         });
         
-        // Initialize PhotoSwipe
-        initPhotoSwipe();
+        // Initialize PhotoSwipe after DOM is ready
+        setTimeout(() => {
+            initPhotoSwipe();
+        }, 100);
         
         // Add back button listener using history.back()
         addBackButtonListener('history');
     }
 
     function initPhotoSwipe() {
+        console.log('[PHOTOSWIPE] Attempting to initialize PhotoSwipe...');
+        
         // Check if PhotoSwipe is loaded
         if (typeof PhotoSwipeLightbox === 'undefined') {
-            console.error('PhotoSwipe not loaded');
+            console.error('[PHOTOSWIPE] PhotoSwipe library not loaded!');
+            console.log('[PHOTOSWIPE] Available globals:', Object.keys(window).filter(k => k.toLowerCase().includes('photo')));
             return;
         }
         
-        const lightbox = new PhotoSwipeLightbox({
-            gallery: '#galleryGrid',
-            children: 'a',
-            pswpModule: PhotoSwipe
-        });
+        console.log('[PHOTOSWIPE] PhotoSwipeLightbox found:', PhotoSwipeLightbox);
         
-        lightbox.init();
+        try {
+            const lightbox = new PhotoSwipeLightbox({
+                gallery: '#galleryGrid',
+                children: 'a',
+                pswpModule: () => import('https://cdnjs.cloudflare.com/ajax/libs/photoswipe/5.3.7/photoswipe.esm.min.js')
+            });
+            
+            lightbox.on('uiRegister', function() {
+                console.log('[PHOTOSWIPE] UI Registered successfully');
+            });
+            
+            lightbox.init();
+            console.log('[PHOTOSWIPE] PhotoSwipe initialized successfully!');
+        } catch (error) {
+            console.error('[PHOTOSWIPE] Error initializing PhotoSwipe:', error);
+        }
     }
 
     // --- Main Application Router ---
