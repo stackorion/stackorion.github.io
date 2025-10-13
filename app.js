@@ -645,22 +645,25 @@ if (document.getElementById('appContainer')) {
     }
 
     function renderTiers(tiers, platformId, platformName) {
-        if (!tiers || !Array.isArray(tiers)) {
-            displayError("No tiers data available for this platform.");
-            return;
-        }
+    if (!tiers || !Array.isArray(tiers)) {
+        displayError("No tiers data available for this platform.");
+        return;
+    }
 
-        let tiersHTML = `
-            <div class="view-header">
-                <button id="backButton" class="back-button">← Back to Platforms</button>
-                <h2>${platformName} Tiers</h2>
-            </div>
-            <div class="tiers-grid">`;
-        tiers.forEach(tier => {
-            // Check if user has subscription to this tier
-            const hasSubscription = userSubscriptions.some(sub => sub.tier_id === tier.id);
-            tiersHTML += `<div class="tier-card ${!hasSubscription ? 'locked' : ''}" data-tier-id="${tier.id}" data-searchable-text="${(tier.name + ' ' + (tier.description || '')).toLowerCase()}"><div class="tier-thumbnail" style="background-image: url('${tier.thumbnail_url || ''}')"></div><div class="tier-name">${tier.name}</div>${!hasSubscription ? '<div class="lock-icon">🔒</div>' : ''}</div>`;
-        });
+    let tiersHTML = `
+        <div class="view-header">
+            <button id="backButton" class="back-button">← Back to Platforms</button>
+            <h2>${platformName} Tiers</h2>
+        </div>
+        <div class="tiers-grid">`;
+    tiers.forEach(tier => {
+        // Use is_accessible from backend instead of checking userSubscriptions
+        const isLocked = !tier.is_accessible;
+        const lockedClass = isLocked ? 'locked' : '';
+        const lockIcon = isLocked ? '<div class="lock-icon">🔒</div>' : '';
+        
+        tiersHTML += `<div class="tier-card ${lockedClass}" data-tier-id="${tier.id}" data-searchable-text="${(tier.name + ' ' + (tier.description || '')).toLowerCase()}"><div class="tier-thumbnail" style="background-image: url('${tier.thumbnail_url || ''}')"></div><div class="tier-name">${tier.name}</div>${lockIcon}</div>`;
+    });
         tiersHTML += '</div>';
         mainContent.innerHTML = tiersHTML;
         searchContainer.style.display = 'block';
@@ -998,22 +1001,21 @@ if (document.getElementById('appContainer')) {
     }
 
     function handleTierClick(event, platformId) {
-        const card = event.target.closest('.tier-card');
-        if (!card) return;
-        
-        // Check if user has access to this tier
-        const tierId = card.dataset.tierId;
-        const hasSubscription = userSubscriptions.some(sub => sub.tier_id === parseInt(tierId));
-        
-        if (!hasSubscription) {
-            // Show locked modal or message
-            alert("You don't have access to this tier. Please upgrade your subscription.");
-            return;
-        }
-
-        history.pushState({view: 'content', platformId, tierId}, '', `?view=content&platform_id=${platformId}&tier_id=${tierId}`);
-        router();
+    const card = event.target.closest('.tier-card');
+    if (!card) return;
+    
+    const tierId = card.dataset.tierId;
+    
+    // Check if tier is locked based on the CSS class
+    if (card.classList.contains('locked')) {
+        // Show a friendly message instead of navigating
+        alert("This tier is locked. You need a subscription to access this content. Check the platform info for upgrade options!");
+        return;
     }
+
+    history.pushState({view: 'content', platformId, tierId}, '', `?view=content&platform_id=${platformId}&tier_id=${tierId}`);
+    router();
+}
 
     function addBackButtonListener(backTo, platformId = null) {
         const backButton = document.getElementById('backButton');
