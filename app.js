@@ -1088,7 +1088,7 @@ if (document.getElementById('appContainer')) {
                     <h3>${galleryData.title}</h3>
                     <p>${galleryData.description || ''}</p>
                 </div>
-                <div class="gallery-grid" id="galleryGrid"></div>
+                <div class="gallery-grid pswp-gallery" id="galleryGrid"></div>
             </div>
         `;
         
@@ -1101,19 +1101,42 @@ if (document.getElementById('appContainer')) {
             
             const item = document.createElement('div');
             item.className = 'gallery-item';
-            item.innerHTML = `
-                <a href="${image.url}" data-pswp-width="1200" data-pswp-height="800" data-pswp-index="${index}" target="_blank">
-                    <img src="${image.url}" alt="${image.title || `Image ${index + 1}`}" loading="lazy">
-                    <div class="gallery-caption">${image.title || `Image ${index + 1}`}</div>
-                </a>
-            `;
+            
+            // Create a temporary image to get actual dimensions
+            const tempImg = new Image();
+            const linkElement = document.createElement('a');
+            linkElement.href = image.url;
+            linkElement.setAttribute('data-pswp-width', '1920');
+            linkElement.setAttribute('data-pswp-height', '1080');
+            linkElement.target = '_blank';
+            
+            // Load actual dimensions when image loads
+            tempImg.onload = function() {
+                linkElement.setAttribute('data-pswp-width', this.naturalWidth.toString());
+                linkElement.setAttribute('data-pswp-height', this.naturalHeight.toString());
+                console.log(`[GALLERY DEBUG] Image ${index} dimensions: ${this.naturalWidth}x${this.naturalHeight}`);
+            };
+            tempImg.src = image.url;
+            
+            const img = document.createElement('img');
+            img.src = image.url;
+            img.alt = image.title || `Image ${index + 1}`;
+            img.loading = 'lazy';
+            
+            const caption = document.createElement('div');
+            caption.className = 'gallery-caption';
+            caption.textContent = image.title || `Image ${index + 1}`;
+            
+            linkElement.appendChild(img);
+            linkElement.appendChild(caption);
+            item.appendChild(linkElement);
             galleryGrid.appendChild(item);
         });
         
-        // Initialize PhotoSwipe after DOM is ready
+        // Initialize PhotoSwipe after DOM is ready and images have dimensions
         setTimeout(() => {
             initPhotoSwipe();
-        }, 100);
+        }, 500);
         
         // Add back button listener using history.back()
         addBackButtonListener('history');
@@ -1137,11 +1160,31 @@ if (document.getElementById('appContainer')) {
             const lightbox = new PhotoSwipeLightbox({
                 gallery: '#galleryGrid',
                 children: 'a',
-                pswpModule: PhotoSwipe
+                pswpModule: PhotoSwipe,
+                // Add proper configuration options
+                bgOpacity: 0.9,
+                spacing: 0.1,
+                allowPanToNext: true,
+                loop: true,
+                pinchToClose: true,
+                closeOnVerticalDrag: true,
+                // Ensure proper sizing
+                paddingFn: (viewportSize) => {
+                    return {
+                        top: 30,
+                        bottom: 30,
+                        left: 70,
+                        right: 70
+                    };
+                }
             });
             
             lightbox.on('uiRegister', function() {
                 console.log('[PHOTOSWIPE] UI Registered successfully');
+            });
+            
+            lightbox.on('change', function() {
+                console.log('[PHOTOSWIPE] Slide changed');
             });
             
             lightbox.init();

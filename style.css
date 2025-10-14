@@ -1285,3 +1285,128 @@ button:disabled {
     filter: brightness(110%);
     transform: scale(1.05);
 }
+/* ===== GALLERY STYLES ===== */
+
+/* Gallery Grid */
+.gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 20px;
+    padding: 20px 0;
+}
+
+.gallery-item {
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--card-background);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.gallery-item:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.gallery-item a {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    cursor: zoom-in;
+}
+
+.gallery-item img {
+    width: 100%;
+    height: 250px;
+    object-fit: cover;
+    display: block;
+}
+
+.gallery-caption {
+    padding: 12px;
+    font-size: 14px;
+    color: var(--text-color);
+    background: var(--card-background);
+    text-align: center;
+}
+
+/* Gallery Info Section */
+.gallery-info {
+    padding: 20px;
+    margin-bottom: 20px;
+    background: var(--card-background);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.gallery-info h3 {
+    margin: 0 0 10px 0;
+    color: var(--text-color);
+}
+
+.gallery-info p {
+    margin: 0;
+    color: var(--text-muted);
+}
+
+/* PhotoSwipe Custom Styling Overrides */
+.pswp {
+    z-index: 999999 !important;
+}
+
+.pswp__bg {
+    background: rgba(0, 0, 0, 0.95) !important;
+}
+
+.pswp__img {
+    object-fit: contain !important;
+}
+
+/* Ensure PhotoSwipe controls are visible */
+.pswp__button {
+    background: rgba(0, 0, 0, 0.5) !important;
+    border-radius: 50% !important;
+    width: 44px !important;
+    height: 44px !important;
+}
+
+.pswp__button:hover {
+    background: rgba(0, 0, 0, 0.7) !important;
+}
+
+/* PhotoSwipe counter styling */
+.pswp__counter {
+    background: rgba(0, 0, 0, 0.5);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+/* Responsive Gallery Grid */
+@media (max-width: 768px) {
+    .gallery-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 10px;
+    }
+    
+    .gallery-item img {
+        height: 150px;
+    }
+}
+
+@media (max-width: 480px) {
+    .gallery-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+    
+    .gallery-item img {
+        height: 120px;
+    }
+    
+    .gallery-caption {
+        font-size: 12px;
+        padding: 8px;
+    }
+}
