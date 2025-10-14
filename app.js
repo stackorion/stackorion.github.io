@@ -1161,30 +1161,109 @@ if (document.getElementById('appContainer')) {
                 gallery: '#galleryGrid',
                 children: 'a',
                 pswpModule: PhotoSwipe,
-                // Add proper configuration options
-                bgOpacity: 0.9,
-                spacing: 0.1,
+                // Premium theatre-mode configuration
+                bgOpacity: 1,
+                spacing: 0.05,
                 allowPanToNext: true,
                 loop: true,
                 pinchToClose: true,
                 closeOnVerticalDrag: true,
-                // Ensure proper sizing
+                showHideAnimationType: 'fade',
+                zoomAnimationDuration: 300,
+                // Fullscreen mode by default
+                initialZoomLevel: 'fit',
+                secondaryZoomLevel: 1.5,
+                maxZoomLevel: 3,
+                // Minimal padding for theatre mode
                 paddingFn: (viewportSize) => {
                     return {
-                        top: 30,
-                        bottom: 30,
-                        left: 70,
-                        right: 70
+                        top: 20,
+                        bottom: 20,
+                        left: 20,
+                        right: 20
                     };
-                }
+                },
+                // Enable keyboard shortcuts
+                arrowKeys: true,
+                // Preload nearby images
+                preload: [1, 2]
             });
             
+            // Add fullscreen button to UI
             lightbox.on('uiRegister', function() {
                 console.log('[PHOTOSWIPE] UI Registered successfully');
+                
+                // Add fullscreen button
+                lightbox.pswp.ui.registerElement({
+                    name: 'fullscreen-button',
+                    order: 9,
+                    isButton: true,
+                    html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
+                    onClick: (event, el) => {
+                        if (!document.fullscreenElement) {
+                            lightbox.pswp.element.requestFullscreen();
+                        } else {
+                            document.exitFullscreen();
+                        }
+                    }
+                });
+                
+                // Add download button
+                lightbox.pswp.ui.registerElement({
+                    name: 'download-button',
+                    order: 8,
+                    isButton: true,
+                    html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>',
+                    onClick: (event, el) => {
+                        const currentSlide = lightbox.pswp.currSlide;
+                        const link = document.createElement('a');
+                        link.href = currentSlide.data.src;
+                        link.download = `image-${lightbox.pswp.currIndex + 1}.jpg`;
+                        link.click();
+                    }
+                });
             });
             
+            // Add auto-advance feature with keyboard shortcut
             lightbox.on('change', function() {
                 console.log('[PHOTOSWIPE] Slide changed');
+            });
+            
+            // Add slideshow auto-play
+            let slideshowInterval = null;
+            let isPlaying = false;
+            
+            lightbox.on('uiRegister', function() {
+                // Add play/pause button
+                lightbox.pswp.ui.registerElement({
+                    name: 'play-button',
+                    order: 7,
+                    isButton: true,
+                    html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>',
+                    onClick: (event, el) => {
+                        if (!isPlaying) {
+                            // Start slideshow
+                            isPlaying = true;
+                            el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
+                            slideshowInterval = setInterval(() => {
+                                lightbox.pswp.next();
+                            }, 3000);
+                        } else {
+                            // Stop slideshow
+                            isPlaying = false;
+                            el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
+                            clearInterval(slideshowInterval);
+                        }
+                    }
+                });
+            });
+            
+            // Clean up slideshow on close
+            lightbox.on('close', function() {
+                if (slideshowInterval) {
+                    clearInterval(slideshowInterval);
+                    isPlaying = false;
+                }
             });
             
             lightbox.init();

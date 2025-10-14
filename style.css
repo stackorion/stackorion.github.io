@@ -1287,100 +1287,373 @@ button:disabled {
 }
 /* ===== GALLERY STYLES ===== */
 
-/* Gallery Grid */
+/* Gallery Grid - Modern Card Layout */
 .gallery-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 20px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
     padding: 20px 0;
 }
 
 .gallery-item {
     position: relative;
     overflow: hidden;
-    border-radius: 8px;
+    border-radius: 12px;
     background: var(--card-background);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+}
+
+.gallery-item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.6) 100%);
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.gallery-item:hover::before {
+    opacity: 1;
 }
 
 .gallery-item:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
 }
 
 .gallery-item a {
     display: block;
     text-decoration: none;
     color: inherit;
-    cursor: zoom-in;
+    position: relative;
 }
 
 .gallery-item img {
     width: 100%;
-    height: 250px;
+    height: 280px;
     object-fit: cover;
     display: block;
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.gallery-item:hover img {
+    transform: scale(1.1);
 }
 
 .gallery-caption {
-    padding: 12px;
-    font-size: 14px;
-    color: var(--text-color);
-    background: var(--card-background);
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 16px;
+    font-size: 15px;
+    font-weight: 500;
+    color: #ffffff;
+    background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.8) 100%);
     text-align: center;
+    z-index: 2;
+    transform: translateY(100%);
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Gallery Info Section */
+.gallery-item:hover .gallery-caption {
+    transform: translateY(0);
+}
+
+/* Add play icon overlay on hover */
+.gallery-item::after {
+    content: '▶';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    width: 64px;
+    height: 64px;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: #000;
+    z-index: 3;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+}
+
+.gallery-item:hover::after {
+    transform: translate(-50%, -50%) scale(1);
+}
+
+/* Gallery Info Section - Premium Card */
 .gallery-info {
-    padding: 20px;
-    margin-bottom: 20px;
-    background: var(--card-background);
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 32px;
+    margin-bottom: 32px;
+    background: linear-gradient(135deg, var(--card-background) 0%, rgba(255,255,255,0.05) 100%);
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .gallery-info h3 {
-    margin: 0 0 10px 0;
+    margin: 0 0 12px 0;
     color: var(--text-color);
+    font-size: 28px;
+    font-weight: 700;
 }
 
 .gallery-info p {
     margin: 0;
     color: var(--text-muted);
+    font-size: 16px;
+    line-height: 1.6;
 }
 
-/* PhotoSwipe Custom Styling Overrides */
+/* Responsive Gallery Grid */
+@media (max-width: 1200px) {
+    .gallery-grid {
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 20px;
+    }
+}
+
+@media (max-width: 768px) {
+    .gallery-grid {
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 16px;
+    }
+    
+    .gallery-item img {
+        height: 180px;
+    }
+    
+    .gallery-info {
+        padding: 24px;
+    }
+    
+    .gallery-info h3 {
+        font-size: 22px;
+    }
+}
+
+@media (max-width: 480px) {
+    .gallery-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+    
+    .gallery-item {
+        border-radius: 8px;
+    }
+    
+    .gallery-item img {
+        height: 140px;
+    }
+    
+    .gallery-caption {
+        font-size: 13px;
+        padding: 12px;
+    }
+    
+    .gallery-info {
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .gallery-info h3 {
+        font-size: 20px;
+    }
+    
+    .gallery-info p {
+        font-size: 14px;
+    }
+}
+
+/* ===== PREMIUM THEATRE MODE PHOTOSWIPE STYLING ===== */
+
+/* Main PhotoSwipe Container - Theatre Mode */
 .pswp {
     z-index: 999999 !important;
+    --pswp-bg: #000000;
+    --pswp-icon-color: #ffffff;
+    --pswp-icon-color-secondary: #999999;
 }
 
+/* Pure Black Background for Theatre Experience */
 .pswp__bg {
-    background: rgba(0, 0, 0, 0.95) !important;
+    background: #000000 !important;
+    opacity: 1 !important;
 }
 
+/* Image Display - Cinematic Fit */
 .pswp__img {
     object-fit: contain !important;
 }
 
-/* Ensure PhotoSwipe controls are visible */
+/* Top Bar - Modern Floating Design */
+.pswp__top-bar {
+    background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%) !important;
+    padding: 20px !important;
+    backdrop-filter: blur(10px);
+}
+
+/* Control Buttons - Glass Morphism Style */
 .pswp__button {
-    background: rgba(0, 0, 0, 0.5) !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
     border-radius: 50% !important;
-    width: 44px !important;
-    height: 44px !important;
+    width: 48px !important;
+    height: 48px !important;
+    transition: all 0.3s ease !important;
+    cursor: pointer;
 }
 
 .pswp__button:hover {
-    background: rgba(0, 0, 0, 0.7) !important;
+    background: rgba(255, 255, 255, 0.2) !important;
+    border-color: rgba(255, 255, 255, 0.4) !important;
+    transform: scale(1.1);
 }
 
-/* PhotoSwipe counter styling */
+.pswp__button:active {
+    transform: scale(0.95);
+}
+
+/* Navigation Arrows - Larger and More Visible */
+.pswp__button--arrow {
+    width: 64px !important;
+    height: 64px !important;
+    background: rgba(255, 255, 255, 0.15) !important;
+    backdrop-filter: blur(10px);
+}
+
+.pswp__button--arrow:hover {
+    background: rgba(255, 255, 255, 0.25) !important;
+}
+
+.pswp__button--arrow--prev {
+    left: 20px !important;
+}
+
+.pswp__button--arrow--next {
+    right: 20px !important;
+}
+
+/* Counter - Cinematic Style */
 .pswp__counter {
-    background: rgba(0, 0, 0, 0.5);
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-size: 14px;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(10px);
+    padding: 10px 16px;
+    border-radius: 20px;
+    font-size: 15px;
+    font-weight: 500;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
+/* Close Button - Top Right Premium Style */
+.pswp__button--close {
+    position: absolute !important;
+    top: 20px !important;
+    right: 20px !important;
+    background: rgba(255, 255, 255, 0.15) !important;
+    width: 48px !important;
+    height: 48px !important;
+}
+
+/* Zoom Button */
+.pswp__button--zoom {
+    background: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* Custom Fullscreen Button Styling */
+.pswp__button.pswp__button--custom {
+    background: rgba(255, 255, 255, 0.15) !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Loading Spinner - Premium Style */
+.pswp__preloader {
+    width: 60px;
+    height: 60px;
+}
+
+.pswp__preloader__icn {
+    width: 60px;
+    height: 60px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+}
+
+/* Caption Area - Elegant Bottom Overlay */
+.pswp__caption {
+    background: linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%) !important;
+    padding: 30px 20px 20px !important;
+    backdrop-filter: blur(10px);
+}
+
+.pswp__caption__content {
+    color: #ffffff;
+    font-size: 16px;
+    line-height: 1.5;
+    text-align: center;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+}
+
+/* Smooth Transitions */
+.pswp__img,
+.pswp__zoom-wrap {
+    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Fullscreen Mode Enhancements */
+.pswp--fs .pswp__button {
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.pswp--fs .pswp__top-bar {
+    background: linear-gradient(180deg, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%) !important;
+}
+
+/* Hide UI on Idle - Cinema Mode */
+.pswp--ui-visible .pswp__top-bar,
+.pswp--ui-visible .pswp__button--arrow {
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+.pswp:not(.pswp--ui-visible) .pswp__top-bar,
+.pswp:not(.pswp--ui-visible) .pswp__button--arrow {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+/* Mobile Optimizations */
+@media (max-width: 768px) {
+    .pswp__button {
+        width: 44px !important;
+        height: 44px !important;
+    }
+    
+    .pswp__button--arrow {
+        width: 52px !important;
+        height: 52px !important;
+    }
+    
+    .pswp__counter {
+        font-size: 13px;
+        padding: 8px 12px;
+    }
 }
 
 /* Responsive Gallery Grid */
