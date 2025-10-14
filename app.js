@@ -1126,16 +1126,18 @@ if (document.getElementById('appContainer')) {
         if (typeof PhotoSwipeLightbox === 'undefined') {
             console.error('[PHOTOSWIPE] PhotoSwipe library not loaded!');
             console.log('[PHOTOSWIPE] Available globals:', Object.keys(window).filter(k => k.toLowerCase().includes('photo')));
+            console.log('[PHOTOSWIPE] Window object keys:', Object.keys(window).slice(0, 20));
             return;
         }
         
         console.log('[PHOTOSWIPE] PhotoSwipeLightbox found:', PhotoSwipeLightbox);
+        console.log('[PHOTOSWIPE] PhotoSwipe found:', typeof PhotoSwipe !== 'undefined' ? PhotoSwipe : 'NOT FOUND');
         
         try {
             const lightbox = new PhotoSwipeLightbox({
                 gallery: '#galleryGrid',
                 children: 'a',
-                pswpModule: () => import('https://cdnjs.cloudflare.com/ajax/libs/photoswipe/5.3.7/photoswipe.esm.min.js')
+                pswpModule: PhotoSwipe
             });
             
             lightbox.on('uiRegister', function() {
