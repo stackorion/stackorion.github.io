@@ -1501,59 +1501,68 @@ button:disabled {
 .pswp__top-bar {
     background: transparent !important;
     padding: 16px 20px !important;
-    position: absolute !important;
+    position: fixed !important;
     top: 0 !important;
     left: 0 !important;
     right: 0 !important;
     z-index: 10000 !important;
-    display: flex !important;
-    justify-content: space-between !important;
+    display: grid !important;
+    grid-template-columns: auto 1fr auto !important;
     align-items: center !important;
+    gap: 20px !important;
+    transition: opacity 0.3s ease, transform 0.3s ease !important;
 }
 
-/* Left Group - Counter */
+/* Counter - Left Column */
 .pswp__counter {
+    grid-column: 1 !important;
     position: static !important;
-    background: rgba(0, 0, 0, 0.75);
+    background: rgba(0, 0, 0, 0.8);
     backdrop-filter: blur(10px);
     padding: 8px 16px;
     border-radius: 20px;
     font-size: 14px;
     font-weight: 600;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.25);
     color: #ffffff;
     margin: 0 !important;
-    order: 1;
-    flex-shrink: 0;
 }
 
-/* Right Group Container - All Buttons Together */
+/* Middle - Empty Space */
+.pswp__top-bar > div:nth-child(2) {
+    grid-column: 2 !important;
+}
+
+/* Right Controls - Single Tight Row */
 .pswp__top-bar > div:last-child {
+    grid-column: 3 !important;
     display: flex !important;
     align-items: center !important;
-    gap: 8px !important;
-    order: 2;
-    margin-left: auto !important;
+    gap: 6px !important;
 }
 
 /* All Control Buttons - Uniform Style */
 .pswp__button {
-    background: rgba(0, 0, 0, 0.75) !important;
+    background: rgba(0, 0, 0, 0.8) !important;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
     border-radius: 50% !important;
     width: 44px !important;
     height: 44px !important;
-    transition: all 0.3s ease !important;
+    transition: all 0.25s ease !important;
     cursor: pointer;
     margin: 0 !important;
+    padding: 0 !important;
     position: static !important;
-    flex-shrink: 0;
+    flex-shrink: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
 }
 
 .pswp__button:hover {
-    background: rgba(0, 0, 0, 0.9) !important;
-    border-color: rgba(255, 255, 255, 0.4) !important;
+    background: rgba(0, 0, 0, 0.95) !important;
+    border-color: rgba(255, 255, 255, 0.5) !important;
     transform: scale(1.1);
 }
 
@@ -1561,47 +1570,23 @@ button:disabled {
     transform: scale(0.95);
 }
 
-/* Button Order - Right Side */
-.pswp__button--zoom {
-    order: 7 !important;
-}
-
-.pswp__button--close {
-    order: 10 !important;
-}
-
-.pswp__button.pswp__button--custom {
-    background: rgba(0, 0, 0, 0.75) !important;
-}
-
-/* Custom buttons order */
-.pswp__button.pswp__button--custom:nth-of-type(1) {
-    order: 4 !important; /* Fullscreen */
-}
-
-.pswp__button.pswp__button--custom:nth-of-type(2) {
-    order: 5 !important; /* Download */
-}
-
-.pswp__button.pswp__button--custom:nth-of-type(3) {
-    order: 6 !important; /* Play */
-}
-
 /* Navigation Arrows - Side of Screen */
 .pswp__button--arrow {
     width: 56px !important;
     height: 56px !important;
-    background: rgba(0, 0, 0, 0.75) !important;
+    background: rgba(0, 0, 0, 0.8) !important;
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
     margin: 0 !important;
-    position: absolute !important;
+    position: fixed !important;
     top: 50% !important;
     transform: translateY(-50%) !important;
+    transition: opacity 0.3s ease, transform 0.25s ease !important;
 }
 
 .pswp__button--arrow:hover {
-    background: rgba(0, 0, 0, 0.9) !important;
+    background: rgba(0, 0, 0, 0.95) !important;
+    border-color: rgba(255, 255, 255, 0.5) !important;
     transform: translateY(-50%) scale(1.1) !important;
 }
 
@@ -1611,11 +1596,6 @@ button:disabled {
 
 .pswp__button--arrow--next {
     right: 20px !important;
-}
-
-/* Loading Spinner */
-.pswp__preloader {
-    display: none !important;
 }
 
 /* Caption Area - Bottom Overlay */
@@ -1639,70 +1619,105 @@ button:disabled {
     transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
-/* Hide UI on Idle - Cinema Mode */
+/* UI Visibility States - Cinema Mode */
 .pswp--ui-visible .pswp__top-bar,
-.pswp--ui-visible .pswp__button--arrow {
-    opacity: 1;
-    transition: opacity 0.3s ease;
+.pswp--ui-visible .pswp__button--arrow,
+.pswp--ui-visible .pswp__caption {
+    opacity: 1 !important;
+    pointer-events: auto !important;
 }
 
-.pswp:not(.pswp--ui-visible) .pswp__top-bar,
-.pswp:not(.pswp--ui-visible) .pswp__button--arrow {
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
+.pswp--ui-hidden .pswp__top-bar,
+.pswp--ui-hidden .pswp__button--arrow,
+.pswp--ui-hidden .pswp__caption {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* Cursor changes with UI state */
+.pswp--ui-hidden {
+    cursor: none !important;
+}
+
+.pswp--ui-visible {
+    cursor: default !important;
 }
 
 /* Clean SVG icons */
 .pswp__button svg {
     filter: none !important;
+    pointer-events: none !important;
+}
+
+/* Hide preloader */
+.pswp__preloader {
+    display: none !important;
 }
 
 /* Mobile Optimizations */
 @media (max-width: 768px) {
     .pswp__button {
-        width: 40px !important;
-        height: 40px !important;
+        width: 42px !important;
+        height: 42px !important;
     }
     
     .pswp__button--arrow {
-        width: 48px !important;
-        height: 48px !important;
+        width: 50px !important;
+        height: 50px !important;
     }
     
     .pswp__counter {
-        font-size: 12px;
-        padding: 6px 12px;
+        font-size: 13px;
+        padding: 7px 14px;
     }
     
     .pswp__top-bar {
-        padding: 12px 10px !important;
+        padding: 12px 15px !important;
+        gap: 10px !important;
     }
     
     .pswp__top-bar > div:last-child {
-        gap: 6px !important;
+        gap: 5px !important;
     }
 }
 
 @media (max-width: 480px) {
-    /* Hide zoom button on very small screens */
-    .pswp__button--zoom {
-        display: none !important;
+    .pswp__top-bar {
+        grid-template-columns: auto auto !important;
     }
     
-    /* Hide download on smallest screens */
-    .pswp__button.pswp__button--custom:nth-of-type(2) {
+    /* Stack counter and buttons */
+    .pswp__counter {
+        grid-column: 1 !important;
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+    
+    .pswp__top-bar > div:last-child {
+        grid-column: 2 !important;
+        gap: 4px !important;
+    }
+    
+    .pswp__button {
+        width: 38px !important;
+        height: 38px !important;
+    }
+    
+    /* Hide download button on smallest screens */
+    .pswp__button[aria-label*="download"],
+    .pswp__button[aria-label*="Download"] {
         display: none !important;
     }
 }
 
-/* Ensure proper stacking */
+/* Ensure proper stacking order */
 .pswp__ui {
     z-index: 10001 !important;
 }
 
-.pswp__top-bar > * {
-    flex-shrink: 0;
+/* Force buttons into container */
+.pswp__top-bar * {
+    box-sizing: border-box;
 }
 
 /* Responsive Gallery Grid */

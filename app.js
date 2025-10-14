@@ -1189,6 +1189,40 @@ if (document.getElementById('appContainer')) {
                 preload: [1, 2]
             });
             
+            // Auto-hide UI on mouse idle
+            let uiHideTimeout;
+            let isUIVisible = true;
+            
+            lightbox.on('afterInit', function() {
+                const pswpElement = lightbox.pswp.element;
+                
+                // Function to show UI
+                const showUI = () => {
+                    isUIVisible = true;
+                    pswpElement.classList.add('pswp--ui-visible');
+                    pswpElement.classList.remove('pswp--ui-hidden');
+                    
+                    // Clear existing timeout
+                    if (uiHideTimeout) {
+                        clearTimeout(uiHideTimeout);
+                    }
+                    
+                    // Set new timeout to hide UI after 3 seconds
+                    uiHideTimeout = setTimeout(() => {
+                        isUIVisible = false;
+                        pswpElement.classList.remove('pswp--ui-visible');
+                        pswpElement.classList.add('pswp--ui-hidden');
+                    }, 3000);
+                };
+                
+                // Show UI on mouse move
+                pswpElement.addEventListener('mousemove', showUI);
+                pswpElement.addEventListener('click', showUI);
+                
+                // Show UI initially
+                showUI();
+            });
+            
             // Add fullscreen button to UI
             lightbox.on('uiRegister', function() {
                 console.log('[PHOTOSWIPE] UI Registered successfully');
