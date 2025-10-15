@@ -1020,13 +1020,6 @@ if (document.getElementById('appContainer')) {
         if (!card) return;
         
         const tierId = card.dataset.tierId;
-        
-        // Check if tier is locked based on the CSS class
-        if (card.classList.contains('locked')) {
-            // Show a friendly message instead of navigating
-            alert("This tier is locked. You need a subscription to access this content. Check the platform info for upgrade options!");
-            return;
-        }
 
         history.pushState({view: 'content', platformId, tierId}, '', `?view=content&platform_id=${platformId}&tier_id=${tierId}`);
         router();
