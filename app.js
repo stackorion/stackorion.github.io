@@ -9,6 +9,9 @@ let currentFilterState = { view: 'All', type: 'All', query: '' };
 let searchScope = 'platforms'; // Tracks search scope: 'platforms', 'tiers', or 'content'
 let userInfo = null;
 let userSubscriptions = [];
+// Global Announcement State
+let currentAnnouncement = null;
+let announcementDismissed = false; // Session-based dismissal
 
 // --- Theme Manager ---
 class ThemeManager {
@@ -68,6 +71,136 @@ class ThemeManager {
         });
     }
 }
+
+// --- Global Announcement Notification Manager ---
+class NotificationManager {
+    constructor() {
+        this.announcement = null;
+        this.isDismissed = false;
+    }
+
+    showAnnouncement(announcementData) {
+        if (!announcementData || this.isDismissed) return;
+        
+        this.announcement = announcementData;
+        
+        if (announcementData.display_style === 'banner') {
+            this.showBanner(announcementData);
+        } else if (announcementData.display_style === 'toast') {
+            this.showToast(announcementData);
+        }
+    }
+
+    showBanner(data) {
+        // Remove existing banner if present
+        const existingBanner = document.getElementById('globalAnnouncementBanner');
+        if (existingBanner) existingBanner.remove();
+
+        const banner = document.createElement('div');
+        banner.id = 'globalAnnouncementBanner';
+        banner.className = `announcement-banner announcement-${data.style}`;
+        
+        const messageContainer = document.createElement('div');
+        messageContainer.className = 'announcement-message';
+        messageContainer.innerHTML = data.message_html;
+        
+        const actionsContainer = document.createElement('div');
+        actionsContainer.className = 'announcement-actions';
+        
+        if (data.button_text && data.button_url) {
+            const actionButton = document.createElement('a');
+            actionButton.href = data.button_url;
+            actionButton.target = '_blank';
+            actionButton.className = 'announcement-button';
+            actionButton.textContent = data.button_text;
+            actionsContainer.appendChild(actionButton);
+        }
+        
+        const dismissButton = document.createElement('button');
+        dismissButton.className = 'announcement-dismiss';
+        dismissButton.innerHTML = '×';
+        dismissButton.title = 'Dismiss';
+        dismissButton.onclick = () => this.dismissAnnouncement();
+        actionsContainer.appendChild(dismissButton);
+        
+        banner.appendChild(messageContainer);
+        banner.appendChild(actionsContainer);
+        
+        // Insert banner after header, before renewal banner
+        const appContainer = document.getElementById('appContainer');
+        const header = appContainer ? appContainer.querySelector('header') : null;
+        if (header) {
+            header.after(banner);
+        } else {
+            document.body.prepend(banner);
+        }
+        
+        // Animate in
+        setTimeout(() => banner.classList.add('announcement-visible'), 10);
+    }
+
+    showToast(data) {
+        const toast = document.createElement('div');
+        toast.className = `announcement-toast announcement-${data.style}`;
+        
+        const messageContainer = document.createElement('div');
+        messageContainer.className = 'announcement-message';
+        messageContainer.innerHTML = data.message_html;
+        
+        const actionsContainer = document.createElement('div');
+        actionsContainer.className = 'announcement-actions';
+        
+        if (data.button_text && data.button_url) {
+            const actionButton = document.createElement('a');
+            actionButton.href = data.button_url;
+            actionButton.target = '_blank';
+            actionButton.className = 'announcement-button';
+            actionButton.textContent = data.button_text;
+            actionsContainer.appendChild(actionButton);
+        }
+        
+        const dismissButton = document.createElement('button');
+        dismissButton.className = 'announcement-dismiss';
+        dismissButton.innerHTML = '×';
+        dismissButton.title = 'Dismiss';
+        dismissButton.onclick = () => {
+            toast.classList.remove('announcement-visible');
+            setTimeout(() => toast.remove(), 300);
+            this.isDismissed = true;
+        };
+        actionsContainer.appendChild(dismissButton);
+        
+        toast.appendChild(messageContainer);
+        toast.appendChild(actionsContainer);
+        
+        document.body.appendChild(toast);
+        
+        // Animate in
+        setTimeout(() => toast.classList.add('announcement-visible'), 10);
+        
+        // Auto-dismiss toast after 15 seconds if no action button
+        if (!data.button_text) {
+            setTimeout(() => {
+                if (document.body.contains(toast)) {
+                    toast.classList.remove('announcement-visible');
+                    setTimeout(() => toast.remove(), 300);
+                }
+            }, 15000);
+        }
+    }
+
+    dismissAnnouncement() {
+        const banner = document.getElementById('globalAnnouncementBanner');
+        if (banner) {
+            banner.classList.remove('announcement-visible');
+            setTimeout(() => banner.remove(), 300);
+        }
+        this.isDismissed = true;
+    }
+}
+
+// Initialize notification manager
+const notificationManager = new NotificationManager();
 
 // --- NEW: Load user data from localStorage ---
 function loadUserData() {
@@ -207,6 +340,7 @@ function renderHeaderActions() {
 }
 
 // --- Logic for login.html ---
+// --- Logic for login.html ---
 if (document.getElementById('loginForm')) {
     const loginForm = document.getElementById('loginForm');
     const emailInput = document.getElementById('email');
@@ -256,6 +390,13 @@ if (document.getElementById('loginForm')) {
                     if (profileResponse.ok && profileData.status === 'success') {
                         // Save subscriptions data
                         localStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions));
+                        
+                        // ✅ NEW: Save announcement data if present
+                        if (profileData.announcement) {
+                            localStorage.setItem('global_announcement', JSON.stringify(profileData.announcement));
+                        } else {
+                            localStorage.removeItem('global_announcement');
+                        }
                         
                         // Load user data into global variables
                         loadUserData();
@@ -1302,12 +1443,18 @@ if (document.getElementById('appContainer')) {
 
     // --- Main Application Router ---
     async function router() {
-        // Load user data at the start of router
-        loadUserData();
-        
-        // Render renewal banner and header actions
-        renderRenewalBanner();
-        renderHeaderActions();
+    // Load user data at the start of router
+    loadUserData();
+    
+    // NEW: Check and display global announcement
+    const announcementData = JSON.parse(localStorage.getItem('global_announcement') || 'null');
+    if (announcementData && !announcementDismissed) {
+        notificationManager.showAnnouncement(announcementData);
+    }
+    
+    // Render renewal banner and header actions
+    renderRenewalBanner();
+    renderHeaderActions();
 
         if (!isTokenValid()) {
             window.location.href = 'login.html';
