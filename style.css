@@ -1912,3 +1912,46 @@ button:disabled {
         max-width: none;
     }
 }
+/* Multi-subscription badge styles */
+.subscription-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    background-color: #f0f0f0;
+    border: 2px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.subscription-status-badge.status-active {
+    background-color: #e8f5e9;
+    border-color: #4caf50;
+    color: #2e7d32;
+}
+
+.subscription-status-badge.status-warning {
+    background-color: #fff3e0;
+    border-color: #ff9800;
+    color: #e65100;
+}
+
+.subscription-status-badge.status-expired {
+    background-color: #ffebee;
+    border-color: #f44336;
+    color: #c62828;
+}
+
+.badge-tier-name {
+    font-weight: 600;
+}
+
+.badge-divider {
+    opacity: 0.5;
+}
+
+.badge-status-text {
+    font-weight: 400;
+}

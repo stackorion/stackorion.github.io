@@ -217,6 +217,7 @@ function loadUserData() {
 }
 
 // --- Subscription Status Renderer ---
+// --- Subscription Status Renderer (V3 MULTI-SUBSCRIPTION) ---
 function renderSubscriptionStatus() {
     const subscriptionStatusDiv = document.getElementById('subscriptionStatus');
     if (!subscriptionStatusDiv) return;
@@ -227,46 +228,40 @@ function renderSubscriptionStatus() {
     }
 
     try {
-        // Find the subscription with the latest expiry date
-        const latestSubscription = userSubscriptions.reduce((latest, current) => {
-            if (!latest) return current;
-            const latestExpiry = new Date(latest.end_date);
-            const currentExpiry = new Date(current.end_date);
-            return currentExpiry > latestExpiry ? current : latest;
-        }, null);
+        // Clear previous content
+        subscriptionStatusDiv.innerHTML = '';
+        subscriptionStatusDiv.style.display = 'flex';
+        subscriptionStatusDiv.style.flexWrap = 'wrap';
+        subscriptionStatusDiv.style.gap = '10px';
+        subscriptionStatusDiv.style.alignItems = 'center';
 
-        if (!latestSubscription) {
-            subscriptionStatusDiv.style.display = 'none';
-            return;
-        }
+        // Render each subscription as a badge
+        userSubscriptions.forEach(sub => {
+            const daysRemaining = sub.days_remaining;
+            let statusText, statusClass;
+            
+            if (daysRemaining > 7) {
+                statusText = `Active: ${daysRemaining} days left`;
+                statusClass = 'status-active';
+            } else if (daysRemaining > 0) {
+                statusText = `Expires in ${daysRemaining} days`;
+                statusClass = 'status-warning';
+            } else {
+                statusText = 'Membership Expired';
+                statusClass = 'status-expired';
+            }
 
-        const expiryDate = new Date(latestSubscription.end_date);
-        const now = new Date();
-        const diffTime = expiryDate - now;
-        const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        let statusText, statusClass;
-        if (daysRemaining > 7) {
-            statusText = `Active: ${daysRemaining} days left`;
-            statusClass = 'status-active';
-        } else if (daysRemaining > 0) {
-            statusText = `Expires in ${daysRemaining} days`;
-            statusClass = 'status-warning';
-        } else {
-            statusText = 'Membership Expired';
-            statusClass = 'status-expired';
-        }
-
-        // Build the new HTML structure for the enhanced display
-        subscriptionStatusDiv.innerHTML = `
-            <span class="tier-name-display">${latestSubscription.tier_name}</span>
-            <span class="status-divider">|</span>
-            <span class="status-text">${statusText}</span>
-        `;
-        
-        // Apply class to the main container for overall styling
-        subscriptionStatusDiv.className = `subscription-status ${statusClass}`;
-        subscriptionStatusDiv.style.display = 'flex'; // Use flexbox for alignment
+            // Create subscription badge
+            const badge = document.createElement('div');
+            badge.className = `subscription-status-badge ${statusClass}`;
+            badge.innerHTML = `
+                <span class="badge-tier-name">${sub.tier_name}</span>
+                <span class="badge-divider">|</span>
+                <span class="badge-status-text">${statusText}</span>
+            `;
+            
+            subscriptionStatusDiv.appendChild(badge);
+        });
 
     } catch (error) {
         console.warn('Invalid subscription data:', error);
