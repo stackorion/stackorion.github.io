@@ -283,8 +283,8 @@ function renderRenewalBanner() {
 
     if (!userSubscriptions || userSubscriptions.length === 0) return;
 
-    // Find any expiring subscription
-    const expiringSubscription = userSubscriptions.find(sub => {
+    // Find ALL expiring subscriptions first
+    const expiringSubscriptions = userSubscriptions.filter(sub => {
         if (!sub.end_date) return false;
         const expiryDate = new Date(sub.end_date);
         const now = new Date();
@@ -292,6 +292,14 @@ function renderRenewalBanner() {
         const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         return days <= 7 && days > 0;
     });
+
+    // âœ… PRIORITY LOGIC: Prioritize Echo Chamber renewal link
+    let expiringSubscription = expiringSubscriptions.find(sub => sub.platform_name === 'Echo Chamber' && sub.renewal_url);
+
+    // If no Echo Chamber link, fall back to the first available one
+    if (!expiringSubscription) {
+        expiringSubscription = expiringSubscriptions.find(sub => sub.renewal_url);
+    }
 
     if (expiringSubscription) {
         const expiryDate = new Date(expiringSubscription.end_date);
@@ -319,8 +327,22 @@ function renderRenewalBanner() {
 }
 
 function renderHeaderActions() {
-    // --- 1. Handle Support Link ---
-    const supportUrl = userSubscriptions.length > 0 ? userSubscriptions[0].support_url : null;
+    // --- 1. Handle Support Link with Priority Logic ---
+    let supportUrl = null;
+    if (userSubscriptions.length > 0) {
+        // âœ… PRIORITY LOGIC: Try to find Echo Chamber support URL first
+        const echoChamberSub = userSubscriptions.find(sub => sub.platform_name === 'Echo Chamber' && sub.support_url);
+        if (echoChamberSub) {
+            supportUrl = echoChamberSub.support_url;
+        } else {
+            // Fallback: find the first subscription that has a support URL
+            const fallbackSub = userSubscriptions.find(sub => sub.support_url);
+            if (fallbackSub) {
+                supportUrl = fallbackSub.support_url;
+            }
+        }
+    }
+    
     const supportLink = document.getElementById('supportLink');
 
     if (supportLink && supportUrl) {
