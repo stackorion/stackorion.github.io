@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const messageContainer = document.getElementById('message-container');
     
     // Updated to use the staging API endpoint
-    const API_ENDPOINT = 'https://echo-chamber-staging.onrender.com/api/v1/activate'; 
+    const API_ENDPOINT = 'https://lustroom-downloader-backend.onrender.com/api/v1/activate'; 
 
     form.addEventListener('submit', function(event) {
         event.preventDefault();
