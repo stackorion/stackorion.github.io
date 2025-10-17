@@ -1,5 +1,5 @@
 // Configuration - IMPORTANT: This MUST match your live backend URL
-const API_BASE_URL = "https://echo-chamber-staging.onrender.com/api/v1";
+const API_BASE_URL = "https://lustroom-downloader-backend.onrender.com/api/v1";
 
 // --- State and Data Store ---
 let allPlatformsData = [];
