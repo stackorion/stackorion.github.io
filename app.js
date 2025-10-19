@@ -1294,169 +1294,198 @@ if (document.getElementById('appContainer')) {
     }
 
     function initPhotoSwipe() {
-        console.log('[PHOTOSWIPE] Attempting to initialize PhotoSwipe...');
+    console.log('[PHOTOSWIPE] Attempting to initialize PhotoSwipe...');
+    
+    // Check if PhotoSwipe is loaded
+    if (typeof PhotoSwipeLightbox === 'undefined') {
+        console.error('[PHOTOSWIPE] PhotoSwipe library not loaded!');
+        return;
+    }
+    
+    console.log('[PHOTOSWIPE] PhotoSwipeLightbox found:', PhotoSwipeLightbox);
+    
+    try {
+        const lightbox = new PhotoSwipeLightbox({
+            gallery: '#galleryGrid',
+            children: 'a',
+            pswpModule: PhotoSwipe,
+            bgOpacity: 1,
+            spacing: 0.05,
+            allowPanToNext: true,
+            loop: true,
+            pinchToClose: true,
+            closeOnVerticalDrag: true,
+            showHideAnimationType: 'fade',
+            zoomAnimationDuration: 300,
+            initialZoomLevel: 'fit',
+            secondaryZoomLevel: 1.5,
+            maxZoomLevel: 3,
+            paddingFn: (viewportSize) => {
+                return { top: 20, bottom: 20, left: 20, right: 20 };
+            },
+            arrowKeys: true,
+            preload: [1, 2]
+        });
         
-        // Check if PhotoSwipe is loaded
-        if (typeof PhotoSwipeLightbox === 'undefined') {
-            console.error('[PHOTOSWIPE] PhotoSwipe library not loaded!');
-            console.log('[PHOTOSWIPE] Available globals:', Object.keys(window).filter(k => k.toLowerCase().includes('photo')));
-            console.log('[PHOTOSWIPE] Window object keys:', Object.keys(window).slice(0, 20));
-            return;
+        // --- 🎯 NEW TRACKING LOGIC ---
+        let viewedImageIndexes = new Set();
+        let gallerySlugForTracking = null;
+        
+        // Get slug from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('view') === 'gallery') {
+            gallerySlugForTracking = urlParams.get('slug');
         }
-        
-        console.log('[PHOTOSWIPE] PhotoSwipeLightbox found:', PhotoSwipeLightbox);
-        console.log('[PHOTOSWIPE] PhotoSwipe found:', typeof PhotoSwipe !== 'undefined' ? PhotoSwipe : 'NOT FOUND');
-        
-        try {
-            const lightbox = new PhotoSwipeLightbox({
-                gallery: '#galleryGrid',
-                children: 'a',
-                pswpModule: PhotoSwipe,
-                // Premium theatre-mode configuration
-                bgOpacity: 1,
-                spacing: 0.05,
-                allowPanToNext: true,
-                loop: true,
-                pinchToClose: true,
-                closeOnVerticalDrag: true,
-                showHideAnimationType: 'fade',
-                zoomAnimationDuration: 300,
-                // Fullscreen mode by default
-                initialZoomLevel: 'fit',
-                secondaryZoomLevel: 1.5,
-                maxZoomLevel: 3,
-                // Minimal padding for theatre mode
-                paddingFn: (viewportSize) => {
-                    return {
-                        top: 20,
-                        bottom: 20,
-                        left: 20,
-                        right: 20
+
+        // Track which images are viewed as user navigates
+        lightbox.on('change', () => {
+            if (lightbox.pswp) {
+                const currentIndex = lightbox.pswp.currIndex;
+                viewedImageIndexes.add(currentIndex);
+                console.log(`[TRACKING] User viewed image index: ${currentIndex}. Total unique views: ${viewedImageIndexes.size}`);
+            }
+        });
+
+        // Send tracking data when gallery is closed
+        lightbox.on('close', () => {
+            const totalUniqueViews = viewedImageIndexes.size;
+            console.log(`[TRACKING] Gallery closed. Total unique images viewed: ${totalUniqueViews}`);
+
+            if (totalUniqueViews > 0 && gallerySlugForTracking) {
+                const token = localStorage.getItem('lustroom_jwt');
+                if (token) {
+                    const payload = {
+                        gallery_slug: gallerySlugForTracking,
+                        images_viewed_count: totalUniqueViews
                     };
-                },
-                // Enable keyboard shortcuts
-                arrowKeys: true,
-                // Preload nearby images
-                preload: [1, 2]
-            });
-            
-            // Auto-hide UI on mouse idle
-            let uiHideTimeout;
-            let isUIVisible = true;
-            
-            lightbox.on('afterInit', function() {
-                const pswpElement = lightbox.pswp.element;
-                
-                // Function to show UI
-                const showUI = () => {
-                    isUIVisible = true;
-                    pswpElement.classList.add('pswp--ui-visible');
-                    pswpElement.classList.remove('pswp--ui-hidden');
-                    
-                    // Clear existing timeout
-                    if (uiHideTimeout) {
-                        clearTimeout(uiHideTimeout);
-                    }
-                    
-                    // Set new timeout to hide UI after 3 seconds
-                    uiHideTimeout = setTimeout(() => {
-                        isUIVisible = false;
-                        pswpElement.classList.remove('pswp--ui-visible');
-                        pswpElement.classList.add('pswp--ui-hidden');
-                    }, 3000);
-                };
-                
-                // Show UI on mouse move
-                pswpElement.addEventListener('mousemove', showUI);
-                pswpElement.addEventListener('click', showUI);
-                
-                // Show UI initially
-                showUI();
-            });
-            
-            // Add fullscreen button to UI
-            lightbox.on('uiRegister', function() {
-                console.log('[PHOTOSWIPE] UI Registered successfully');
-                
-                // Add fullscreen button
-                lightbox.pswp.ui.registerElement({
-                    name: 'fullscreen-button',
-                    order: 9,
-                    isButton: true,
-                    html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
-                    onClick: (event, el) => {
-                        if (!document.fullscreenElement) {
-                            lightbox.pswp.element.requestFullscreen();
+
+                    // Fire-and-forget tracking request
+                    fetch(`${API_BASE_URL}/gallery/log_view`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(payload)
+                    })
+                    .then(response => {
+                        if (response.ok) {
+                            console.log('[TRACKING] ✅ Successfully logged gallery view session.');
                         } else {
-                            document.exitFullscreen();
+                            console.warn('[TRACKING] ⚠️ Failed to log gallery view session.');
                         }
-                    }
-                });
+                    })
+                    .catch(error => console.error('[TRACKING] ❌ Network error while logging:', error));
+                }
+            }
+            
+            // Clear the tracking data for next session
+            viewedImageIndexes.clear();
+            gallerySlugForTracking = null;
+        });
+        // --- END TRACKING LOGIC ---
+        
+        // Auto-hide UI on mouse idle
+        let uiHideTimeout;
+        let isUIVisible = true;
+        
+        lightbox.on('afterInit', function() {
+            const pswpElement = lightbox.pswp.element;
+            
+            const showUI = () => {
+                isUIVisible = true;
+                pswpElement.classList.add('pswp--ui-visible');
+                pswpElement.classList.remove('pswp--ui-hidden');
                 
-                // Add download button
-                lightbox.pswp.ui.registerElement({
-                    name: 'download-button',
-                    order: 8,
-                    isButton: true,
-                    html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>',
-                    onClick: (event, el) => {
-                        const currentSlide = lightbox.pswp.currSlide;
-                        const link = document.createElement('a');
-                        link.href = currentSlide.data.src;
-                        link.download = `image-${lightbox.pswp.currIndex + 1}.jpg`;
-                        link.click();
+                if (uiHideTimeout) {
+                    clearTimeout(uiHideTimeout);
+                }
+                
+                uiHideTimeout = setTimeout(() => {
+                    isUIVisible = false;
+                    pswpElement.classList.remove('pswp--ui-visible');
+                    pswpElement.classList.add('pswp--ui-hidden');
+                }, 3000);
+            };
+            
+            pswpElement.addEventListener('mousemove', showUI);
+            pswpElement.addEventListener('click', showUI);
+            showUI();
+        });
+        
+        lightbox.on('uiRegister', function() {
+            console.log('[PHOTOSWIPE] UI Registered successfully');
+            
+            // Fullscreen button
+            lightbox.pswp.ui.registerElement({
+                name: 'fullscreen-button',
+                order: 9,
+                isButton: true,
+                html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
+                onClick: (event, el) => {
+                    if (!document.fullscreenElement) {
+                        lightbox.pswp.element.requestFullscreen();
+                    } else {
+                        document.exitFullscreen();
                     }
-                });
-            });
-            
-            // Add auto-advance feature with keyboard shortcut
-            lightbox.on('change', function() {
-                console.log('[PHOTOSWIPE] Slide changed');
-            });
-            
-            // Add slideshow auto-play
-            let slideshowInterval = null;
-            let isPlaying = false;
-            
-            lightbox.on('uiRegister', function() {
-                // Add play/pause button
-                lightbox.pswp.ui.registerElement({
-                    name: 'play-button',
-                    order: 7,
-                    isButton: true,
-                    html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>',
-                    onClick: (event, el) => {
-                        if (!isPlaying) {
-                            // Start slideshow
-                            isPlaying = true;
-                            el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
-                            slideshowInterval = setInterval(() => {
-                                lightbox.pswp.next();
-                            }, 3000);
-                        } else {
-                            // Stop slideshow
-                            isPlaying = false;
-                            el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
-                            clearInterval(slideshowInterval);
-                        }
-                    }
-                });
-            });
-            
-            // Clean up slideshow on close
-            lightbox.on('close', function() {
-                if (slideshowInterval) {
-                    clearInterval(slideshowInterval);
-                    isPlaying = false;
                 }
             });
             
-            lightbox.init();
-            console.log('[PHOTOSWIPE] PhotoSwipe initialized successfully!');
-        } catch (error) {
-            console.error('[PHOTOSWIPE] Error initializing PhotoSwipe:', error);
-        }
+            // Download button
+            lightbox.pswp.ui.registerElement({
+                name: 'download-button',
+                order: 8,
+                isButton: true,
+                html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>',
+                onClick: (event, el) => {
+                    const currentSlide = lightbox.pswp.currSlide;
+                    const link = document.createElement('a');
+                    link.href = currentSlide.data.src;
+                    link.download = `image-${lightbox.pswp.currIndex + 1}.jpg`;
+                    link.click();
+                }
+            });
+        });
+        
+        // Slideshow functionality
+        let slideshowInterval = null;
+        let isPlaying = false;
+        
+        lightbox.on('uiRegister', function() {
+            lightbox.pswp.ui.registerElement({
+                name: 'play-button',
+                order: 7,
+                isButton: true,
+                html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>',
+                onClick: (event, el) => {
+                    if (!isPlaying) {
+                        isPlaying = true;
+                        el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
+                        slideshowInterval = setInterval(() => {
+                            lightbox.pswp.next();
+                        }, 3000);
+                    } else {
+                        isPlaying = false;
+                        el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
+                        clearInterval(slideshowInterval);
+                    }
+                }
+            });
+        });
+        
+        lightbox.on('close', function() {
+            if (slideshowInterval) {
+                clearInterval(slideshowInterval);
+                isPlaying = false;
+            }
+        });
+        
+        lightbox.init();
+        console.log('[PHOTOSWIPE] PhotoSwipe initialized successfully!');
+    } catch (error) {
+        console.error('[PHOTOSWIPE] Error initializing PhotoSwipe:', error);
     }
+}
 
     // --- Main Application Router ---
     async function router() {
