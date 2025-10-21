@@ -973,13 +973,24 @@ if (document.getElementById('appContainer')) {
                 }
                 cardContent.appendChild(metaInfo);
 
-                if (!link.locked && !isGallery) {
-                    const actionsContainer = document.createElement('div');
-                    actionsContainer.className = 'card-actions';
-                    const copyButton = document.createElement('button');
-                    copyButton.className = 'copy-btn';
-                    copyButton.textContent = 'Copy Link';
-                    actionsContainer.appendChild(copyButton);
+                const actionsContainer = document.createElement('div');
+                actionsContainer.className = 'card-actions';
+
+                if (!link.locked) {
+                    if (isGallery) {
+                        // --- NEW: Add a "View Gallery" button ---
+                        const viewButton = document.createElement('a');
+                        viewButton.className = 'view-gallery-btn';
+                        viewButton.textContent = '🖼️ View Gallery';
+                        viewButton.href = linkUrl;
+                        actionsContainer.appendChild(viewButton);
+                    } else {
+                        // Existing "Copy Link" button for other content types
+                        const copyButton = document.createElement('button');
+                        copyButton.className = 'copy-btn';
+                        copyButton.textContent = 'Copy Link';
+                        actionsContainer.appendChild(copyButton);
+                    }
                     cardContent.appendChild(actionsContainer);
                 }
 

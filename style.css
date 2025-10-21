@@ -2038,3 +2038,20 @@ body.theme-dark .announcement-error {
         display: none;
     }
 }
+.view-gallery-btn {
+    display: inline-block;
+    background-color: var(--color-accent-primary);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 5px;
+    text-decoration: none;
+    font-size: 0.85em;
+    font-weight: 500;
+    transition: background-color var(--transition-duration);
+}
+
+.view-gallery-btn:hover {
+    background-color: var(--color-accent-hover);
+    text-decoration: none;
+    color: #fff;
+}
