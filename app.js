@@ -9,9 +9,6 @@ let currentFilterState = { view: 'All', type: 'All', query: '' };
 let searchScope = 'platforms'; // Tracks search scope: 'platforms', 'tiers', or 'content'
 let userInfo = null;
 let userSubscriptions = [];
-// Global Announcement State
-let currentAnnouncement = null;
-let announcementDismissed = false; // Session-based dismissal
 
 // --- Theme Manager ---
 class ThemeManager {
@@ -72,135 +69,107 @@ class ThemeManager {
     }
 }
 
-// --- Global Announcement Notification Manager ---
-class NotificationManager {
-    constructor() {
-        this.announcement = null;
-        this.isDismissed = false;
+// --- NEW: Announcement Slider for Multiple Announcements ---
+class AnnouncementSlider {
+    constructor(containerSelector) {
+        this.container = document.querySelector(containerSelector);
+        this.swiper = null;
     }
 
-    showAnnouncement(announcementData) {
-        if (!announcementData || this.isDismissed) return;
-        
-        this.announcement = announcementData;
-        
-        if (announcementData.display_style === 'banner') {
-            this.showBanner(announcementData);
-        } else if (announcementData.display_style === 'toast') {
-            this.showToast(announcementData);
+    showAnnouncements(announcements) {
+        if (!this.container || !announcements || announcements.length === 0) {
+            if (this.container) this.container.style.display = 'none';
+            return;
         }
-    }
 
-    showBanner(data) {
-        // Remove existing banner if present
-        const existingBanner = document.getElementById('globalAnnouncementBanner');
-        if (existingBanner) existingBanner.remove();
+        // Build the HTML for the slider
+        let slidesHTML = '';
+        announcements.forEach(ann => {
+            const hasButton = ann.button_text && ann.button_url;
+            
+            slidesHTML += `
+                <div class="swiper-slide announcement-slide announcement-${ann.style}">
+                    <div class="announcement-header">
+                        <strong class="announcement-title">${ann.title}</strong>
+                        <button class="announcement-dismiss" data-slide-dismiss="true" aria-label="Dismiss">×</button>
+                    </div>
+                    <div class="announcement-content">
+                        <p>${ann.message_html}</p>
+                    </div>
+                    ${hasButton ? `<a href="${ann.button_url}" target="_blank" class="announcement-button">${ann.button_text}</a>` : ''}
+                </div>
+            `;
+        });
 
-        const banner = document.createElement('div');
-        banner.id = 'globalAnnouncementBanner';
-        banner.className = `announcement-banner announcement-${data.style}`;
+        this.container.innerHTML = `
+            <div class="swiper announcement-swiper">
+                <div class="swiper-wrapper">${slidesHTML}</div>
+                ${announcements.length > 1 ? '<div class="swiper-pagination"></div>' : ''}
+                ${announcements.length > 1 ? '<div class="swiper-button-next"></div>' : ''}
+                ${announcements.length > 1 ? '<div class="swiper-button-prev"></div>' : ''}
+            </div>
+        `;
         
-        const messageContainer = document.createElement('div');
-        messageContainer.className = 'announcement-message';
-        messageContainer.innerHTML = data.message_html;
-        
-        const actionsContainer = document.createElement('div');
-        actionsContainer.className = 'announcement-actions';
-        
-        if (data.button_text && data.button_url) {
-            const actionButton = document.createElement('a');
-            actionButton.href = data.button_url;
-            actionButton.target = '_blank';
-            actionButton.className = 'announcement-button';
-            actionButton.textContent = data.button_text;
-            actionsContainer.appendChild(actionButton);
-        }
-        
-        const dismissButton = document.createElement('button');
-        dismissButton.className = 'announcement-dismiss';
-        dismissButton.innerHTML = '×';
-        dismissButton.title = 'Dismiss';
-        dismissButton.onclick = () => this.dismissAnnouncement();
-        actionsContainer.appendChild(dismissButton);
-        
-        banner.appendChild(messageContainer);
-        banner.appendChild(actionsContainer);
-        
-        // Insert banner after header, before renewal banner
-        const appContainer = document.getElementById('appContainer');
-        const header = appContainer ? appContainer.querySelector('header') : null;
-        if (header) {
-            header.after(banner);
-        } else {
-            document.body.prepend(banner);
-        }
-        
-        // Animate in
-        setTimeout(() => banner.classList.add('announcement-visible'), 10);
-    }
+        this.container.style.display = 'block';
 
-    showToast(data) {
-        const toast = document.createElement('div');
-        toast.className = `announcement-toast announcement-${data.style}`;
-        
-        const messageContainer = document.createElement('div');
-        messageContainer.className = 'announcement-message';
-        messageContainer.innerHTML = data.message_html;
-        
-        const actionsContainer = document.createElement('div');
-        actionsContainer.className = 'announcement-actions';
-        
-        if (data.button_text && data.button_url) {
-            const actionButton = document.createElement('a');
-            actionButton.href = data.button_url;
-            actionButton.target = '_blank';
-            actionButton.className = 'announcement-button';
-            actionButton.textContent = data.button_text;
-            actionsContainer.appendChild(actionButton);
-        }
-        
-        const dismissButton = document.createElement('button');
-        dismissButton.className = 'announcement-dismiss';
-        dismissButton.innerHTML = '×';
-        dismissButton.title = 'Dismiss';
-        dismissButton.onclick = () => {
-            toast.classList.remove('announcement-visible');
-            setTimeout(() => toast.remove(), 300);
-            this.isDismissed = true;
-        };
-        actionsContainer.appendChild(dismissButton);
-        
-        toast.appendChild(messageContainer);
-        toast.appendChild(actionsContainer);
-        
-        document.body.appendChild(toast);
-        
-        // Animate in
-        setTimeout(() => toast.classList.add('announcement-visible'), 10);
-        
-        // Auto-dismiss toast after 15 seconds if no action button
-        if (!data.button_text) {
-            setTimeout(() => {
-                if (document.body.contains(toast)) {
-                    toast.classList.remove('announcement-visible');
-                    setTimeout(() => toast.remove(), 300);
+        // Initialize Swiper
+        this.swiper = new Swiper('.announcement-swiper', {
+            loop: announcements.length > 1,
+            autoplay: announcements.length > 1 ? {
+                delay: 6000,
+                disableOnInteraction: false,
+                pauseOnMouseEnter: true
+            } : false,
+            speed: 600,
+            effect: 'slide',
+            pagination: announcements.length > 1 ? {
+                el: '.swiper-pagination',
+                clickable: true,
+                dynamicBullets: announcements.length > 5
+            } : false,
+            navigation: announcements.length > 1 ? {
+                nextEl: '.swiper-button-next',
+                prevEl: '.swiper-button-prev',
+            } : false,
+            keyboard: {
+                enabled: true,
+            },
+            a11y: {
+                prevSlideMessage: 'Previous announcement',
+                nextSlideMessage: 'Next announcement',
+            }
+        });
+
+        // Handle dismiss buttons
+        this.container.querySelectorAll('[data-slide-dismiss]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                if (this.swiper && announcements.length > 1) {
+                    // If multiple slides, just remove this one
+                    const slideIndex = this.swiper.activeIndex;
+                    this.swiper.removeSlide(slideIndex);
+                    
+                    // If no slides left, hide container
+                    if (this.swiper.slides.length === 0) {
+                        this.container.style.display = 'none';
+                    }
+                } else {
+                    // Single announcement - hide entire container
+                    this.container.style.display = 'none';
                 }
-            }, 15000);
-        }
+            });
+        });
     }
 
-    dismissAnnouncement() {
-        const banner = document.getElementById('globalAnnouncementBanner');
-        if (banner) {
-            banner.classList.remove('announcement-visible');
-            setTimeout(() => banner.remove(), 300);
+    destroy() {
+        if (this.swiper) {
+            this.swiper.destroy(true, true);
+            this.swiper = null;
         }
-        this.isDismissed = true;
     }
 }
-
-// Initialize notification manager
-const notificationManager = new NotificationManager();
 
 // --- NEW: Load user data from localStorage ---
 function loadUserData() {
@@ -409,10 +378,10 @@ if (document.getElementById('loginForm')) {
                         localStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions));
                         
                         // ✅ NEW: Save announcement data if present
-                        if (profileData.announcement) {
-                            localStorage.setItem('global_announcement', JSON.stringify(profileData.announcement));
+                        if (profileData.announcements) {
+                            localStorage.setItem('global_announcements', JSON.stringify(profileData.announcements));
                         } else {
-                            localStorage.removeItem('global_announcement');
+                            localStorage.removeItem('global_announcements');
                         }
                         
                         // Load user data into global variables
@@ -468,6 +437,7 @@ if (document.getElementById('appContainer')) {
     const searchInput = document.getElementById('searchInput');
 
     const themeManager = new ThemeManager();
+    const announcementSlider = new AnnouncementSlider('#announcementSliderContainer');
 
     // --- Utility Functions ---
     function isTokenValid() {
@@ -1492,11 +1462,9 @@ if (document.getElementById('appContainer')) {
     // Load user data at the start of router
     loadUserData();
     
-    // NEW: Check and display global announcement
-    const announcementData = JSON.parse(localStorage.getItem('global_announcement') || 'null');
-    if (announcementData && !announcementDismissed) {
-        notificationManager.showAnnouncement(announcementData);
-    }
+    // NEW (V2): Load and display multiple announcements
+    const announcementsData = JSON.parse(localStorage.getItem('global_announcements') || '[]');
+    announcementSlider.showAnnouncements(announcementsData);
     
     // Render renewal banner and header actions
     renderRenewalBanner();
