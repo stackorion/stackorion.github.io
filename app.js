@@ -1,5 +1,5 @@
 // Configuration - IMPORTANT: This MUST match your live backend URL
-const API_BASE_URL = "https://lustroom-downloader-backend.onrender.com/api/v1";
+const API_BASE_URL = "https://the-black-zenith-backend.onrender.com/api/v1";
 
 // --- State and Data Store ---
 let allPlatformsData = [];
@@ -1553,6 +1553,6 @@ if (document.getElementById('appContainer')) {
 
     logoutButton.addEventListener('click', () => {
         localStorage.clear();
-        window.location.href = 'login.html';
+        window.location.href = 'index.html';
     });
 }

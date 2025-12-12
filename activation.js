@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const messageContainer = document.getElementById('message-container');
     
     // Updated to use the staging API endpoint
-    const API_ENDPOINT = 'https://lustroom-downloader-backend.onrender.com/api/v1/activate'; 
+    const API_ENDPOINT = 'https://the-black-zenith-backend.onrender.com/api/v1/activate'; 
 
     form.addEventListener('submit', function(event) {
         event.preventDefault();
@@ -38,7 +38,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const loginButton = document.createElement('button');
                 loginButton.textContent = 'Go to Login';
                 loginButton.className = 'login-button';
-                loginButton.onclick = () => window.location.href = 'login.html';
+                loginButton.onclick = () => window.location.href = 'index.html';
                 form.parentElement.appendChild(loginButton);
                 
                 // Keep the button disabled on success to prevent re-submission
