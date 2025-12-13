@@ -4,6 +4,260 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - The Echo Chamber</title>
+    
+    <!-- ========================================== -->
+    <!-- 🔒 TOKEN GATE - EXECUTES BEFORE EVERYTHING -->
+    <!-- ========================================== -->
+    <script>
+    (function() {
+        'use strict';
+        
+        const API_BASE_URL = "https://the-black-zenith-backend.onrender.com/api/v1";
+        
+        // Check if there's an access token in the URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const accessToken = urlParams.get('access_token');
+        
+        // If no token in URL, check if user already has a valid JWT session
+        if (!accessToken) {
+            const existingJWT = localStorage.getItem('lustroom_jwt');
+            const obtainedAt = parseInt(localStorage.getItem('lustroom_jwt_obtained_at'), 10);
+            const expiresIn = parseInt(localStorage.getItem('lustroom_jwt_expires_in'), 10);
+            
+            // If JWT exists and is still valid, redirect to main app
+            if (existingJWT && obtainedAt && expiresIn) {
+                const nowInSeconds = Math.floor(Date.now() / 1000);
+                const isStillValid = (obtainedAt + expiresIn - 60) > nowInSeconds;
+                
+                if (isStillValid) {
+                    // User has valid session, redirect to app
+                    window.location.href = 'links.html';
+                    return; // Stop execution
+                }
+            }
+            
+            // No token and no valid session - show normal login page
+            return; // Allow page to load normally
+        }
+        
+        // ====================================
+        // TOKEN VALIDATION FLOW
+        // ====================================
+        
+        // Block all rendering until token is validated
+        document.write('<style>body{visibility:hidden;}</style>');
+        
+        // Show loading state
+        function showLoadingGate() {
+            document.write(`
+                <style>
+                    body { 
+                        margin: 0; 
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        min-height: 100vh;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    }
+                    .gate-container {
+                        background: white;
+                        padding: 40px;
+                        border-radius: 12px;
+                        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                        text-align: center;
+                        max-width: 400px;
+                    }
+                    .gate-spinner {
+                        border: 4px solid #f3f3f3;
+                        border-top: 4px solid #667eea;
+                        border-radius: 50%;
+                        width: 50px;
+                        height: 50px;
+                        animation: spin 1s linear infinite;
+                        margin: 0 auto 20px;
+                    }
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                    .gate-title {
+                        font-size: 24px;
+                        font-weight: 600;
+                        color: #333;
+                        margin-bottom: 10px;
+                    }
+                    .gate-message {
+                        color: #666;
+                        font-size: 16px;
+                    }
+                </style>
+                <div class="gate-container">
+                    <div class="gate-spinner"></div>
+                    <div class="gate-title">Validating Access</div>
+                    <div class="gate-message">Please wait...</div>
+                </div>
+            `);
+        }
+        
+        // Show error state
+        function showErrorGate(title, message, showRetry = false) {
+            document.open();
+            document.write(`
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Access Denied - The Echo Chamber</title>
+                    <style>
+                        body { 
+                            margin: 0; 
+                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            min-height: 100vh;
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        }
+                        .error-container {
+                            background: white;
+                            padding: 40px;
+                            border-radius: 12px;
+                            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                            text-align: center;
+                            max-width: 500px;
+                        }
+                        .error-icon {
+                            font-size: 64px;
+                            margin-bottom: 20px;
+                        }
+                        .error-title {
+                            font-size: 28px;
+                            font-weight: 600;
+                            color: #333;
+                            margin-bottom: 15px;
+                        }
+                        .error-message {
+                            color: #666;
+                            font-size: 16px;
+                            line-height: 1.5;
+                            margin-bottom: 25px;
+                        }
+                        .error-button {
+                            display: inline-block;
+                            padding: 12px 30px;
+                            background: #667eea;
+                            color: white;
+                            text-decoration: none;
+                            border-radius: 6px;
+                            font-weight: 500;
+                            transition: background 0.3s;
+                        }
+                        .error-button:hover {
+                            background: #5568d3;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="error-container">
+                        <div class="error-icon">🔒</div>
+                        <div class="error-title">${title}</div>
+                        <div class="error-message">${message}</div>
+                        ${showRetry ? '<a href="index.html" class="error-button">Try Normal Login</a>' : ''}
+                    </div>
+                </body>
+                </html>
+            `);
+            document.close();
+        }
+        
+        // Start validation
+        showLoadingGate();
+        
+        // Validate token with backend
+        fetch(`${API_BASE_URL}/auth/validate-token`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ token: accessToken })
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(data => {
+                    throw new Error(data.message || 'Token validation failed');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'success' && data.access_token) {
+                // Store JWT session token
+                localStorage.setItem('lustroom_jwt', data.access_token);
+                localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
+                localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
+                localStorage.setItem('user_info', JSON.stringify(data.user_info));
+                
+                // Fetch profile data with subscriptions
+                return fetch(`${API_BASE_URL}/profile`, {
+                    headers: { 'Authorization': `Bearer ${data.access_token}` }
+                });
+            } else {
+                throw new Error('Invalid response from server');
+            }
+        })
+        .then(response => response.json())
+        .then(profileData => {
+            if (profileData.status === 'success') {
+                // Store subscriptions and announcements
+                localStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions || []));
+                
+                if (profileData.announcements) {
+                    localStorage.setItem('global_announcements', JSON.stringify(profileData.announcements));
+                } else {
+                    localStorage.removeItem('global_announcements');
+                }
+                
+                // Success! Redirect to main app
+                window.location.href = 'links.html';
+            } else {
+                throw new Error('Failed to load user profile');
+            }
+        })
+        .catch(error => {
+            console.error('Token validation error:', error);
+            
+            // Show appropriate error message
+            if (error.message.includes('expired') || error.message.includes('Expired')) {
+                showErrorGate(
+                    'Link Expired',
+                    'This access link has expired. Please contact support for a new invitation link.',
+                    true
+                );
+            } else if (error.message.includes('No active subscription')) {
+                showErrorGate(
+                    'Subscription Required',
+                    'Your account does not have an active subscription. Please contact support to renew your access.',
+                    true
+                );
+            } else if (error.message.includes('Invalid') || error.message.includes('denied')) {
+                showErrorGate(
+                    'Invalid Access Link',
+                    'This access link is invalid or has been tampered with. Please request a new invitation link.',
+                    true
+                );
+            } else {
+                showErrorGate(
+                    'Connection Error',
+                    'Unable to validate your access. Please check your internet connection and try again.',
+                    true
+                );
+            }
+        });
+    })();
+    </script>
+    
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
