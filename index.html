@@ -3,7 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - The Echo Chamber</title>
+    <title>404 - Page Not Found</title>
+    
+    <!-- 🔒 NUCLEAR GATE - HIDE EVERYTHING IMMEDIATELY -->
+    <style>
+        html, body {
+            display: none !important;
+            visibility: hidden !important;
+        }
+    </style>
     
     <!-- ========================================== -->
     <!-- 🔒 TOKEN GATE - EXECUTES BEFORE EVERYTHING -->
@@ -13,6 +21,102 @@
         'use strict';
         
         const API_BASE_URL = "https://the-black-zenith-backend.onrender.com/api/v1";
+        
+        // ====================================
+        // RATE LIMITING - Prevent brute force
+        // ====================================
+        function checkRateLimit() {
+            const failedAttempts = parseInt(localStorage.getItem('failed_auth_attempts') || '0', 10);
+            const lastAttempt = parseInt(localStorage.getItem('last_failed_attempt') || '0', 10);
+            const timeSince = Date.now() - lastAttempt;
+            const ONE_HOUR = 3600000;
+            
+            if (failedAttempts >= 5 && timeSince < ONE_HOUR) {
+                const minutesRemaining = Math.ceil((ONE_HOUR - timeSince) / 60000);
+                show404(true, minutesRemaining);
+                return false;
+            }
+            
+            return true;
+        }
+        
+        function recordFailedAttempt() {
+            const current = parseInt(localStorage.getItem('failed_auth_attempts') || '0', 10);
+            localStorage.setItem('failed_auth_attempts', (current + 1).toString());
+            localStorage.setItem('last_failed_attempt', Date.now().toString());
+        }
+        
+        function clearFailedAttempts() {
+            localStorage.removeItem('failed_auth_attempts');
+            localStorage.removeItem('last_failed_attempt');
+        }
+        
+        // ====================================
+        // STEALTH 404 PAGE - Looks like GitHub Pages
+        // ====================================
+        function show404(rateLimited = false, minutesRemaining = 0) {
+            const message = rateLimited 
+                ? `<p style="color: #586069; font-size: 14px;">Too many requests. Please try again in ${minutesRemaining} minute${minutesRemaining > 1 ? 's' : ''}.</p>`
+                : '<p style="color: #586069; font-size: 14px;">This is not the web page you are looking for.</p>';
+            
+            document.open();
+            document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>404 - Page Not Found</title>
+                    <style>
+                        body { 
+                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+                            margin: 0;
+                            padding: 0;
+                            background: #fff;
+                        }
+                        .container { 
+                            max-width: 600px; 
+                            margin: 0 auto; 
+                            padding: 100px 40px; 
+                            text-align: center; 
+                        }
+                        h1 { 
+                            font-size: 48px; 
+                            margin-bottom: 10px;
+                            font-weight: 300;
+                            color: #24292e;
+                        }
+                        p { 
+                            color: #586069; 
+                            font-size: 16px;
+                            line-height: 1.5;
+                        }
+                        .logo {
+                            width: 32px;
+                            height: 32px;
+                            margin-bottom: 20px;
+                            opacity: 0.5;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <svg class="logo" height="32" viewBox="0 0 16 16" width="32" fill="#24292e">
+                            <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+                        </svg>
+                        <h1>404</h1>
+                        ${message}
+                    </div>
+                </body>
+                </html>
+            `);
+            document.close();
+        }
+        
+        // Check rate limit first
+        if (!checkRateLimit()) {
+            return; // Already showing 404 with rate limit message
+        }
         
         // Check if there's an access token in the URL
         const urlParams = new URLSearchParams(window.location.search);
@@ -36,91 +140,25 @@
                 }
             }
             
-            // 🔒 STRICT GATE: No token + No session = ACCESS DENIED
-            // Block all rendering first
-            document.write('<style>body{display:none;}</style>');
-            
-            // Show access denied page
-            showErrorGate(
-                'Access Restricted',
-                'This portal is private. You need a valid invitation link to enter.',
-                false // Do not show retry button
-            );
-            
-            // Stop further execution so the login form doesn't render
-            throw new Error('Access Denied');
+            // 🔒 NUCLEAR OPTION: No token + No session = STEALTH 404
+            show404();
+            return;
         }
         
         // ====================================
         // TOKEN VALIDATION FLOW
         // ====================================
         
-        // Block all rendering until token is validated
-        document.write('<style>body{visibility:hidden;}</style>');
-        
         // Show loading state
-        function showLoadingGate() {
-            document.write(`
-                <style>
-                    body { 
-                        margin: 0; 
-                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        min-height: 100vh;
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    }
-                    .gate-container {
-                        background: white;
-                        padding: 40px;
-                        border-radius: 12px;
-                        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-                        text-align: center;
-                        max-width: 400px;
-                    }
-                    .gate-spinner {
-                        border: 4px solid #f3f3f3;
-                        border-top: 4px solid #667eea;
-                        border-radius: 50%;
-                        width: 50px;
-                        height: 50px;
-                        animation: spin 1s linear infinite;
-                        margin: 0 auto 20px;
-                    }
-                    @keyframes spin {
-                        0% { transform: rotate(0deg); }
-                        100% { transform: rotate(360deg); }
-                    }
-                    .gate-title {
-                        font-size: 24px;
-                        font-weight: 600;
-                        color: #333;
-                        margin-bottom: 10px;
-                    }
-                    .gate-message {
-                        color: #666;
-                        font-size: 16px;
-                    }
-                </style>
-                <div class="gate-container">
-                    <div class="gate-spinner"></div>
-                    <div class="gate-title">Validating Access</div>
-                    <div class="gate-message">Please wait...</div>
-                </div>
-            `);
-        }
-        
-        // Show error state
-        function showErrorGate(title, message, showRetry = false) {
+        function showLoading() {
             document.open();
             document.write(`
                 <!DOCTYPE html>
-                <html lang="en">
+                <html>
                 <head>
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Access Denied - The Echo Chamber</title>
+                    <title>Validating Access...</title>
                     <style>
                         body { 
                             margin: 0; 
@@ -131,51 +169,44 @@
                             min-height: 100vh;
                             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                         }
-                        .error-container {
+                        .gate-container {
                             background: white;
                             padding: 40px;
                             border-radius: 12px;
                             box-shadow: 0 10px 40px rgba(0,0,0,0.2);
                             text-align: center;
-                            max-width: 500px;
+                            max-width: 400px;
                         }
-                        .error-icon {
-                            font-size: 64px;
-                            margin-bottom: 20px;
+                        .gate-spinner {
+                            border: 4px solid #f3f3f3;
+                            border-top: 4px solid #667eea;
+                            border-radius: 50%;
+                            width: 50px;
+                            height: 50px;
+                            animation: spin 1s linear infinite;
+                            margin: 0 auto 20px;
                         }
-                        .error-title {
-                            font-size: 28px;
+                        @keyframes spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                        .gate-title {
+                            font-size: 24px;
                             font-weight: 600;
                             color: #333;
-                            margin-bottom: 15px;
+                            margin-bottom: 10px;
                         }
-                        .error-message {
+                        .gate-message {
                             color: #666;
                             font-size: 16px;
-                            line-height: 1.5;
-                            margin-bottom: 25px;
-                        }
-                        .error-button {
-                            display: inline-block;
-                            padding: 12px 30px;
-                            background: #667eea;
-                            color: white;
-                            text-decoration: none;
-                            border-radius: 6px;
-                            font-weight: 500;
-                            transition: background 0.3s;
-                        }
-                        .error-button:hover {
-                            background: #5568d3;
                         }
                     </style>
                 </head>
                 <body>
-                    <div class="error-container">
-                        <div class="error-icon">🔒</div>
-                        <div class="error-title">${title}</div>
-                        <div class="error-message">${message}</div>
-                        ${showRetry ? '<a href="index.html" class="error-button">Try Normal Login</a>' : ''}
+                    <div class="gate-container">
+                        <div class="gate-spinner"></div>
+                        <div class="gate-title">Validating Access</div>
+                        <div class="gate-message">Please wait...</div>
                     </div>
                 </body>
                 </html>
@@ -183,8 +214,14 @@
             document.close();
         }
         
+        // Show error (uses stealth 404)
+        function showError() {
+            recordFailedAttempt();
+            show404();
+        }
+        
         // Start validation
-        showLoadingGate();
+        showLoading();
         
         // Validate token with backend
         fetch(`${API_BASE_URL}/auth/validate-token`, {
@@ -196,9 +233,7 @@
         })
         .then(response => {
             if (!response.ok) {
-                return response.json().then(data => {
-                    throw new Error(data.message || 'Token validation failed');
-                });
+                throw new Error('Token validation failed');
             }
             return response.json();
         })
@@ -230,6 +265,9 @@
                     localStorage.removeItem('global_announcements');
                 }
                 
+                // Clear failed attempts on success
+                clearFailedAttempts();
+                
                 // Success! Redirect to main app
                 window.location.href = 'links.html';
             } else {
@@ -238,66 +276,16 @@
         })
         .catch(error => {
             console.error('Token validation error:', error);
-            
-            // Show appropriate error message
-            if (error.message.includes('expired') || error.message.includes('Expired')) {
-                showErrorGate(
-                    'Link Expired',
-                    'This access link has expired. Please contact support for a new invitation link.',
-                    true
-                );
-            } else if (error.message.includes('No active subscription')) {
-                showErrorGate(
-                    'Subscription Required',
-                    'Your account does not have an active subscription. Please contact support to renew your access.',
-                    true
-                );
-            } else if (error.message.includes('Invalid') || error.message.includes('denied')) {
-                showErrorGate(
-                    'Invalid Access Link',
-                    'This access link is invalid or has been tampered with. Please request a new invitation link.',
-                    true
-                );
-            } else {
-                showErrorGate(
-                    'Connection Error',
-                    'Unable to validate your access. Please check your internet connection and try again.',
-                    true
-                );
-            }
+            showError();
         });
     })();
     </script>
-    
-    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <div class="login-header">
-            <h1>The Echo Chamber</h1>
-            <p>Member Access</p>
-        </div>
-        
-        <form id="loginForm">
-            <div class="form-group">
-                <label for="email">Email Address</label>
-                <input type="email" id="email" name="email" required autocomplete="email">
-            </div>
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" required autocomplete="current-password">
-            </div>
-            <button type="submit">Login</button>
-        </form>
-        
-        <div id="errorMessage" class="error-message" style="display:none;"></div>
-        <div id="loadingMessage" class="loading-message" style="display:none;">Logging in...</div>
-        
-        <p style="text-align: center; font-size: 0.8em; color: #777; margin-top: 25px;">
-            First time here? <a href="activate.html" style="color: #00aaff;">Activate your account</a>.
-        </p>
+    <!-- This body content will NEVER render if the gate is working -->
+    <!-- It only exists as a fallback for ancient browsers -->
+    <div style="display:none;">
+        <p>Loading...</p>
     </div>
-
-    <script src="app.js"></script>
 </body>
 </html>
