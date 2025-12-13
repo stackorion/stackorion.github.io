@@ -36,8 +36,19 @@
                 }
             }
             
-            // No token and no valid session - show normal login page
-            return; // Allow page to load normally
+            // 🔒 STRICT GATE: No token + No session = ACCESS DENIED
+            // Block all rendering first
+            document.write('<style>body{display:none;}</style>');
+            
+            // Show access denied page
+            showErrorGate(
+                'Access Restricted',
+                'This portal is private. You need a valid invitation link to enter.',
+                false // Do not show retry button
+            );
+            
+            // Stop further execution so the login form doesn't render
+            throw new Error('Access Denied');
         }
         
         // ====================================
