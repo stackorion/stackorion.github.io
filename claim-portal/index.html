@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Access Activation Portal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 100%;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 28px;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+        
+        .subtitle {
+            color: #7f8c8d;
+            font-size: 15px;
+            margin-bottom: 35px;
+        }
+        
+        .input-group {
+            margin-bottom: 25px;
+        }
+        
+        label {
+            display: block;
+            text-align: left;
+            margin-bottom: 8px;
+            color: #34495e;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 18px;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        button {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .message {
+            margin-top: 20px;
+            padding: 14px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .message.error {
+            background: #fee;
+            color: #c33;
+            border: 1px solid #fcc;
+        }
+        
+        .message.success {
+            background: #efe;
+            color: #393;
+            border: 1px solid #cfc;
+        }
+        
+        .message.info {
+            background: #e3f2fd;
+            color: #1976d2;
+            border: 1px solid #bbdefb;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .help-text {
+            margin-top: 25px;
+            padding-top: 25px;
+            border-top: 1px solid #e0e0e0;
+            font-size: 13px;
+            color: #7f8c8d;
+            line-height: 1.6;
+        }
+        
+        .help-text a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        
+        .help-text a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Access Activation</h1>
+        <p class="subtitle">Enter your claim code to activate your membership</p>
+        
+        <form id="claimForm">
+            <div class="input-group">
+                <label for="claimCode">Claim Code</label>
+                <input 
+                    type="text" 
+                    id="claimCode" 
+                    name="claimCode" 
+                    placeholder="XXX-XXX-XXX"
+                    maxlength="11"
+                    autocomplete="off"
+                    autocorrect="off"
+                    autocapitalize="characters"
+                    spellcheck="false"
+                    required
+                    autofocus
+                >
+            </div>
+            
+            <button type="submit" id="submitBtn">
+                Activate Access
+            </button>
+        </form>
+        
+        <div id="message" class="message"></div>
+        
+        <div class="help-text">
+            <p>Your claim code was sent to your email.</p>
+            <p>Need help? Contact support at your registered email.</p>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE_URL = "https://the-black-zenith-backend.onrender.com/api/v1";
+        
+        const form = document.getElementById('claimForm');
+        const input = document.getElementById('claimCode');
+        const submitBtn = document.getElementById('submitBtn');
+        const messageDiv = document.getElementById('message');
+        
+        // Auto-format input with hyphens
+        input.addEventListener('input', (e) => {
+            let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            
+            // Add hyphens after every 3 characters
+            if (value.length > 3) {
+                value = value.slice(0, 3) + '-' + value.slice(3);
+            }
+            if (value.length > 7) {
+                value = value.slice(0, 7) + '-' + value.slice(7);
+            }
+            
+            e.target.value = value.slice(0, 11); // Max length with hyphens
+        });
+        
+        function showMessage(text, type) {
+            messageDiv.textContent = text;
+            messageDiv.className = `message ${type}`;
+            messageDiv.style.display = 'block';
+        }
+        
+        function hideMessage() {
+            messageDiv.style.display = 'none';
+        }
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideMessage();
+            
+            const code = input.value.trim();
+            
+            if (!code) {
+                showMessage('Please enter your claim code', 'error');
+                return;
+            }
+            
+            // Disable form
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="loading"></span>';
+            input.disabled = true;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/claim/validate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ code: code })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.status === 'success') {
+                    // Success! Redirect to access URL
+                    showMessage('✓ Activating your access...', 'success');
+                    
+                    // Redirect after short delay
+                    setTimeout(() => {
+                        window.location.href = data.access_url;
+                    }, 1000);
+                } else {
+                    // Handle errors
+                    let errorMessage = data.message || 'Invalid claim code';
+                    
+                    if (response.status === 410) {
+                        errorMessage = 'This code has already been used or has expired';
+                    } else if (response.status === 404) {
+                        errorMessage = 'Invalid claim code. Please check and try again';
+                    }
+                    
+                    showMessage(errorMessage, 'error');
+                    
+                    // Re-enable form
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Activate Access';
+                    input.disabled = false;
+                    input.focus();
+                }
+                
+            } catch (error) {
+                console.error('Validation error:', error);
+                showMessage('Connection error. Please check your internet and try again.', 'error');
+                
+                // Re-enable form
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Activate Access';
+                input.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
