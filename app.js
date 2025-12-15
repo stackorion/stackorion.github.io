@@ -1,5 +1,5 @@
 // Configuration - IMPORTANT: This MUST match your live backend URL
-const API_BASE_URL = "https://the-black-zenith-backend.onrender.com/api/v1";
+const API_BASE_URL = "https://api-gateway-96c7cdb8.workers.dev/api/v1";
 
 // --- State and Data Store ---
 let allPlatformsData = [];
