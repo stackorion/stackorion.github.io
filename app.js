@@ -178,7 +178,7 @@ function loadUserData() {
         userSubscriptions = JSON.parse(localStorage.getItem('user_subscriptions') || '[]');
         return true;
     } catch (error) {
-        console.error('Error loading user data:', error);
+        // Silently handle error without logging to console
         userInfo = null;
         userSubscriptions = [];
         return false;
@@ -233,7 +233,7 @@ function renderSubscriptionStatus() {
         });
 
     } catch (error) {
-        console.warn('Invalid subscription data:', error);
+        // Silently handle error without logging to console
         subscriptionStatusDiv.style.display = 'none';
     }
 }
@@ -394,7 +394,7 @@ if (document.getElementById('loginForm')) {
                         showLoading(false);
                     }
                 } catch (profileError) {
-                    console.error("Profile fetch error:", profileError);
+                    // Silently handle error without logging to console
                     displayError("An error occurred while loading your profile. Please try again.");
                     showLoading(false);
                 }
@@ -404,7 +404,7 @@ if (document.getElementById('loginForm')) {
             }
         } catch (error) {
             showLoading(false);
-            console.error("Login request error:", error);
+            // Silently handle error without logging to console
             displayError("An error occurred while trying to log in. Please check your internet connection or try again later.");
         }
     });
@@ -461,7 +461,7 @@ if (document.getElementById('appContainer')) {
             const thresholdDate = new Date(now.getTime() - (daysThreshold * 24 * 60 * 60 * 1000));
             return contentDate > thresholdDate;
         } catch (error) {
-            console.warn('Invalid date string:', dateString);
+            // Silently handle error without logging to console
             return false;
         }
     }
@@ -475,7 +475,7 @@ if (document.getElementById('appContainer')) {
             const diffDays = Math.floor(diffTime / (24 * 60 * 60 * 1000));
             return diffDays === 0 ? 'Today' : `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
         } catch (error) {
-            console.warn('Invalid date string for days ago:', dateString);
+            // Silently handle error without logging to console
             return '';
         }
     }
@@ -514,7 +514,7 @@ if (document.getElementById('appContainer')) {
                             event.target.classList.remove('copied');
                         }, 2000);
                     }).catch(err => {
-                        console.error('Failed to copy:', err);
+                        // Silently handle error without logging to console
                     });
                 }
             }
@@ -809,7 +809,7 @@ if (document.getElementById('appContainer')) {
         const tiersData = allTiersData[platformId];
 
         if (!tiersData || !Array.isArray(tiersData)) {
-            console.error('Tiers data not found for platform:', platformId, 'Available data:', allTiersData);
+            // Silently handle error without logging to console
             displayError("Unable to load tiers for this platform.");
             return;
         }
@@ -827,20 +827,6 @@ if (document.getElementById('appContainer')) {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
-            
-            // ===== DEBUG LOGGING =====
-            console.log('[DEBUG] Raw API response:', data);
-            if (data.content) {
-                console.log('[DEBUG] Content keys:', Object.keys(data.content));
-                for (const [tierName, links] of Object.entries(data.content)) {
-                    const galleryLinks = links.filter(l => l.content_type === 'Gallery');
-                    console.log(`[DEBUG] Tier "${tierName}": ${links.length} total links, ${galleryLinks.length} galleries`);
-                    galleryLinks.forEach(g => {
-                        console.log(`[DEBUG] Gallery found: "${g.title}" (URL: ${g.url})`);
-                    });
-                }
-            }
-            // ===== END DEBUG LOGGING =====
             
             if (response.ok && data.status === 'success' && data.content) {
                 currentContentData = data.content;
@@ -870,7 +856,7 @@ if (document.getElementById('appContainer')) {
                 displayError(data.message || "Failed to fetch content.");
             }
         } catch (error) {
-            console.error("Fetch content error:", error);
+            // Silently handle error without logging to console
             displayError("An error occurred while fetching content.");
         }
     }
@@ -891,14 +877,14 @@ if (document.getElementById('appContainer')) {
             tierGroup.className = 'tier-group';
             links.forEach(link => {
                 const isRecentContent = isRecent(link.added_at);
-                console.log(`Render: Link "${link.title}" - Recent: ${isRecentContent}, Added: ${link.added_at}`);
+                // Removed console.log that was exposing backend details
 
                 const card = document.createElement('div');
                 card.className = 'link-card';
                 if (link.locked) card.classList.add('locked');
                 if (isRecentContent) {
                     card.classList.add('is-new');
-                    console.log(`Applied is-new class to "${link.title}"`);
+                    // Removed console.log that was exposing backend details
                 }
                 card.dataset.contentType = link.content_type || 'Video';
                 card.dataset.recentStatus = isRecentContent ? 'true' : 'false';
@@ -919,7 +905,7 @@ if (document.getElementById('appContainer')) {
                         newBadge.className = 'new-badge';
                         newBadge.textContent = `New! (${getDaysAgo(link.added_at)})`;
                         thumbnailContainer.appendChild(newBadge);
-                        console.log(`Added thumbnail badge to "${link.title}" with text: ${newBadge.textContent}`);
+                        // Removed console.log that was exposing backend details
                     }
                     const thumbnailImage = document.createElement('img');
                     thumbnailImage.src = link.thumbnail_url;
@@ -954,7 +940,7 @@ if (document.getElementById('appContainer')) {
                     newBadgeText.className = 'new-badge-text';
                     newBadgeText.textContent = `New! (${getDaysAgo(link.added_at)})`;
                     title.appendChild(newBadgeText);
-                    console.log(`Added text badge to "${link.title}" with text: ${newBadgeText.textContent}`);
+                    // Removed console.log that was exposing backend details
                 }
                 cardContent.appendChild(title);
 
@@ -1111,15 +1097,13 @@ if (document.getElementById('appContainer')) {
             if (view === 'Recent' && isRecentContent) {
                 card.classList.add('recent-highlight');
                 const badge = card.querySelector('.new-badge') || card.querySelector('.new-badge-text');
-                if (badge) {
-                    console.log(`Badge visible for card: ${card.querySelector('h3')?.textContent}`);
-                }
+                // Removed console.log that was exposing backend details
             } else {
                 card.classList.remove('recent-highlight');
             }
 
             if (shouldShow) hasVisibleContent = true;
-            console.log(`Filter: Card "${card.querySelector('h3')?.textContent}" - Show: ${shouldShow}, Recent: ${isRecentContent}, Type: ${card.dataset.contentType}, Query: ${query}`);
+            // Removed console.log that was exposing backend details
         });
 
         document.querySelectorAll('.tier-group').forEach(group => {
@@ -1191,7 +1175,7 @@ if (document.getElementById('appContainer')) {
             });
             const data = await response.json();
             
-            console.log('[GALLERY DEBUG] API Response:', data);
+            // Removed console.log that was exposing backend details
             
             if (response.ok && data.status === 'success' && data.gallery) {
                 renderGallery(data.gallery);
@@ -1202,13 +1186,13 @@ if (document.getElementById('appContainer')) {
                 displayError(data.message || "Failed to fetch gallery.");
             }
         } catch (error) {
-            console.error("Fetch gallery error:", error);
+            // Silently handle error without logging to console
             displayError("An error occurred while fetching the gallery.");
         }
     }
 
     function renderGallery(galleryData) {
-        console.log('[GALLERY DEBUG] Rendering gallery:', galleryData);
+        // Removed console.log that was exposing backend details
         
         mainContent.innerHTML = `
             <div class="view-header">
@@ -1226,10 +1210,10 @@ if (document.getElementById('appContainer')) {
         
         const galleryGrid = document.getElementById('galleryGrid');
         
-        console.log('[GALLERY DEBUG] Number of images:', galleryData.images.length);
+        // Removed console.log that was exposing backend details
         
         galleryData.images.forEach((image, index) => {
-            console.log(`[GALLERY DEBUG] Image ${index}:`, image.url);
+            // Removed console.log that was exposing backend details
             
             const item = document.createElement('div');
             item.className = 'gallery-item';
@@ -1246,7 +1230,7 @@ if (document.getElementById('appContainer')) {
             tempImg.onload = function() {
                 linkElement.setAttribute('data-pswp-width', this.naturalWidth.toString());
                 linkElement.setAttribute('data-pswp-height', this.naturalHeight.toString());
-                console.log(`[GALLERY DEBUG] Image ${index} dimensions: ${this.naturalWidth}x${this.naturalHeight}`);
+                // Removed console.log that was exposing backend details
             };
             tempImg.src = image.url;
             
@@ -1275,15 +1259,13 @@ if (document.getElementById('appContainer')) {
     }
 
     function initPhotoSwipe() {
-    console.log('[PHOTOSWIPE] Attempting to initialize PhotoSwipe...');
+    // Removed console.log that was exposing backend details
     
     // Check if PhotoSwipe is loaded
     if (typeof PhotoSwipeLightbox === 'undefined') {
-        console.error('[PHOTOSWIPE] PhotoSwipe library not loaded!');
+        // Silently handle error without logging to console
         return;
     }
-    
-    console.log('[PHOTOSWIPE] PhotoSwipeLightbox found:', PhotoSwipeLightbox);
     
     try {
         const lightbox = new PhotoSwipeLightbox({
@@ -1323,14 +1305,14 @@ if (document.getElementById('appContainer')) {
             if (lightbox.pswp) {
                 const currentIndex = lightbox.pswp.currIndex;
                 viewedImageIndexes.add(currentIndex);
-                console.log(`[TRACKING] User viewed image index: ${currentIndex}. Total unique views: ${viewedImageIndexes.size}`);
+                // Removed console.log that was exposing backend details
             }
         });
 
         // Send tracking data when gallery is closed
         lightbox.on('close', () => {
             const totalUniqueViews = viewedImageIndexes.size;
-            console.log(`[TRACKING] Gallery closed. Total unique images viewed: ${totalUniqueViews}`);
+            // Removed console.log that was exposing backend details
 
             if (totalUniqueViews > 0 && gallerySlugForTracking) {
                 const token = localStorage.getItem('lustroom_jwt');
@@ -1351,12 +1333,14 @@ if (document.getElementById('appContainer')) {
                     })
                     .then(response => {
                         if (response.ok) {
-                            console.log('[TRACKING] ✅ Successfully logged gallery view session.');
+                            // Removed console.log that was exposing backend details
                         } else {
-                            console.warn('[TRACKING] ⚠️ Failed to log gallery view session.');
+                            // Removed console.log that was exposing backend details
                         }
                     })
-                    .catch(error => console.error('[TRACKING] ❌ Network error while logging:', error));
+                    .catch(error => {
+                        // Silently handle error without logging to console
+                    });
                 }
             }
             
@@ -1395,7 +1379,7 @@ if (document.getElementById('appContainer')) {
         });
         
         lightbox.on('uiRegister', function() {
-            console.log('[PHOTOSWIPE] UI Registered successfully');
+            // Removed console.log that was exposing backend details
             
             // Fullscreen button
             lightbox.pswp.ui.registerElement({
@@ -1462,9 +1446,9 @@ if (document.getElementById('appContainer')) {
         });
         
         lightbox.init();
-        console.log('[PHOTOSWIPE] PhotoSwipe initialized successfully!');
+        // Removed console.log that was exposing backend details
     } catch (error) {
-        console.error('[PHOTOSWIPE] Error initializing PhotoSwipe:', error);
+        // Silently handle error without logging to console
     }
 }
 
@@ -1538,7 +1522,7 @@ if (document.getElementById('appContainer')) {
 
             renderSubscriptionStatus();
         } catch (error) {
-            console.error("Router error:", error);
+            // Silently handle error without logging to console
             displayError("An error occurred while loading the page. Please try again.");
         }
     }
