@@ -69,6 +69,254 @@ class ThemeManager {
     }
 }
 
+// --- Video Token Refresh Manager ---
+class VideoTokenRefreshManager {
+    constructor() {
+        this.activeVideos = new Map(); // videoId -> { player, tierId, libraryId, timer }
+        this.refreshInterval = 90000; // 90 seconds (refresh before 120s expiry)
+    }
+
+    registerVideo(videoId, player, tierId, libraryId) {
+        // Clear existing timer if any
+        if (this.activeVideos.has(videoId)) {
+            clearInterval(this.activeVideos.get(videoId).timer);
+        }
+
+        // Start refresh timer
+        const timer = setInterval(() => {
+            this.refreshVideoToken(videoId, tierId, libraryId, player);
+        }, this.refreshInterval);
+
+        this.activeVideos.set(videoId, { player, tierId, libraryId, timer });
+    }
+
+    async refreshVideoToken(videoId, tierId, libraryId, player) {
+        try {
+            const token = localStorage.getItem('lustroom_jwt');
+            if (!token) {
+                this.stopRefresh(videoId);
+                return;
+            }
+
+            const response = await fetch(`${API_BASE_URL}/refresh-video-token`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    video_id: videoId,
+                    library_id: libraryId
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.status === 'success') {
+                // Update player source with new URL
+                const currentTime = player.currentTime();
+                const wasPaused = player.paused();
+                
+                player.src({
+                    src: data.url,
+                    type: 'application/x-mpegURL'
+                });
+
+                // Restore playback state
+                player.one('loadedmetadata', () => {
+                    player.currentTime(currentTime);
+                    if (!wasPaused) {
+                        player.play();
+                    }
+                });
+
+            } else if (response.status === 403) {
+                // Subscription expired
+                this.stopRefresh(videoId);
+                player.pause();
+                player.error({
+                    code: 4,
+                    message: 'Your subscription has expired. Please renew to continue.'
+                });
+            }
+        } catch (error) {
+            // Silently handle refresh errors
+        }
+    }
+
+    stopRefresh(videoId) {
+        const videoData = this.activeVideos.get(videoId);
+        if (videoData) {
+            clearInterval(videoData.timer);
+            this.activeVideos.delete(videoId);
+        }
+    }
+
+    stopAll() {
+        this.activeVideos.forEach((data, videoId) => {
+            clearInterval(data.timer);
+        });
+        this.activeVideos.clear();
+    }
+}
+
+// Global instance
+const tokenRefreshManager = new VideoTokenRefreshManager();
+
+// --- Session Token Refresh Manager ---
+class SessionRefreshManager {
+    constructor() {
+        this.refreshTimer = null;
+        this.checkInterval = 300000; // 5 minutes
+    }
+
+    start() {
+        // Check immediately
+        this.checkAndRefresh();
+        
+        // Then check every 5 minutes
+        this.refreshTimer = setInterval(() => {
+            this.checkAndRefresh();
+        }, this.checkInterval);
+    }
+
+    async checkAndRefresh() {
+        const token = localStorage.getItem('lustroom_jwt');
+        const obtainedAt = parseInt(localStorage.getItem('lustroom_jwt_obtained_at'), 10);
+        const expiresIn = parseInt(localStorage.getItem('lustroom_jwt_expires_in'), 10);
+
+        if (!token || isNaN(obtainedAt) || isNaN(expiresIn)) {
+            this.stop();
+            return;
+        }
+
+        const nowInSeconds = Math.floor(Date.now() / 1000);
+        const expiryTime = obtainedAt + expiresIn;
+        const timeUntilExpiry = expiryTime - nowInSeconds;
+
+        // Refresh if less than 10 minutes remaining
+        if (timeUntilExpiry < 600 && timeUntilExpiry > 0) {
+            await this.refreshSession();
+        }
+    }
+
+    async refreshSession() {
+        try {
+            const token = localStorage.getItem('lustroom_jwt');
+            if (!token) return;
+
+            const response = await fetch(`${API_BASE_URL}/refresh-session`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.status === 'success') {
+                // Update stored token
+                localStorage.setItem('lustroom_jwt', data.access_token);
+                localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
+                localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
+            } else if (response.status === 403) {
+                // Subscription expired - redirect to login
+                this.stop();
+                localStorage.clear();
+                window.location.href = 'login.html';
+            }
+        } catch (error) {
+            // Silently handle errors
+        }
+    }
+
+    stop() {
+        if (this.refreshTimer) {
+            clearInterval(this.refreshTimer);
+            this.refreshTimer = null;
+        }
+    }
+}
+
+// Global instance
+const sessionRefreshManager = new SessionRefreshManager();
+
+// --- Video Analytics Tracker ---
+class VideoAnalyticsTracker {
+    constructor() {
+        this.trackedVideos = new Map(); // videoId -> analytics state
+        this.batchQueue = [];
+        this.batchInterval = 10000; // Send batch every 10 seconds
+        this.startBatchTimer();
+    }
+
+    trackEvent(videoId, event, player, tierId) {
+        const eventData = {
+            event: event,
+            video_id: videoId,
+            tier_id: tierId,
+            current_time: player ? player.currentTime() : 0,
+            duration: player ? player.duration() : 0,
+            quality: player ? this.getCurrentQuality(player) : 'auto'
+        };
+
+        this.batchQueue.push(eventData);
+
+        // Send immediately for critical events
+        if (event === 'play' || event === 'ended' || event === 'error') {
+            this.sendBatch();
+        }
+    }
+
+    getCurrentQuality(player) {
+        try {
+            const qualityLevels = player.qualityLevels();
+            if (qualityLevels && qualityLevels.selectedIndex >= 0) {
+                const selected = qualityLevels[qualityLevels.selectedIndex];
+                return selected.height ? `${selected.height}p` : 'auto';
+            }
+        } catch (e) {
+            // Silently handle
+        }
+        return 'auto';
+    }
+
+    async sendBatch() {
+        if (this.batchQueue.length === 0) return;
+
+        const batch = [...this.batchQueue];
+        this.batchQueue = [];
+
+        try {
+            const token = localStorage.getItem('lustroom_jwt');
+            if (!token) return;
+
+            // Send each event (you can batch them in backend later)
+            for (const event of batch) {
+                await fetch(`${API_BASE_URL}/analytics/track`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(event)
+                });
+            }
+        } catch (error) {
+            // Silently handle errors
+        }
+    }
+
+    startBatchTimer() {
+        setInterval(() => {
+            this.sendBatch();
+        }, this.batchInterval);
+    }
+}
+
+// Global instance
+const analyticsTracker = new VideoAnalyticsTracker();
+
 // --- NEW: Announcement Slider for Multiple Announcements ---
 class AnnouncementSlider {
     constructor(containerSelector) {
@@ -891,15 +1139,28 @@ if (document.getElementById('appContainer')) {
                 card.dataset.searchText = generateSearchableText(link);
                 card.dataset.tierName = tierName;
                 card.dataset.platformId = platformId;
+                card.dataset.tierId = tierName; // NEW: Store tier ID
 
                 // Handle Gallery content type differently
                 const isGallery = link.content_type === 'Gallery';
-                const linkUrl = isGallery ? `links.html?view=gallery&slug=${link.url}` : (link.url || '#');
 
                 // Thumbnail section (if present)
                 if (link.thumbnail_url) {
                     const thumbnailContainer = document.createElement('div');
                     thumbnailContainer.className = 'thumbnail-container';
+                    
+                    // NEW: Add play button overlay for videos
+                    if (!isGallery && !link.locked) {
+                        const playOverlay = document.createElement('div');
+                        playOverlay.className = 'video-play-overlay';
+                        playOverlay.innerHTML = `
+                            <svg viewBox="0 0 24 24" fill="white" width="64" height="64">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                        `;
+                        thumbnailContainer.appendChild(playOverlay);
+                    }
+                    
                     if (isRecentContent) {
                         const newBadge = document.createElement('div');
                         newBadge.className = 'new-badge';
@@ -912,6 +1173,15 @@ if (document.getElementById('appContainer')) {
                     thumbnailImage.alt = `Thumbnail for ${link.title}`;
                     thumbnailImage.loading = 'lazy';
                     thumbnailContainer.appendChild(thumbnailImage);
+                    
+                    // NEW: Add click handler for video playback
+                    if (!isGallery && !link.locked) {
+                        thumbnailContainer.style.cursor = 'pointer';
+                        thumbnailContainer.addEventListener('click', () => {
+                            openVideoPlayer(link, tierName);
+                        });
+                    }
+                    
                     card.appendChild(thumbnailContainer);
                 }
 
@@ -920,19 +1190,15 @@ if (document.getElementById('appContainer')) {
 
                 // Title section with text-based badge for recent items without thumbnails
                 const title = document.createElement('h3');
-                const titleLink = document.createElement('a');
-                titleLink.href = linkUrl;
-                if (!linkUrl || linkUrl === '#') titleLink.style.cursor = 'default';
-                titleLink.textContent = link.title || "Untitled Link";
-                titleLink.target = isGallery ? "_self" : "_blank";
-                title.appendChild(titleLink);
+                const titleText = document.createTextNode(link.title || "Untitled Link");
+                title.appendChild(titleText);
                 
                 // Add icon for Gallery content type
                 if (isGallery) {
                     const icon = document.createElement('span');
                     icon.className = 'content-type-icon gallery-icon';
                     icon.textContent = '🖼️';
-                    titleLink.prepend(icon);
+                    title.prepend(icon);
                 }
                 
                 if (isRecentContent && !link.thumbnail_url) {
@@ -968,14 +1234,17 @@ if (document.getElementById('appContainer')) {
                         const viewButton = document.createElement('a');
                         viewButton.className = 'view-gallery-btn';
                         viewButton.textContent = '🖼️ View Gallery';
-                        viewButton.href = linkUrl;
+                        viewButton.href = `links.html?view=gallery&slug=${link.url}`;
                         actionsContainer.appendChild(viewButton);
                     } else {
-                        // Existing "Copy Link" button for other content types
-                        const copyButton = document.createElement('button');
-                        copyButton.className = 'copy-btn';
-                        copyButton.textContent = 'Copy Link';
-                        actionsContainer.appendChild(copyButton);
+                        // NEW: Watch Video button
+                        const watchButton = document.createElement('button');
+                        watchButton.className = 'watch-video-btn';
+                        watchButton.textContent = '▶️ Watch Video';
+                        watchButton.addEventListener('click', () => {
+                            openVideoPlayer(link, tierName);
+                        });
+                        actionsContainer.appendChild(watchButton);
                     }
                     cardContent.appendChild(actionsContainer);
                 }
@@ -1452,18 +1721,123 @@ if (document.getElementById('appContainer')) {
     }
 }
 
+    // --- Video Player Modal ---
+    function openVideoPlayer(link, tierId) {
+        // Extract video ID from URL
+        const videoIdMatch = link.url.match(/\/([a-f0-9-]{36})\//);
+        if (!videoIdMatch) {
+            return;
+        }
+        
+        const videoId = videoIdMatch[1];
+        
+        // Extract library ID from URL
+        const libraryIdMatch = link.url.match(/library_id=(\d+)/);
+        const libraryId = libraryIdMatch ? libraryIdMatch[1] : '555806';
+        
+        // Create modal
+        const modal = document.createElement('div');
+        modal.className = 'video-player-modal';
+        modal.innerHTML = `
+            <div class="video-player-modal-content">
+                <button class="video-player-close">×</button>
+                <h2>${link.title}</h2>
+                <video id="videoPlayer" class="video-js vjs-big-play-centered" controls preload="auto"></video>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        document.body.style.overflow = 'hidden';
+        
+        // Initialize video.js player
+        const player = videojs('videoPlayer', {
+            controls: true,
+            autoplay: false,
+            preload: 'auto',
+            fluid: true,
+            aspectRatio: '16:9',
+            playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2],
+            controlBar: {
+                children: [
+                    'playToggle',
+                    'volumePanel',
+                    'currentTimeDisplay',
+                    'timeDivider',
+                    'durationDisplay',
+                    'progressControl',
+                    'remainingTimeDisplay',
+                    'qualitySelector',
+                    'playbackRateMenuButton',
+                    'fullscreenToggle'
+                ]
+            }
+        });
+        
+        // Set source
+        player.src({
+            src: link.url,
+            type: 'application/x-mpegURL'
+        });
+        
+        // Register for token refresh
+        tokenRefreshManager.registerVideo(videoId, player, tierId, libraryId);
+        
+        // Track analytics
+        player.on('play', () => analyticsTracker.trackEvent(videoId, 'play', player, tierId));
+        player.on('pause', () => analyticsTracker.trackEvent(videoId, 'pause', player, tierId));
+        player.on('ended', () => analyticsTracker.trackEvent(videoId, 'ended', player, tierId));
+        player.on('error', () => analyticsTracker.trackEvent(videoId, 'error', player, tierId));
+        
+        // Track watch time every 30 seconds
+        let watchTimeTracker = setInterval(() => {
+            if (!player.paused()) {
+                analyticsTracker.trackEvent(videoId, 'timeupdate', player, tierId);
+            }
+        }, 30000);
+        
+        // Close modal handler
+        const closeModal = () => {
+            player.dispose();
+            tokenRefreshManager.stopRefresh(videoId);
+            clearInterval(watchTimeTracker);
+            modal.remove();
+            document.body.style.overflow = '';
+        };
+        
+        modal.querySelector('.video-player-close').addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeModal();
+            }
+        });
+        
+        // ESC key to close
+        const escHandler = (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+                document.removeEventListener('keydown', escHandler);
+            }
+        };
+        document.addEventListener('keydown', escHandler);
+    }
+
     // --- Main Application Router ---
     async function router() {
-    // Load user data at the start of router
-    loadUserData();
-    
-    // NEW (V2): Load and display multiple announcements
-    const announcementsData = JSON.parse(localStorage.getItem('global_announcements') || '[]');
-    announcementSlider.showAnnouncements(announcementsData);
-    
-    // Render renewal banner and header actions
-    renderRenewalBanner();
-    renderHeaderActions();
+        // Load user data at the start of router
+        loadUserData();
+        
+        // ⚡ NEW: Start session refresh manager
+        if (!sessionRefreshManager.refreshTimer) {
+            sessionRefreshManager.start();
+        }
+        
+        // NEW (V2): Load and display multiple announcements
+        const announcementsData = JSON.parse(localStorage.getItem('global_announcements') || '[]');
+        announcementSlider.showAnnouncements(announcementsData);
+        
+        // Render renewal banner and header actions
+        renderRenewalBanner();
+        renderHeaderActions();
 
         if (!isTokenValid()) {
             window.location.href = 'login.html';
