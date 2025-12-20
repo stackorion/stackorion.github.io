@@ -1749,7 +1749,7 @@ if (document.getElementById('appContainer')) {
         document.body.appendChild(modal);
         document.body.style.overflow = 'hidden';
         
-        // Initialize video.js player with error handling
+        // Initialize video.js player with quality selector
         const player = videojs('videoPlayer', {
             controls: true,
             autoplay: false,
@@ -1760,10 +1760,11 @@ if (document.getElementById('appContainer')) {
             html5: {
                 vhs: {
                     overrideNative: true,
-                    enableLowInitialPlaylist: true,
+                    enableLowInitialPlaylist: false,  // ⚡ Changed to false - start with best quality
                     smoothQualityChange: true,
                     useBandwidthFromLocalStorage: false,
-                    limitRenditionByPlayerDimensions: false
+                    limitRenditionByPlayerDimensions: false,
+                    bandwidth: 5000000  // ⚡ Assume 5Mbps connection - forces higher quality
                 },
                 nativeAudioTracks: false,
                 nativeVideoTracks: false
@@ -1782,22 +1783,38 @@ if (document.getElementById('appContainer')) {
             }
         });
 
-        // Add error handler
-        player.on('error', function() {
-            const error = player.error();
-            if (error) {
-                console.error('Video.js error:', error);
-                
-                // Show user-friendly error
-                const errorDisplay = player.errorDisplay;
-                errorDisplay.fillWith('Unable to load video. Please try again or contact support.');
-            }
-        });
-        
         // Set source
         player.src({
             src: link.url,
             type: 'application/x-mpegURL'
+        });
+
+        // ⚡ NEW: Add quality selector plugin
+        player.hlsQualitySelector({
+            displayCurrentQuality: true,
+            placementIndex: 1,
+            vjsIconClass: 'vjs-icon-hd'
+        });
+
+        // Better error handling
+        player.on('error', function() {
+            const error = player.error();
+            if (error) {
+                console.error('Player error:', error);
+                player.errorDisplay.fillWith('Video failed to load. Please refresh or contact support.');
+            }
+        });
+
+        // Force initial quality to highest available
+        player.on('loadedmetadata', function() {
+            const qualityLevels = player.qualityLevels();
+            
+            if (qualityLevels && qualityLevels.length > 0) {
+                // Select highest quality (usually the last one)
+                for (let i = 0; i < qualityLevels.length; i++) {
+                    qualityLevels[i].enabled = (i === qualityLevels.length - 1);
+                }
+            }
         });
         
         // Register for token refresh
