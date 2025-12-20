@@ -505,7 +505,7 @@ function renderRenewalBanner() {
         return days <= 7 && days > 0;
     });
 
-    // âœ… PRIORITY LOGIC: Prioritize Echo Chamber renewal link
+    // ✅ PRIORITY LOGIC: Prioritize Echo Chamber renewal link
     let expiringSubscription = expiringSubscriptions.find(sub => sub.platform_name === 'Echo Chamber' && sub.renewal_url);
 
     // If no Echo Chamber link, fall back to the first available one
@@ -542,7 +542,7 @@ function renderHeaderActions() {
     // --- 1. Handle Support Link with Priority Logic ---
     let supportUrl = null;
     if (userSubscriptions.length > 0) {
-        // âœ… PRIORITY LOGIC: Try to find Echo Chamber support URL first
+        // ✅ PRIORITY LOGIC: Try to find Echo Chamber support URL first
         const echoChamberSub = userSubscriptions.find(sub => sub.platform_name === 'Echo Chamber' && sub.support_url);
         if (echoChamberSub) {
             supportUrl = echoChamberSub.support_url;
@@ -1749,7 +1749,7 @@ if (document.getElementById('appContainer')) {
         document.body.appendChild(modal);
         document.body.style.overflow = 'hidden';
         
-        // Initialize video.js player
+        // Initialize video.js player with error handling
         const player = videojs('videoPlayer', {
             controls: true,
             autoplay: false,
@@ -1757,6 +1757,17 @@ if (document.getElementById('appContainer')) {
             fluid: true,
             aspectRatio: '16:9',
             playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2],
+            html5: {
+                vhs: {
+                    overrideNative: true,
+                    enableLowInitialPlaylist: true,
+                    smoothQualityChange: true,
+                    useBandwidthFromLocalStorage: false,
+                    limitRenditionByPlayerDimensions: false
+                },
+                nativeAudioTracks: false,
+                nativeVideoTracks: false
+            },
             controlBar: {
                 children: [
                     'playToggle',
@@ -1765,11 +1776,21 @@ if (document.getElementById('appContainer')) {
                     'timeDivider',
                     'durationDisplay',
                     'progressControl',
-                    'remainingTimeDisplay',
-                    'qualitySelector',
                     'playbackRateMenuButton',
                     'fullscreenToggle'
                 ]
+            }
+        });
+
+        // Add error handler
+        player.on('error', function() {
+            const error = player.error();
+            if (error) {
+                console.error('Video.js error:', error);
+                
+                // Show user-friendly error
+                const errorDisplay = player.errorDisplay;
+                errorDisplay.fillWith('Unable to load video. Please try again or contact support.');
             }
         });
         
