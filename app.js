@@ -353,12 +353,23 @@ class PremiumQualityManager {
     }
 
     initialize() {
-        this.qualityLevels = this.player.qualityLevels();
-        
-        if (this.qualityLevels) {
-            this.qualityLevels.on('addqualitylevel', () => {
-                this.updateAvailableQualities();
-            });
+        try {
+            // Use Video.js built-in quality levels (HLS support)
+            if (typeof this.player.qualityLevels === 'function') {
+                this.qualityLevels = this.player.qualityLevels();
+                
+                if (this.qualityLevels) {
+                    this.qualityLevels.on('addqualitylevel', () => {
+                        this.updateAvailableQualities();
+                    });
+                }
+            } else {
+                // Fallback: detect from tech
+                this.detectQualitiesFromTech();
+            }
+        } catch (error) {
+            // Quality detection failed, only show Auto
+            this.availableQualities = ['auto'];
         }
     }
 
@@ -404,6 +415,23 @@ class PremiumQualityManager {
 
     getAvailableQualities() {
         return this.availableQualities;
+    }
+
+    detectQualitiesFromTech() {
+        const tech = this.player.tech({ IWillNotUseThisInPlugins: true });
+        
+        if (tech && tech.vhs && tech.vhs.playlists && tech.vhs.playlists.master) {
+            const playlists = tech.vhs.playlists.master.playlists;
+            const qualities = new Set();
+            
+            playlists.forEach(playlist => {
+                if (playlist.attributes && playlist.attributes.RESOLUTION) {
+                    qualities.add(playlist.attributes.RESOLUTION.height);
+                }
+            });
+            
+            this.availableQualities = ['auto', ...Array.from(qualities).sort((a, b) => b - a)];
+        }
     }
 }
 
@@ -455,7 +483,8 @@ class PremiumControlsManager {
     }
 
     hideControls() {
-        if (!this.state.isPlaying || this.state.isSeeking) return;
+        // Allow hiding even when paused in fullscreen mode
+        if (this.state.isSeeking) return;
         
         this.state.showingControls = false;
         
@@ -2218,6 +2247,18 @@ if (document.getElementById('appContainer')) {
         document.body.appendChild(modal);
         document.body.style.overflow = 'hidden';
         
+        // ⭐ AUTO-FULLSCREEN: Enter fullscreen immediately
+        setTimeout(() => {
+            modal.requestFullscreen().then(() => {
+                // Hide controls immediately when entering fullscreen
+                controlsManager.hideControls();
+                stateManager.showingControls = false;
+            }).catch(err => {
+                // Fallback if fullscreen fails (some browsers/mobile restrictions)
+                console.log('Fullscreen not available:', err);
+            });
+        }, 100);
+        
         // Initialize Video.js with optimized settings
         const player = videojs('premiumPlayer', {
             controls: false,
@@ -2308,10 +2349,16 @@ if (document.getElementById('appContainer')) {
         
         // Play/Pause
         const togglePlayPause = () => {
-            if (player.paused()) {
-                player.play();
-            } else {
-                player.pause();
+            try {
+                if (player && !player.isDisposed()) {
+                    if (player.paused()) {
+                        player.play();
+                    } else {
+                        player.pause();
+                    }
+                }
+            } catch (error) {
+                // Player not ready
             }
         };
         
@@ -2495,12 +2542,10 @@ if (document.getElementById('appContainer')) {
         
         document.addEventListener('fullscreenchange', () => {
             stateManager.isFullscreen = !!document.fullscreenElement;
-            if (stateManager.isFullscreen) {
-                controlsManager.elements.fullscreenBtn.classList.add('fullscreen');
-                controlsManager.elements.fullscreenBtn.setAttribute('aria-label', 'Exit fullscreen');
-            } else {
-                controlsManager.elements.fullscreenBtn.classList.remove('fullscreen');
-                controlsManager.elements.fullscreenBtn.setAttribute('aria-label', 'Enter fullscreen');
+            
+            // If exiting fullscreen, close the video player entirely
+            if (!stateManager.isFullscreen) {
+                closePlayer();
             }
         });
         
@@ -2620,18 +2665,22 @@ if (document.getElementById('appContainer')) {
         });
         
         player.on('timeupdate', () => {
-            if (!isSeeking) {
-                const current = player.currentTime();
-                const duration = player.duration();
-                
-                // Get buffered time
-                let buffered = 0;
-                if (player.buffered().length > 0) {
-                    buffered = player.buffered().end(player.buffered().length - 1);
+            try {
+                if (!isSeeking && player && !player.isDisposed()) {
+                    const current = player.currentTime();
+                    const duration = player.duration();
+                    
+                    // Get buffered time
+                    let buffered = 0;
+                    if (player.buffered().length > 0) {
+                        buffered = player.buffered().end(player.buffered().length - 1);
+                    }
+                    
+                    controlsManager.updateProgress(current, duration, buffered);
+                    controlsManager.updateTimeDisplay(current, duration);
                 }
-                
-                controlsManager.updateProgress(current, duration, buffered);
-                controlsManager.updateTimeDisplay(current, duration);
+            } catch (error) {
+                // Player disposed or not ready
             }
         });
         

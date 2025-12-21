@@ -3012,3 +3012,5 @@ body.theme-dark .announcement-error {
         transition-duration: 0.01ms !important;
     }
 }
+
+.premium-fullscreen-btn { display: none !important; }
