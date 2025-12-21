@@ -480,22 +480,26 @@ class PremiumControlsManager {
     }
 
     updatePlayButton(isPlaying) {
-        if (this.elements.playBtn) {
-            if (isPlaying) {
-                this.elements.playBtn.classList.add('playing');
-                this.elements.playBtn.setAttribute('aria-label', 'Pause');
-            } else {
-                this.elements.playBtn.classList.remove('playing');
-                this.elements.playBtn.setAttribute('aria-label', 'Play');
+        try {
+            if (this.elements.playBtn) {
+                if (isPlaying) {
+                    this.elements.playBtn.classList.add('playing');
+                    this.elements.playBtn.setAttribute('aria-label', 'Pause');
+                } else {
+                    this.elements.playBtn.classList.remove('playing');
+                    this.elements.playBtn.setAttribute('aria-label', 'Play');
+                }
             }
-        }
-        
-        if (this.elements.centerPlayBtn) {
-            if (!isPlaying) {
-                this.elements.centerPlayBtn.classList.add('show');
-            } else {
-                this.elements.centerPlayBtn.classList.remove('show');
+            
+            if (this.elements.centerPlayBtn) {
+                if (!isPlaying) {
+                    this.elements.centerPlayBtn.classList.add('show');
+                } else {
+                    this.elements.centerPlayBtn.classList.remove('show');
+                }
             }
+        } catch (error) {
+            // Silently handle errors
         }
     }
 
@@ -2110,14 +2114,16 @@ if (document.getElementById('appContainer')) {
                         <!-- Skip Backward 10s -->
                         <button class="premium-control-btn premium-skip-backward premium-skip-btn" aria-label="Rewind 10 seconds">
                             <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M11.99 5V1l-5 5 5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6h-2c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+                                <path d="M12 5V2.21c0-.45-.54-.67-.85-.35l-3.8 3.79c-.2.2-.2.51 0 .71l3.79 3.79c.32.31.86.09.86-.36V7c3.73 0 6.68 3.42 5.86 7.29-.47 2.27-2.31 4.1-4.57 4.57-3.57.75-6.75-1.7-7.23-5.01-.07-.48-.49-.85-.98-.85-.6 0-1.08.53-1 1.13.62 4.39 4.8 7.64 9.53 6.72 3.12-.61 5.63-3.12 6.24-6.24C20.84 9.48 16.94 5 12 5z"/>
+                                <text x="12" y="16" text-anchor="middle" font-size="8" font-weight="bold" fill="currentColor">10</text>
                             </svg>
                         </button>
                         
                         <!-- Skip Forward 10s -->
                         <button class="premium-control-btn premium-skip-forward premium-skip-btn" aria-label="Forward 10 seconds">
                             <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+                                <path d="M12 5V2.21c0-.45.54-.67.85-.35l3.8 3.79c.2.2.2.51 0 .71l-3.79 3.79c-.32.31-.86.09-.86-.36V7c-3.73 0-6.68 3.42-5.86 7.29.47 2.27 2.31 4.1 4.57 4.57 3.57.75 6.75-1.7 7.23-5.01.07-.48.49-.85.98-.85.6 0 1.08.53 1 1.13-.62 4.39-4.8 7.64-9.53 6.72-3.12-.61-5.63-3.12-6.24-6.24C3.16 9.48 7.06 5 12 5z"/>
+                                <text x="12" y="16" text-anchor="middle" font-size="8" font-weight="bold" fill="currentColor">10</text>
                             </svg>
                         </button>
                         
@@ -2280,7 +2286,22 @@ if (document.getElementById('appContainer')) {
         // Initialize quality manager after source is set
         player.ready(() => {
             qualityManager.initialize();
-            renderSettingsMenu();
+            
+            // Wait for quality levels to load
+            setTimeout(() => {
+                renderSettingsMenu();
+            }, 2000);
+            
+            // Also re-render when quality levels change
+            const checkQualityLevels = setInterval(() => {
+                if (qualityManager.getAvailableQualities().length > 1) {
+                    renderSettingsMenu();
+                    clearInterval(checkQualityLevels);
+                }
+            }, 500);
+            
+            // Stop checking after 10 seconds
+            setTimeout(() => clearInterval(checkQualityLevels), 10000);
         });
         
         // --- Event Handlers ---
