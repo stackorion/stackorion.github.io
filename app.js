@@ -1721,7 +1721,7 @@ if (document.getElementById('appContainer')) {
     }
 }
 
-    // --- Video Player Modal ---
+    // --- NETFLIX-STYLE VIDEO PLAYER MODAL ---
     function openVideoPlayer(link, tierId) {
         // Extract video ID from URL
         const videoIdMatch = link.url.match(/\/([a-f0-9-]{36})\//);
@@ -1735,23 +1735,116 @@ if (document.getElementById('appContainer')) {
         const libraryIdMatch = link.url.match(/library_id=(\d+)/);
         const libraryId = libraryIdMatch ? libraryIdMatch[1] : '555806';
         
-        // Create modal
+        // Create modal with Netflix-like dark theme
         const modal = document.createElement('div');
-        modal.className = 'video-player-modal';
+        modal.className = 'netflix-player-modal';
         modal.innerHTML = `
-            <div class="video-player-modal-content">
-                <button class="video-player-close">×</button>
-                <h2>${link.title}</h2>
-                <video id="videoPlayer" class="video-js vjs-big-play-centered" controls preload="auto"></video>
+            <div class="netflix-player-modal-content">
+                <div class="player-header">
+                    <button class="netflix-close-btn" aria-label="Close player">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                        </svg>
+                    </button>
+                    <div class="player-title">${link.title}</div>
+                </div>
+                <div class="video-container">
+                    <video 
+                        id="netflixPlayer" 
+                        class="video-js vjs-big-play-centered vjs-fluid"
+                        preload="auto"
+                        data-setup='{"fluid": true, "aspectRatio": "16:9"}'
+                    ></video>
+                </div>
+                <div class="player-controls-overlay">
+                    <div class="controls-top">
+                        <div class="title-overlay">${link.title}</div>
+                    </div>
+                    <div class="controls-center">
+                        <button class="play-pause-btn" aria-label="Play/Pause">
+                            <svg class="play-icon" width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                            <svg class="pause-icon" width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="controls-bottom">
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill"></div>
+                                <div class="progress-handle"></div>
+                            </div>
+                            <div class="time-display">
+                                <span class="current-time">0:00</span> / <span class="duration">0:00</span>
+                            </div>
+                        </div>
+                        <div class="control-buttons">
+                            <button class="rewind-btn" aria-label="Rewind 10 seconds">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M11.99 5V1l-5 5 5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6h-2c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+                                </svg>
+                            </button>
+                            <button class="play-pause-btn-small" aria-label="Play/Pause">
+                                <svg class="play-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M8 5v14l11-7z"/>
+                                </svg>
+                                <svg class="pause-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                                </svg>
+                            </button>
+                            <button class="forward-btn" aria-label="Forward 10 seconds">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M5 4v16l7-8zm7 8l7 8V4z"/>
+                                </svg>
+                            </button>
+                            <div class="volume-control">
+                                <button class="volume-btn" aria-label="Volume">
+                                    <svg class="volume-high" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                                    </svg>
+                                    <svg class="volume-low" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/>
+                                    </svg>
+                                    <svg class="volume-mute" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                                    </svg>
+                                </button>
+                                <div class="volume-slider-container">
+                                    <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="1">
+                                </div>
+                            </div>
+                            <div class="quality-selector">
+                                <select class="quality-dropdown">
+                                    <option value="auto">Auto</option>
+                                </select>
+                            </div>
+                            <button class="settings-btn" aria-label="Settings">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+                                </svg>
+                            </button>
+                            <button class="fullscreen-btn" aria-label="Fullscreen">
+                                <svg class="enter-fullscreen" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+                                </svg>
+                                <svg class="exit-fullscreen" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
         
         document.body.appendChild(modal);
         document.body.style.overflow = 'hidden';
         
-        // Initialize video.js player with quality selector
-        const player = videojs('videoPlayer', {
-            controls: true,
+        // Initialize video.js with Netflix-like settings
+        const player = videojs('netflixPlayer', {
+            controls: false, // We'll use our custom controls
             autoplay: false,
             preload: 'auto',
             fluid: true,
@@ -1760,70 +1853,275 @@ if (document.getElementById('appContainer')) {
             html5: {
                 vhs: {
                     overrideNative: true,
-                    enableLowInitialPlaylist: false,  // ⚡ Changed to false - start with best quality
+                    enableLowInitialPlaylist: false,
                     smoothQualityChange: true,
                     useBandwidthFromLocalStorage: false,
                     limitRenditionByPlayerDimensions: false,
-                    bandwidth: 5000000  // ⚡ Assume 5Mbps connection - forces higher quality
+                    bandwidth: 5000000
                 },
                 nativeAudioTracks: false,
                 nativeVideoTracks: false
             },
-            controlBar: {
-                children: [
-                    'playToggle',
-                    'volumePanel',
-                    'currentTimeDisplay',
-                    'timeDivider',
-                    'durationDisplay',
-                    'progressControl',
-                    'playbackRateMenuButton',
-                    'fullscreenToggle'
-                ]
+            userActions: {
+                hotkeys: function(event) {
+                    // Space bar to play/pause
+                    if (event.which === 32) {
+                        togglePlayPause();
+                        event.preventDefault();
+                    }
+                    // Left arrow rewind 10s
+                    if (event.which === 37) {
+                        rewind10();
+                        event.preventDefault();
+                    }
+                    // Right arrow forward 10s
+                    if (event.which === 39) {
+                        forward10();
+                        event.preventDefault();
+                    }
+                    // F key for fullscreen
+                    if (event.which === 70) {
+                        toggleFullscreen();
+                        event.preventDefault();
+                    }
+                    // M key for mute
+                    if (event.which === 77) {
+                        toggleMute();
+                        event.preventDefault();
+                    }
+                }
             }
         });
 
-        // Set source
+        // Set video source
         player.src({
             src: link.url,
             type: 'application/x-mpegURL'
         });
 
-        // ⚡ NEW: Add quality selector plugin
-        player.hlsQualitySelector({
-            displayCurrentQuality: true,
-            placementIndex: 1,
-            vjsIconClass: 'vjs-icon-hd'
+        // Custom control elements
+        const playPauseBtn = modal.querySelector('.play-pause-btn');
+        const playPauseBtnSmall = modal.querySelector('.play-pause-btn-small');
+        const rewindBtn = modal.querySelector('.rewind-btn');
+        const forwardBtn = modal.querySelector('.forward-btn');
+        const volumeBtn = modal.querySelector('.volume-btn');
+        const volumeSlider = modal.querySelector('.volume-slider');
+        const progressBar = modal.querySelector('.progress-bar');
+        const progressFill = modal.querySelector('.progress-fill');
+        const progressHandle = modal.querySelector('.progress-handle');
+        const currentTimeEl = modal.querySelector('.current-time');
+        const durationEl = modal.querySelector('.duration');
+        const fullscreenBtn = modal.querySelector('.fullscreen-btn');
+        const closeBtn = modal.querySelector('.netflix-close-btn');
+        const controlsOverlay = modal.querySelector('.player-controls-overlay');
+        
+        let controlsTimeout;
+        let isSeeking = false;
+
+        // Format time to MM:SS
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+
+        // Show/hide controls
+        function showControls() {
+            controlsOverlay.classList.add('visible');
+            clearTimeout(controlsTimeout);
+            controlsTimeout = setTimeout(hideControls, 3000);
+        }
+
+        function hideControls() {
+            if (!player.paused()) {
+                controlsOverlay.classList.remove('visible');
+            }
+        }
+
+        // Toggle play/pause
+        function togglePlayPause() {
+            if (player.paused()) {
+                player.play();
+                playPauseBtn.classList.add('playing');
+                playPauseBtnSmall.classList.add('playing');
+            } else {
+                player.pause();
+                playPauseBtn.classList.remove('playing');
+                playPauseBtnSmall.classList.remove('playing');
+            }
+        }
+
+        // Rewind 10 seconds
+        function rewind10() {
+            player.currentTime(Math.max(0, player.currentTime() - 10));
+        }
+
+        // Forward 10 seconds
+        function forward10() {
+            player.currentTime(Math.min(player.duration(), player.currentTime() + 10));
+        }
+
+        // Toggle mute
+        function toggleMute() {
+            player.muted(!player.muted());
+            updateVolumeUI();
+        }
+
+        // Update volume UI
+        function updateVolumeUI() {
+            if (player.muted() || player.volume() === 0) {
+                volumeBtn.classList.remove('low', 'high');
+                volumeBtn.classList.add('mute');
+            } else if (player.volume() < 0.5) {
+                volumeBtn.classList.remove('mute', 'high');
+                volumeBtn.classList.add('low');
+            } else {
+                volumeBtn.classList.remove('mute', 'low');
+                volumeBtn.classList.add('high');
+            }
+            volumeSlider.value = player.muted() ? 0 : player.volume();
+        }
+
+        // Toggle fullscreen
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                modal.requestFullscreen();
+                fullscreenBtn.classList.add('fullscreen');
+            } else {
+                document.exitFullscreen();
+                fullscreenBtn.classList.remove('fullscreen');
+            }
+        }
+
+        // Update progress bar
+        function updateProgress() {
+            if (isSeeking) return;
+            
+            const currentTime = player.currentTime();
+            const duration = player.duration();
+            const percentage = (currentTime / duration) * 100;
+            
+            progressFill.style.width = `${percentage}%`;
+            progressHandle.style.left = `${percentage}%`;
+            currentTimeEl.textContent = formatTime(currentTime);
+            
+            if (duration) {
+                durationEl.textContent = formatTime(duration);
+            }
+        }
+
+        // Event listeners
+        player.on('timeupdate', updateProgress);
+        player.on('durationchange', () => {
+            durationEl.textContent = formatTime(player.duration());
+        });
+        player.on('play', () => {
+            playPauseBtn.classList.add('playing');
+            playPauseBtnSmall.classList.add('playing');
+        });
+        player.on('pause', () => {
+            playPauseBtn.classList.remove('playing');
+            playPauseBtnSmall.classList.remove('playing');
+        });
+        player.on('volumechange', updateVolumeUI);
+
+        // Player ready
+        player.ready(() => {
+            durationEl.textContent = formatTime(player.duration());
+            updateVolumeUI();
+            showControls();
         });
 
-        // Better error handling
-        player.on('error', function() {
-            const error = player.error();
-            if (error) {
-                console.error('Player error:', error);
-                player.errorDisplay.fillWith('Video failed to load. Please refresh or contact support.');
+        // Control event listeners
+        playPauseBtn.addEventListener('click', togglePlayPause);
+        playPauseBtnSmall.addEventListener('click', togglePlayPause);
+        rewindBtn.addEventListener('click', rewind10);
+        forwardBtn.addEventListener('click', forward10);
+        
+        volumeBtn.addEventListener('click', toggleMute);
+        volumeSlider.addEventListener('input', (e) => {
+            player.volume(e.target.value);
+            player.muted(e.target.value === 0);
+        });
+
+        // Progress bar seeking
+        progressBar.addEventListener('click', (e) => {
+            const rect = progressBar.getBoundingClientRect();
+            const percentage = (e.clientX - rect.left) / rect.width;
+            player.currentTime(percentage * player.duration());
+        });
+
+        progressHandle.addEventListener('mousedown', () => {
+            isSeeking = true;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isSeeking) return;
+            const rect = progressBar.getBoundingClientRect();
+            const percentage = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            progressFill.style.width = `${percentage * 100}%`;
+            progressHandle.style.left = `${percentage * 100}%`;
+            currentTimeEl.textContent = formatTime(percentage * player.duration());
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isSeeking) {
+                const rect = progressBar.getBoundingClientRect();
+                const percentage = parseFloat(progressFill.style.width) / 100;
+                player.currentTime(percentage * player.duration());
+                isSeeking = false;
             }
         });
 
-        // Force initial quality to highest available
-        player.on('loadedmetadata', function() {
-            const qualityLevels = player.qualityLevels();
-            
-            if (qualityLevels && qualityLevels.length > 0) {
-                // Select highest quality (usually the last one)
-                for (let i = 0; i < qualityLevels.length; i++) {
-                    qualityLevels[i].enabled = (i === qualityLevels.length - 1);
+        fullscreenBtn.addEventListener('click', toggleFullscreen);
+        
+        closeBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeModal();
+            }
+        });
+
+        // Mouse movement detection for controls
+        modal.addEventListener('mousemove', showControls);
+
+        // Fullscreen change events
+        document.addEventListener('fullscreenchange', () => {
+            fullscreenBtn.classList.toggle('fullscreen', !!document.fullscreenElement);
+        });
+
+        // ESC key to close
+        const escHandler = (e) => {
+            if (e.key === 'Escape') {
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                } else {
+                    closeModal();
+                    document.removeEventListener('keydown', escHandler);
                 }
             }
-        });
-        
+        };
+        document.addEventListener('keydown', escHandler);
+
+        // Close modal function
+        function closeModal() {
+            player.dispose();
+            tokenRefreshManager.stopRefresh(videoId);
+            modal.remove();
+            document.body.style.overflow = '';
+            document.removeEventListener('keydown', escHandler);
+        }
+
         // Register for token refresh
         tokenRefreshManager.registerVideo(videoId, player, tierId, libraryId);
         
         // Track analytics
         player.on('play', () => analyticsTracker.trackEvent(videoId, 'play', player, tierId));
         player.on('pause', () => analyticsTracker.trackEvent(videoId, 'pause', player, tierId));
-        player.on('ended', () => analyticsTracker.trackEvent(videoId, 'ended', player, tierId));
+        player.on('ended', () => {
+            analyticsTracker.trackEvent(videoId, 'ended', player, tierId);
+            closeModal();
+        });
         player.on('error', () => analyticsTracker.trackEvent(videoId, 'error', player, tierId));
         
         // Track watch time every 30 seconds
@@ -1833,30 +2131,10 @@ if (document.getElementById('appContainer')) {
             }
         }, 30000);
         
-        // Close modal handler
-        const closeModal = () => {
-            player.dispose();
-            tokenRefreshManager.stopRefresh(videoId);
+        // Cleanup on close
+        modal.addEventListener('close', () => {
             clearInterval(watchTimeTracker);
-            modal.remove();
-            document.body.style.overflow = '';
-        };
-        
-        modal.querySelector('.video-player-close').addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                closeModal();
-            }
         });
-        
-        // ESC key to close
-        const escHandler = (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-                document.removeEventListener('keydown', escHandler);
-            }
-        };
-        document.addEventListener('keydown', escHandler);
     }
 
     // --- Main Application Router ---

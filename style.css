@@ -2057,275 +2057,398 @@ body.theme-dark .announcement-error {
 }
 
 /* ========================================
-   VIDEO PLAYER MODAL & CONTROLS V2
-   Production-Ready Netflix-Style Player
+   NETFLIX-STYLE VIDEO PLAYER
    ======================================== */
 
-/* Modal Overlay */
-.video-player-modal {
+/* Modal Container */
+.netflix-player-modal {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.98);
+    background: #000;
     z-index: 100000;
     display: flex;
     align-items: center;
     justify-content: center;
-    animation: videoModalFadeIn 0.3s ease;
-    padding: 20px;
+    animation: netflixFadeIn 0.3s ease;
 }
 
-@keyframes videoModalFadeIn {
+@keyframes netflixFadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
 }
 
-/* Modal Content Container */
-.video-player-modal-content {
+/* Modal Content */
+.netflix-player-modal-content {
     position: relative;
     width: 100%;
-    max-width: 1400px;
-    background: #000000;
-    border-radius: 8px;
-    padding: 20px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+    height: 100%;
+    background: #000;
+    display: flex;
+    flex-direction: column;
 }
 
-/* Video Title */
-.video-player-modal-content h2 {
-    color: #ffffff;
-    margin: 0 0 16px 0;
-    font-size: 24px;
-    font-weight: 600;
-    padding-right: 50px;
-}
-
-/* Close Button */
-.video-player-close {
+/* Player Header */
+.player-header {
     position: absolute;
-    top: 16px;
-    right: 16px;
-    background: rgba(255, 255, 255, 0.15);
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 20px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 10;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.netflix-player-modal-content:hover .player-header {
+    opacity: 1;
+}
+
+.netflix-close-btn {
+    background: rgba(20, 20, 20, 0.7);
     border: none;
-    color: #ffffff;
-    font-size: 32px;
-    font-weight: 300;
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #fff;
+    transition: all 0.2s ease;
+}
+
+.netflix-close-btn:hover {
+    background: rgba(229, 9, 20, 0.9);
+    transform: scale(1.1);
+}
+
+.player-title {
+    color: #fff;
+    font-size: 1.5rem;
+    font-weight: 500;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+/* Video Container */
+.video-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Custom Controls Overlay */
+.player-controls-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 20px 40px;
+    background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 10;
+}
+
+.player-controls-overlay.visible {
+    opacity: 1;
+}
+
+.controls-top {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+
+.title-overlay {
+    color: #fff;
+    font-size: 1.8rem;
+    font-weight: 600;
+    text-align: center;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+}
+
+.controls-center {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 30px;
+}
+
+.play-pause-btn {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(229, 9, 20, 0.9);
+    color: #fff;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.3s ease;
-    z-index: 10;
+    transition: all 0.2s ease;
+    position: relative;
 }
 
-.video-player-close:hover {
-    background: rgba(255, 59, 48, 0.9);
+.play-pause-btn:hover {
+    background: rgba(229, 9, 20, 1);
     transform: scale(1.1);
 }
 
-/* Video Container - CRITICAL FIX */
-#videoPlayer {
-    width: 100%;
-    height: auto;
-    max-height: 75vh;
-    border-radius: 4px;
-    overflow: hidden;
+.play-pause-btn .pause-icon {
+    display: none;
 }
 
-/* ========================================
-   VIDEO.JS FIXES - Icons & Controls
-   ======================================== */
-
-/* Ensure video.js fonts load */
-.video-js {
-    font-family: Arial, Helvetica, sans-serif !important;
+.play-pause-btn.playing .play-icon {
+    display: none;
 }
 
-/* Force icons to show - CRITICAL FIX */
-.video-js .vjs-icon-placeholder:before,
-.vjs-icon-placeholder:before {
-    font-family: VideoJS !important;
-    font-weight: normal;
-    font-style: normal;
+.play-pause-btn.playing .pause-icon {
+    display: block;
 }
 
-/* Big Play Button - Fixed */
-.video-js .vjs-big-play-button {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 80px;
-    height: 80px;
-    line-height: 80px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.95) !important;
-    border: none;
-    font-size: 42px;
-    transition: all 0.3s ease;
+.controls-bottom {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
 }
 
-.video-js .vjs-big-play-button:hover {
-    background: rgba(255, 255, 255, 1) !important;
-    transform: translate(-50%, -50%) scale(1.1);
+.progress-container {
+    display: flex;
+    align-items: center;
+    gap: 15px;
 }
 
-/* Play icon - ensure it shows */
-.video-js .vjs-big-play-button .vjs-icon-placeholder:before {
-    content: "\f101" !important;
-    color: #000000;
+.progress-bar {
+    flex: 1;
+    height: 4px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 2px;
+    position: relative;
+    cursor: pointer;
+}
+
+.progress-fill {
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
     height: 100%;
+    background: #e50914;
+    border-radius: 2px;
+    width: 0%;
+}
+
+.progress-handle {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 12px;
+    height: 12px;
+    background: #e50914;
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.progress-bar:hover .progress-handle {
+    opacity: 1;
+}
+
+.time-display {
+    color: #fff;
+    font-size: 0.9rem;
+    font-family: 'Courier New', monospace;
+    min-width: 100px;
+    text-align: right;
+}
+
+.control-buttons {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.control-buttons button {
+    background: none;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-/* Control Bar */
-.video-js .vjs-control-bar {
-    background: linear-gradient(0deg, rgba(0, 0, 0, 0.9) 0%, transparent 100%);
-    height: 3.5em;
-    display: flex !important;
+.control-buttons button:hover {
+    background: rgba(255,255,255,0.1);
 }
 
-/* All buttons - ensure they're visible */
-.video-js .vjs-button {
-    color: #ffffff !important;
+.play-pause-btn-small .pause-icon {
+    display: none;
 }
 
-/* Progress Bar */
-.video-js .vjs-progress-control {
-    position: absolute;
-    top: -4px;
-    left: 0;
-    right: 0;
+.play-pause-btn-small.playing .play-icon {
+    display: none;
+}
+
+.play-pause-btn-small.playing .pause-icon {
+    display: block;
+}
+
+.volume-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+}
+
+.volume-slider-container {
+    width: 0;
+    overflow: hidden;
+    transition: width 0.3s ease;
+}
+
+.volume-control:hover .volume-slider-container {
+    width: 80px;
+}
+
+.volume-slider {
+    width: 100%;
     height: 4px;
+    -webkit-appearance: none;
+    background: rgba(255,255,255,0.3);
+    border-radius: 2px;
+    outline: none;
 }
 
-.video-js .vjs-progress-holder {
-    height: 100%;
-    background: rgba(255, 255, 255, 0.3);
-}
-
-.video-js .vjs-play-progress {
-    background: #e50914 !important;
-}
-
-.video-js .vjs-load-progress {
-    background: rgba(255, 255, 255, 0.4);
-}
-
-/* Time Display */
-.video-js .vjs-time-control {
-    padding: 0 8px;
-    font-size: 13px;
-    line-height: 3.5em;
-    min-width: auto;
-}
-
-/* Volume Control */
-.video-js .vjs-volume-panel {
-    width: 5em;
-}
-
-.video-js .vjs-volume-level {
-    background: #ffffff !important;
-}
-
-/* Quality Selector - NEW */
-.video-js .vjs-quality-selector {
-    order: 7;
-}
-
-.vjs-quality-selector .vjs-menu {
-    background: rgba(0, 0, 0, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.vjs-quality-selector .vjs-menu-item {
-    padding: 8px 12px;
-    font-size: 14px;
-    color: #ffffff;
-}
-
-.vjs-quality-selector .vjs-menu-item:hover {
-    background: rgba(229, 9, 20, 0.8);
-}
-
-.vjs-quality-selector .vjs-menu-item.vjs-selected {
+.volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
     background: #e50914;
-    color: #ffffff;
+    border-radius: 50%;
+    cursor: pointer;
 }
 
-/* Playback Rate */
-.video-js .vjs-playback-rate .vjs-menu {
-    background: rgba(0, 0, 0, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.video-js .vjs-playback-rate .vjs-menu-item {
-    padding: 8px 12px;
-    font-size: 14px;
-    color: #ffffff;
-}
-
-.video-js .vjs-playback-rate .vjs-menu-item.vjs-selected {
+.volume-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
     background: #e50914;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
 }
 
-/* Fullscreen Button */
-.video-js .vjs-fullscreen-control {
-    order: 10;
+.volume-btn .volume-low,
+.volume-btn .volume-mute {
+    display: none;
 }
 
-/* Loading Spinner */
-.video-js .vjs-loading-spinner {
-    border-color: rgba(255, 255, 255, 0.4);
-    border-top-color: #ffffff;
+.volume-btn.low .volume-high {
+    display: none;
 }
 
-/* Error Display */
-.video-js .vjs-error-display {
-    background: rgba(0, 0, 0, 0.9);
+.volume-btn.low .volume-low {
+    display: block;
 }
 
-.video-js .vjs-error-display .vjs-modal-dialog-content {
-    color: #e50914;
-    font-size: 16px;
+.volume-btn.mute .volume-high,
+.volume-btn.mute .volume-low {
+    display: none;
 }
 
-/* ========================================
-   RESPONSIVE
-   ======================================== */
+.volume-btn.mute .volume-mute {
+    display: block;
+}
 
+.quality-selector select {
+    background: rgba(20, 20, 20, 0.8);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.quality-selector select:focus {
+    outline: none;
+    border-color: #e50914;
+}
+
+.fullscreen-btn .exit-fullscreen {
+    display: none;
+}
+
+.fullscreen-btn.fullscreen .enter-fullscreen {
+    display: none;
+}
+
+.fullscreen-btn.fullscreen .exit-fullscreen {
+    display: block;
+}
+
+/* Hide native video.js controls */
+.video-js .vjs-control-bar {
+    display: none !important;
+}
+
+.video-js .vjs-big-play-button {
+    background: rgba(229, 9, 20, 0.9) !important;
+    border: none !important;
+    width: 80px !important;
+    height: 80px !important;
+    line-height: 80px !important;
+    border-radius: 50% !important;
+    font-size: 36px !important;
+    transition: all 0.3s ease !important;
+}
+
+.video-js .vjs-big-play-button:hover {
+    background: rgba(229, 9, 20, 1) !important;
+    transform: scale(1.1) !important;
+}
+
+/* Responsive */
 @media (max-width: 768px) {
-    .video-player-modal-content {
-        padding: 12px;
+    .player-header {
+        padding: 15px 20px;
     }
     
-    .video-player-modal-content h2 {
-        font-size: 18px;
-        margin-bottom: 12px;
+    .player-title {
+        font-size: 1.2rem;
     }
     
-    .video-player-close {
-        width: 36px;
-        height: 36px;
-        font-size: 24px;
+    .player-controls-overlay {
+        padding: 15px 20px;
     }
     
-    .video-js .vjs-big-play-button {
-        width: 64px;
-        height: 64px;
-        line-height: 64px;
-        font-size: 36px;
+    .title-overlay {
+        font-size: 1.3rem;
+    }
+    
+    .play-pause-btn {
+        width: 60px;
+        height: 60px;
+    }
+    
+    .control-buttons {
+        gap: 10px;
+    }
+    
+    .control-buttons button {
+        padding: 6px;
+    }
+    
+    .quality-selector,
+    .volume-slider-container {
+        display: none;
     }
 }
