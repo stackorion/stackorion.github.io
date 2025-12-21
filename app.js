@@ -1746,14 +1746,13 @@ if (document.getElementById('appContainer')) {
                             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                         </svg>
                     </button>
-                    <div class="player-title">${link.title}</div>
                 </div>
                 <div class="video-container">
                     <video 
                         id="netflixPlayer" 
-                        class="video-js vjs-big-play-centered vjs-fluid"
+                        class="video-js vjs-big-play-centered"
                         preload="auto"
-                        data-setup='{"fluid": true, "aspectRatio": "16:9"}'
+                        data-setup='{}'
                     ></video>
                 </div>
                 <div class="player-controls-overlay">
@@ -1799,6 +1798,11 @@ if (document.getElementById('appContainer')) {
                                     <path d="M5 4v16l7-8zm7 8l7 8V4z"/>
                                 </svg>
                             </button>
+                            <button class="restart-btn" aria-label="Restart video">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+                                </svg>
+                            </button>
                             <div class="volume-control">
                                 <button class="volume-btn" aria-label="Volume">
                                     <svg class="volume-high" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -1812,19 +1816,20 @@ if (document.getElementById('appContainer')) {
                                     </svg>
                                 </button>
                                 <div class="volume-slider-container">
-                                    <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="1">
+                                    <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="1" aria-label="Volume slider">
                                 </div>
                             </div>
                             <div class="quality-selector">
-                                <select class="quality-dropdown">
-                                    <option value="auto">Auto</option>
-                                </select>
+                                <button class="quality-btn" aria-label="Quality settings">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+                                    </svg>
+                                    <span class="quality-label">Auto</span>
+                                </button>
+                                <div class="quality-menu" style="display: none;">
+                                    <div class="quality-option active" data-quality="auto">Auto</div>
+                                </div>
                             </div>
-                            <button class="settings-btn" aria-label="Settings">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-                                </svg>
-                            </button>
                             <button class="fullscreen-btn" aria-label="Fullscreen">
                                 <svg class="enter-fullscreen" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
@@ -1842,53 +1847,21 @@ if (document.getElementById('appContainer')) {
         document.body.appendChild(modal);
         document.body.style.overflow = 'hidden';
         
-        // Initialize video.js with Netflix-like settings
+        // Initialize video.js with proper settings
         const player = videojs('netflixPlayer', {
-            controls: false, // We'll use our custom controls
+            controls: false,
             autoplay: false,
             preload: 'auto',
-            fluid: true,
+            fluid: false,
+            fill: true,
+            responsive: true,
             aspectRatio: '16:9',
             playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2],
             html5: {
                 vhs: {
                     overrideNative: true,
                     enableLowInitialPlaylist: false,
-                    smoothQualityChange: true,
-                    useBandwidthFromLocalStorage: false,
-                    limitRenditionByPlayerDimensions: false,
-                    bandwidth: 5000000
-                },
-                nativeAudioTracks: false,
-                nativeVideoTracks: false
-            },
-            userActions: {
-                hotkeys: function(event) {
-                    // Space bar to play/pause
-                    if (event.which === 32) {
-                        togglePlayPause();
-                        event.preventDefault();
-                    }
-                    // Left arrow rewind 10s
-                    if (event.which === 37) {
-                        rewind10();
-                        event.preventDefault();
-                    }
-                    // Right arrow forward 10s
-                    if (event.which === 39) {
-                        forward10();
-                        event.preventDefault();
-                    }
-                    // F key for fullscreen
-                    if (event.which === 70) {
-                        toggleFullscreen();
-                        event.preventDefault();
-                    }
-                    // M key for mute
-                    if (event.which === 77) {
-                        toggleMute();
-                        event.preventDefault();
-                    }
+                    smoothQualityChange: true
                 }
             }
         });
@@ -1904,6 +1877,7 @@ if (document.getElementById('appContainer')) {
         const playPauseBtnSmall = modal.querySelector('.play-pause-btn-small');
         const rewindBtn = modal.querySelector('.rewind-btn');
         const forwardBtn = modal.querySelector('.forward-btn');
+        const restartBtn = modal.querySelector('.restart-btn');
         const volumeBtn = modal.querySelector('.volume-btn');
         const volumeSlider = modal.querySelector('.volume-slider');
         const progressBar = modal.querySelector('.progress-bar');
@@ -1914,12 +1888,16 @@ if (document.getElementById('appContainer')) {
         const fullscreenBtn = modal.querySelector('.fullscreen-btn');
         const closeBtn = modal.querySelector('.netflix-close-btn');
         const controlsOverlay = modal.querySelector('.player-controls-overlay');
+        const qualityBtn = modal.querySelector('.quality-btn');
+        const qualityMenu = modal.querySelector('.quality-menu');
+        const qualityLabel = modal.querySelector('.quality-label');
         
         let controlsTimeout;
         let isSeeking = false;
 
         // Format time to MM:SS
         function formatTime(seconds) {
+            if (!isFinite(seconds) || isNaN(seconds)) return '0:00';
             const mins = Math.floor(seconds / 60);
             const secs = Math.floor(seconds % 60);
             return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
@@ -1933,7 +1911,7 @@ if (document.getElementById('appContainer')) {
         }
 
         function hideControls() {
-            if (!player.paused()) {
+            if (!player.paused() && !qualityMenu.style.display !== 'none') {
                 controlsOverlay.classList.remove('visible');
             }
         }
@@ -1942,13 +1920,15 @@ if (document.getElementById('appContainer')) {
         function togglePlayPause() {
             if (player.paused()) {
                 player.play();
-                playPauseBtn.classList.add('playing');
-                playPauseBtnSmall.classList.add('playing');
             } else {
                 player.pause();
-                playPauseBtn.classList.remove('playing');
-                playPauseBtnSmall.classList.remove('playing');
             }
+        }
+
+        // Restart video (FIX #1)
+        function restartVideo() {
+            player.currentTime(0);
+            player.play();
         }
 
         // Rewind 10 seconds
@@ -1982,14 +1962,18 @@ if (document.getElementById('appContainer')) {
             volumeSlider.value = player.muted() ? 0 : player.volume();
         }
 
-        // Toggle fullscreen
+        // Toggle fullscreen (FIX #4)
         function toggleFullscreen() {
+            const modalContent = modal.querySelector('.netflix-player-modal-content');
             if (!document.fullscreenElement) {
-                modal.requestFullscreen();
-                fullscreenBtn.classList.add('fullscreen');
+                modalContent.requestFullscreen().catch(err => {
+                    // Fallback for iOS
+                    if (player.el().webkitEnterFullscreen) {
+                        player.el().querySelector('video').webkitEnterFullscreen();
+                    }
+                });
             } else {
                 document.exitFullscreen();
-                fullscreenBtn.classList.remove('fullscreen');
             }
         }
 
@@ -1999,37 +1983,157 @@ if (document.getElementById('appContainer')) {
             
             const currentTime = player.currentTime();
             const duration = player.duration();
+            
+            if (!isFinite(duration) || duration === 0) return;
+            
             const percentage = (currentTime / duration) * 100;
             
             progressFill.style.width = `${percentage}%`;
             progressHandle.style.left = `${percentage}%`;
             currentTimeEl.textContent = formatTime(currentTime);
+            durationEl.textContent = formatTime(duration);
+        }
+
+        // Setup quality selector (FIX #3, #6, #12)
+        function setupQualityLevels() {
+            const qualityLevels = player.qualityLevels();
             
-            if (duration) {
-                durationEl.textContent = formatTime(duration);
+            if (!qualityLevels) return;
+            
+            qualityLevels.on('addqualitylevel', () => {
+                updateQualityMenu();
+            });
+            
+            qualityLevels.on('change', () => {
+                updateQualityLabel();
+            });
+            
+            // Initial setup
+            if (qualityLevels.length > 0) {
+                updateQualityMenu();
+            }
+        }
+
+        function updateQualityMenu() {
+            const qualityLevels = player.qualityLevels();
+            if (!qualityLevels || qualityLevels.length <= 1) {
+                // Hide quality selector if only one quality available
+                qualityBtn.style.opacity = '0.5';
+                qualityBtn.style.pointerEvents = 'none';
+                return;
+            }
+
+            qualityMenu.innerHTML = '<div class="quality-option active" data-quality="auto">Auto</div>';
+            
+            // Add quality options in descending order
+            const levels = Array.from(qualityLevels).sort((a, b) => b.height - a.height);
+            
+            levels.forEach((level, index) => {
+                const option = document.createElement('div');
+                option.className = 'quality-option';
+                option.dataset.quality = index;
+                option.textContent = `${level.height}p`;
+                option.addEventListener('click', () => selectQuality(index));
+                qualityMenu.appendChild(option);
+            });
+            
+            qualityBtn.style.opacity = '1';
+            qualityBtn.style.pointerEvents = 'auto';
+        }
+
+        function selectQuality(qualityIndex) {
+            const qualityLevels = player.qualityLevels();
+            
+            if (qualityIndex === 'auto') {
+                // Enable auto quality
+                for (let i = 0; i < qualityLevels.length; i++) {
+                    qualityLevels[i].enabled = true;
+                }
+                qualityLabel.textContent = 'Auto';
+            } else {
+                // Disable all except selected
+                for (let i = 0; i < qualityLevels.length; i++) {
+                    qualityLevels[i].enabled = (i === qualityIndex);
+                }
+                qualityLabel.textContent = `${qualityLevels[qualityIndex].height}p`;
+            }
+            
+            // Update active state in menu
+            qualityMenu.querySelectorAll('.quality-option').forEach((opt, idx) => {
+                opt.classList.toggle('active', 
+                    qualityIndex === 'auto' ? idx === 0 : parseInt(opt.dataset.quality) === qualityIndex
+                );
+            });
+            
+            qualityMenu.style.display = 'none';
+        }
+
+        function updateQualityLabel() {
+            const qualityLevels = player.qualityLevels();
+            if (!qualityLevels) return;
+            
+            // Check if auto mode (multiple levels enabled)
+            let enabledCount = 0;
+            let currentLevel = null;
+            
+            for (let i = 0; i < qualityLevels.length; i++) {
+                if (qualityLevels[i].enabled) {
+                    enabledCount++;
+                    if (qualityLevels.selectedIndex === i) {
+                        currentLevel = qualityLevels[i];
+                    }
+                }
+            }
+            
+            if (enabledCount > 1) {
+                // Auto mode - show current playing quality
+                if (currentLevel) {
+                    qualityLabel.textContent = `Auto (${currentLevel.height}p)`;
+                } else {
+                    qualityLabel.textContent = 'Auto';
+                }
+            } else if (currentLevel) {
+                qualityLabel.textContent = `${currentLevel.height}p`;
             }
         }
 
         // Event listeners
         player.on('timeupdate', updateProgress);
+        
         player.on('durationchange', () => {
             durationEl.textContent = formatTime(player.duration());
         });
+        
         player.on('play', () => {
             playPauseBtn.classList.add('playing');
             playPauseBtnSmall.classList.add('playing');
         });
+        
         player.on('pause', () => {
             playPauseBtn.classList.remove('playing');
             playPauseBtnSmall.classList.remove('playing');
+            showControls(); // Keep controls visible when paused
         });
+        
         player.on('volumechange', updateVolumeUI);
+        
+        player.on('loadedmetadata', () => {
+            setupQualityLevels();
+            updateProgress();
+        });
 
         // Player ready
         player.ready(() => {
-            durationEl.textContent = formatTime(player.duration());
             updateVolumeUI();
             showControls();
+            
+            // Hide big play button after first interaction (FIX #8)
+            player.one('play', () => {
+                const bigPlayButton = player.el().querySelector('.vjs-big-play-button');
+                if (bigPlayButton) {
+                    bigPlayButton.style.display = 'none';
+                }
+            });
         });
 
         // Control event listeners
@@ -2037,11 +2141,35 @@ if (document.getElementById('appContainer')) {
         playPauseBtnSmall.addEventListener('click', togglePlayPause);
         rewindBtn.addEventListener('click', rewind10);
         forwardBtn.addEventListener('click', forward10);
+        restartBtn.addEventListener('click', restartVideo); // FIX #1
         
         volumeBtn.addEventListener('click', toggleMute);
         volumeSlider.addEventListener('input', (e) => {
-            player.volume(e.target.value);
-            player.muted(e.target.value === 0);
+            const value = parseFloat(e.target.value);
+            player.volume(value);
+            if (value === 0) {
+                player.muted(true);
+            } else if (player.muted()) {
+                player.muted(false);
+            }
+        });
+
+        // Quality selector toggle (FIX #2)
+        qualityBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isVisible = qualityMenu.style.display !== 'none';
+            qualityMenu.style.display = isVisible ? 'none' : 'block';
+            showControls(); // Keep controls visible
+        });
+
+        // Close quality menu when clicking outside
+        document.addEventListener('click', () => {
+            qualityMenu.style.display = 'none';
+        });
+
+        // Auto quality option
+        qualityMenu.querySelector('[data-quality="auto"]').addEventListener('click', () => {
+            selectQuality('auto');
         });
 
         // Progress bar seeking
@@ -2066,7 +2194,6 @@ if (document.getElementById('appContainer')) {
 
         document.addEventListener('mouseup', () => {
             if (isSeeking) {
-                const rect = progressBar.getBoundingClientRect();
                 const percentage = parseFloat(progressFill.style.width) / 100;
                 player.currentTime(percentage * player.duration());
                 isSeeking = false;
@@ -2076,6 +2203,7 @@ if (document.getElementById('appContainer')) {
         fullscreenBtn.addEventListener('click', toggleFullscreen);
         
         closeBtn.addEventListener('click', closeModal);
+        
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
                 closeModal();
@@ -2084,24 +2212,55 @@ if (document.getElementById('appContainer')) {
 
         // Mouse movement detection for controls
         modal.addEventListener('mousemove', showControls);
+        modal.addEventListener('click', showControls);
 
         // Fullscreen change events
         document.addEventListener('fullscreenchange', () => {
             fullscreenBtn.classList.toggle('fullscreen', !!document.fullscreenElement);
         });
 
-        // ESC key to close
-        const escHandler = (e) => {
-            if (e.key === 'Escape') {
-                if (document.fullscreenElement) {
-                    document.exitFullscreen();
-                } else {
-                    closeModal();
-                    document.removeEventListener('keydown', escHandler);
-                }
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function keyHandler(e) {
+            if (!modal.parentElement) {
+                document.removeEventListener('keydown', keyHandler);
+                return;
             }
-        };
-        document.addEventListener('keydown', escHandler);
+            
+            switch(e.key) {
+                case ' ':
+                case 'k':
+                    e.preventDefault();
+                    togglePlayPause();
+                    break;
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    rewind10();
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    forward10();
+                    break;
+                case 'f':
+                    e.preventDefault();
+                    toggleFullscreen();
+                    break;
+                case 'm':
+                    e.preventDefault();
+                    toggleMute();
+                    break;
+                case 'Escape':
+                    if (document.fullscreenElement) {
+                        document.exitFullscreen();
+                    } else {
+                        closeModal();
+                    }
+                    break;
+                case '0':
+                    e.preventDefault();
+                    restartVideo();
+                    break;
+            }
+        });
 
         // Close modal function
         function closeModal() {
@@ -2109,7 +2268,6 @@ if (document.getElementById('appContainer')) {
             tokenRefreshManager.stopRefresh(videoId);
             modal.remove();
             document.body.style.overflow = '';
-            document.removeEventListener('keydown', escHandler);
         }
 
         // Register for token refresh
