@@ -1721,7 +1721,7 @@ if (document.getElementById('appContainer')) {
     }
 }
 
-    // --- NETFLIX-STYLE VIDEO PLAYER MODAL ---
+    // --- NETFLIX-STYLE VIDEO PLAYER MODAL (POLISHED VERSION) ---
     function openVideoPlayer(link, tierId) {
         // Extract video ID from URL
         const videoIdMatch = link.url.match(/\/([a-f0-9-]{36})\//);
@@ -1738,102 +1738,148 @@ if (document.getElementById('appContainer')) {
         // Create modal with Netflix-like dark theme
         const modal = document.createElement('div');
         modal.className = 'netflix-player-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-label', 'Video Player');
         modal.innerHTML = `
             <div class="netflix-player-modal-content">
+                <!-- Header with close button and title -->
                 <div class="player-header">
-                    <button class="netflix-close-btn" aria-label="Close player">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <button class="netflix-close-btn" aria-label="Close video player">
+                        <svg width="44" height="44" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                         </svg>
+                        <span class="sr-only">Close</span>
                     </button>
-                    <div class="player-title">${link.title}</div>
+                    <div class="player-title" aria-live="polite">${link.title}</div>
                 </div>
+                
+                <!-- Video container -->
                 <div class="video-container">
                     <video 
                         id="netflixPlayer" 
-                        class="video-js vjs-big-play-centered vjs-fluid"
+                        class="video-js vjs-big-play-centered"
                         preload="auto"
-                        data-setup='{"fluid": true, "aspectRatio": "16:9"}'
+                        playsinline
+                        crossorigin="anonymous"
+                        aria-label="${link.title}"
                     ></video>
                 </div>
+                
+                <!-- Custom controls overlay -->
                 <div class="player-controls-overlay">
-                    <div class="controls-top">
-                        <div class="title-overlay">${link.title}</div>
-                    </div>
                     <div class="controls-center">
-                        <button class="play-pause-btn" aria-label="Play/Pause">
-                            <svg class="play-icon" width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                        <button class="big-play-pause-btn" aria-label="Play video">
+                            <svg class="play-icon" width="80" height="80" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                 <path d="M8 5v14l11-7z"/>
                             </svg>
-                            <svg class="pause-icon" width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                            <svg class="pause-icon" width="80" height="80" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                 <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
                             </svg>
                         </button>
                     </div>
+                    
                     <div class="controls-bottom">
+                        <!-- Progress bar -->
                         <div class="progress-container">
-                            <div class="progress-bar">
+                            <div class="progress-bar" role="slider" aria-label="Video progress" 
+                                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+                                 tabindex="0">
+                                <div class="progress-background"></div>
                                 <div class="progress-fill"></div>
-                                <div class="progress-handle"></div>
+                                <div class="progress-handle" aria-hidden="true"></div>
+                                <div class="progress-buffer" aria-hidden="true"></div>
                             </div>
-                            <div class="time-display">
+                            <div class="time-display" aria-live="polite">
                                 <span class="current-time">0:00</span> / <span class="duration">0:00</span>
                             </div>
                         </div>
+                        
+                        <!-- Control buttons -->
                         <div class="control-buttons">
                             <button class="rewind-btn" aria-label="Rewind 10 seconds">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                     <path d="M11.99 5V1l-5 5 5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6h-2c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
                                 </svg>
                             </button>
-                            <button class="play-pause-btn-small" aria-label="Play/Pause">
-                                <svg class="play-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            
+                            <button class="play-pause-btn" aria-label="Play">
+                                <svg class="play-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                     <path d="M8 5v14l11-7z"/>
                                 </svg>
-                                <svg class="pause-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <svg class="pause-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                     <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
                                 </svg>
                             </button>
+                            
                             <button class="forward-btn" aria-label="Forward 10 seconds">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                     <path d="M5 4v16l7-8zm7 8l7 8V4z"/>
                                 </svg>
                             </button>
+                            
+                            <!-- Volume control -->
                             <div class="volume-control">
                                 <button class="volume-btn" aria-label="Volume">
-                                    <svg class="volume-high" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                                    <svg class="volume-high" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
                                     </svg>
-                                    <svg class="volume-low" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                    <svg class="volume-low" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                         <path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/>
                                     </svg>
-                                    <svg class="volume-mute" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                    <svg class="volume-mute" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                         <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
                                     </svg>
                                 </button>
                                 <div class="volume-slider-container">
-                                    <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="1">
+                                    <input type="range" class="volume-slider" min="0" max="1" step="0.01" value="1"
+                                           aria-label="Volume level">
                                 </div>
                             </div>
-                            <div class="quality-selector">
-                                <select class="quality-dropdown">
-                                    <option value="auto">Auto</option>
-                                </select>
+                            
+                            <!-- Quality selector -->
+                            <div class="quality-selector" style="display: none;">
+                                <button class="quality-btn" aria-label="Video quality settings">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                        <path d="M19.43 12.98c.04-.32.05-.64.05-.98s-.01-.66-.04-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.03.32-.04.65-.04.98s.01.66.04.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/>
+                                    </svg>
+                                </button>
+                                <div class="quality-menu">
+                                    <div class="quality-menu-header">Quality</div>
+                                    <div class="quality-options">
+                                        <button class="quality-option active" data-quality="auto">
+                                            <span class="quality-name">Auto</span>
+                                            <span class="quality-check">✓</span>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
-                            <button class="settings-btn" aria-label="Settings">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-                                </svg>
-                            </button>
-                            <button class="fullscreen-btn" aria-label="Fullscreen">
-                                <svg class="enter-fullscreen" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            
+                            <button class="fullscreen-btn" aria-label="Enter fullscreen">
+                                <svg class="enter-fullscreen" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                     <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
                                 </svg>
-                                <svg class="exit-fullscreen" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <svg class="exit-fullscreen" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                     <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
                                 </svg>
                             </button>
                         </div>
+                    </div>
+                </div>
+                
+                <!-- Loading indicator -->
+                <div class="loading-indicator" aria-hidden="true">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text">Loading video...</div>
+                </div>
+                
+                <!-- Error overlay -->
+                <div class="error-overlay" aria-hidden="true" style="display: none;">
+                    <div class="error-content">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                        </svg>
+                        <div class="error-message">Video failed to load. Please try again.</div>
+                        <button class="retry-btn">Retry</button>
                     </div>
                 </div>
             </div>
@@ -1842,9 +1888,16 @@ if (document.getElementById('appContainer')) {
         document.body.appendChild(modal);
         document.body.style.overflow = 'hidden';
         
-        // Initialize video.js with Netflix-like settings
+        // Prevent duplicate modals
+        if (document.querySelectorAll('.netflix-player-modal').length > 1) {
+            document.querySelectorAll('.netflix-player-modal').forEach((m, i) => {
+                if (i > 0) m.remove();
+            });
+        }
+        
+        // Initialize video.js with proper settings
         const player = videojs('netflixPlayer', {
-            controls: false, // We'll use our custom controls
+            controls: false,
             autoplay: false,
             preload: 'auto',
             fluid: true,
@@ -1853,7 +1906,7 @@ if (document.getElementById('appContainer')) {
             html5: {
                 vhs: {
                     overrideNative: true,
-                    enableLowInitialPlaylist: false,
+                    enableLowInitialPlaylist: true,
                     smoothQualityChange: true,
                     useBandwidthFromLocalStorage: false,
                     limitRenditionByPlayerDimensions: false,
@@ -1863,33 +1916,8 @@ if (document.getElementById('appContainer')) {
                 nativeVideoTracks: false
             },
             userActions: {
-                hotkeys: function(event) {
-                    // Space bar to play/pause
-                    if (event.which === 32) {
-                        togglePlayPause();
-                        event.preventDefault();
-                    }
-                    // Left arrow rewind 10s
-                    if (event.which === 37) {
-                        rewind10();
-                        event.preventDefault();
-                    }
-                    // Right arrow forward 10s
-                    if (event.which === 39) {
-                        forward10();
-                        event.preventDefault();
-                    }
-                    // F key for fullscreen
-                    if (event.which === 70) {
-                        toggleFullscreen();
-                        event.preventDefault();
-                    }
-                    // M key for mute
-                    if (event.which === 77) {
-                        toggleMute();
-                        event.preventDefault();
-                    }
-                }
+                hotkeys: true,
+                doubleClick: true
             }
         });
 
@@ -1899,41 +1927,66 @@ if (document.getElementById('appContainer')) {
             type: 'application/x-mpegURL'
         });
 
-        // Custom control elements
+        // Enable quality selector if plugin is available
+        if (player.hlsQualitySelector) {
+            player.hlsQualitySelector({
+                displayCurrentQuality: true,
+                vjsIconClass: 'vjs-icon-cog'
+            });
+        }
+
+        // Get DOM elements
+        const bigPlayBtn = modal.querySelector('.big-play-pause-btn');
         const playPauseBtn = modal.querySelector('.play-pause-btn');
-        const playPauseBtnSmall = modal.querySelector('.play-pause-btn-small');
         const rewindBtn = modal.querySelector('.rewind-btn');
         const forwardBtn = modal.querySelector('.forward-btn');
         const volumeBtn = modal.querySelector('.volume-btn');
         const volumeSlider = modal.querySelector('.volume-slider');
         const progressBar = modal.querySelector('.progress-bar');
         const progressFill = modal.querySelector('.progress-fill');
+        const progressBuffer = modal.querySelector('.progress-buffer');
         const progressHandle = modal.querySelector('.progress-handle');
         const currentTimeEl = modal.querySelector('.current-time');
         const durationEl = modal.querySelector('.duration');
         const fullscreenBtn = modal.querySelector('.fullscreen-btn');
         const closeBtn = modal.querySelector('.netflix-close-btn');
+        const qualityBtn = modal.querySelector('.quality-btn');
+        const qualityMenu = modal.querySelector('.quality-menu');
+        const qualityOptions = modal.querySelector('.quality-options');
         const controlsOverlay = modal.querySelector('.player-controls-overlay');
+        const loadingIndicator = modal.querySelector('.loading-indicator');
+        const errorOverlay = modal.querySelector('.error-overlay');
+        const retryBtn = modal.querySelector('.retry-btn');
+        const videoContainer = modal.querySelector('.video-container');
         
         let controlsTimeout;
         let isSeeking = false;
+        let isQualityMenuOpen = false;
 
-        // Format time to MM:SS
+        // Format time to MM:SS or HH:MM:SS
         function formatTime(seconds) {
-            const mins = Math.floor(seconds / 60);
+            if (!seconds || isNaN(seconds)) return '0:00';
+            
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
             const secs = Math.floor(seconds % 60);
+            
+            if (hours > 0) {
+                return `${hours}:${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+            }
             return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
         }
 
         // Show/hide controls
         function showControls() {
+            if (player.paused()) return; // Keep controls visible when paused
             controlsOverlay.classList.add('visible');
             clearTimeout(controlsTimeout);
             controlsTimeout = setTimeout(hideControls, 3000);
         }
 
         function hideControls() {
-            if (!player.paused()) {
+            if (!player.paused() && !isSeeking && !isQualityMenuOpen) {
                 controlsOverlay.classList.remove('visible');
             }
         }
@@ -1942,29 +1995,38 @@ if (document.getElementById('appContainer')) {
         function togglePlayPause() {
             if (player.paused()) {
                 player.play();
-                playPauseBtn.classList.add('playing');
-                playPauseBtnSmall.classList.add('playing');
             } else {
                 player.pause();
-                playPauseBtn.classList.remove('playing');
-                playPauseBtnSmall.classList.remove('playing');
             }
+            updatePlayPauseButtons();
+        }
+
+        // Update play/pause button states
+        function updatePlayPauseButtons() {
+            const isPlaying = !player.paused();
+            bigPlayBtn.classList.toggle('playing', isPlaying);
+            playPauseBtn.classList.toggle('playing', isPlaying);
+            bigPlayBtn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
+            playPauseBtn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
         }
 
         // Rewind 10 seconds
         function rewind10() {
             player.currentTime(Math.max(0, player.currentTime() - 10));
+            showControls();
         }
 
         // Forward 10 seconds
         function forward10() {
             player.currentTime(Math.min(player.duration(), player.currentTime() + 10));
+            showControls();
         }
 
         // Toggle mute
         function toggleMute() {
             player.muted(!player.muted());
             updateVolumeUI();
+            showControls();
         }
 
         // Update volume UI
@@ -1972,12 +2034,15 @@ if (document.getElementById('appContainer')) {
             if (player.muted() || player.volume() === 0) {
                 volumeBtn.classList.remove('low', 'high');
                 volumeBtn.classList.add('mute');
+                volumeBtn.setAttribute('aria-label', 'Unmute');
             } else if (player.volume() < 0.5) {
                 volumeBtn.classList.remove('mute', 'high');
                 volumeBtn.classList.add('low');
+                volumeBtn.setAttribute('aria-label', 'Volume low');
             } else {
                 volumeBtn.classList.remove('mute', 'low');
                 volumeBtn.classList.add('high');
+                volumeBtn.setAttribute('aria-label', 'Volume high');
             }
             volumeSlider.value = player.muted() ? 0 : player.volume();
         }
@@ -1987,10 +2052,13 @@ if (document.getElementById('appContainer')) {
             if (!document.fullscreenElement) {
                 modal.requestFullscreen();
                 fullscreenBtn.classList.add('fullscreen');
+                fullscreenBtn.setAttribute('aria-label', 'Exit fullscreen');
             } else {
                 document.exitFullscreen();
                 fullscreenBtn.classList.remove('fullscreen');
+                fullscreenBtn.setAttribute('aria-label', 'Enter fullscreen');
             }
+            showControls();
         }
 
         // Update progress bar
@@ -1999,60 +2067,204 @@ if (document.getElementById('appContainer')) {
             
             const currentTime = player.currentTime();
             const duration = player.duration();
+            
+            if (!duration || duration === Infinity) return;
+            
             const percentage = (currentTime / duration) * 100;
             
             progressFill.style.width = `${percentage}%`;
             progressHandle.style.left = `${percentage}%`;
+            progressBar.setAttribute('aria-valuenow', percentage);
             currentTimeEl.textContent = formatTime(currentTime);
+            durationEl.textContent = formatTime(duration);
+        }
+
+        // Update buffer bar
+        function updateBuffer() {
+            if (!player.buffered() || !player.buffered().length) return;
             
-            if (duration) {
-                durationEl.textContent = formatTime(duration);
+            const duration = player.duration();
+            if (!duration || duration === Infinity) return;
+            
+            const bufferedEnd = player.buffered().end(0);
+            const bufferPercentage = (bufferedEnd / duration) * 100;
+            progressBuffer.style.width = `${bufferPercentage}%`;
+        }
+
+        // Show loading indicator
+        function showLoading() {
+            loadingIndicator.style.display = 'flex';
+            controlsOverlay.style.display = 'none';
+        }
+
+        // Hide loading indicator
+        function hideLoading() {
+            loadingIndicator.style.display = 'none';
+            controlsOverlay.style.display = 'block';
+        }
+
+        // Show error overlay
+        function showError() {
+            errorOverlay.style.display = 'flex';
+            controlsOverlay.style.display = 'none';
+        }
+
+        // Hide error overlay
+        function hideError() {
+            errorOverlay.style.display = 'none';
+            controlsOverlay.style.display = 'block';
+        }
+
+        // Update quality options
+        function updateQualityOptions() {
+            if (!player.qualityLevels || !player.qualityLevels()) return;
+            
+            const qualityLevels = player.qualityLevels();
+            const qualitySelector = modal.querySelector('.quality-selector');
+            
+            if (qualityLevels.length > 1) {
+                qualitySelector.style.display = 'flex';
+                
+                // Clear existing options
+                qualityOptions.innerHTML = '';
+                
+                // Add Auto option
+                const autoOption = document.createElement('button');
+                autoOption.className = 'quality-option active';
+                autoOption.dataset.quality = 'auto';
+                autoOption.innerHTML = `
+                    <span class="quality-name">Auto</span>
+                    <span class="quality-check">✓</span>
+                `;
+                autoOption.addEventListener('click', () => setQuality('auto'));
+                qualityOptions.appendChild(autoOption);
+                
+                // Add quality levels
+                for (let i = 0; i < qualityLevels.length; i++) {
+                    const level = qualityLevels[i];
+                    const height = level.height;
+                    if (!height) continue;
+                    
+                    const option = document.createElement('button');
+                    option.className = 'quality-option';
+                    option.dataset.quality = height;
+                    option.innerHTML = `
+                        <span class="quality-name">${height}p</span>
+                        <span class="quality-check">✓</span>
+                    `;
+                    option.addEventListener('click', () => setQuality(height));
+                    qualityOptions.appendChild(option);
+                }
+            } else {
+                qualitySelector.style.display = 'none';
             }
         }
 
-        // Event listeners
+        // Set quality
+        function setQuality(quality) {
+            if (!player.qualityLevels || !player.qualityLevels()) return;
+            
+            const qualityLevels = player.qualityLevels();
+            
+            if (quality === 'auto') {
+                // Enable all quality levels for auto selection
+                for (let i = 0; i < qualityLevels.length; i++) {
+                    qualityLevels[i].enabled = true;
+                }
+            } else {
+                const targetHeight = parseInt(quality);
+                // Select specific quality
+                for (let i = 0; i < qualityLevels.length; i++) {
+                    qualityLevels[i].enabled = (qualityLevels[i].height === targetHeight);
+                }
+            }
+            
+            // Update active state in UI
+            modal.querySelectorAll('.quality-option').forEach(option => {
+                option.classList.remove('active');
+            });
+            modal.querySelector(`.quality-option[data-quality="${quality}"]`).classList.add('active');
+            
+            closeQualityMenu();
+            showControls();
+        }
+
+        // Toggle quality menu
+        function toggleQualityMenu() {
+            isQualityMenuOpen = !isQualityMenuOpen;
+            qualityMenu.classList.toggle('open', isQualityMenuOpen);
+            
+            if (isQualityMenuOpen) {
+                showControls(); // Keep controls visible when menu is open
+            }
+        }
+
+        // Close quality menu
+        function closeQualityMenu() {
+            isQualityMenuOpen = false;
+            qualityMenu.classList.remove('open');
+        }
+
+        // Event listeners for player
         player.on('timeupdate', updateProgress);
+        player.on('progress', updateBuffer);
         player.on('durationchange', () => {
             durationEl.textContent = formatTime(player.duration());
         });
         player.on('play', () => {
-            playPauseBtn.classList.add('playing');
-            playPauseBtnSmall.classList.add('playing');
+            updatePlayPauseButtons();
+            hideLoading();
+            hideControls();
         });
         player.on('pause', () => {
-            playPauseBtn.classList.remove('playing');
-            playPauseBtnSmall.classList.remove('playing');
-        });
-        player.on('volumechange', updateVolumeUI);
-
-        // Player ready
-        player.ready(() => {
-            durationEl.textContent = formatTime(player.duration());
-            updateVolumeUI();
+            updatePlayPauseButtons();
             showControls();
         });
+        player.on('volumechange', updateVolumeUI);
+        player.on('waiting', showLoading);
+        player.on('playing', hideLoading);
+        player.on('canplay', hideLoading);
+        player.on('error', (e) => {
+            console.error('Player error:', e);
+            showError();
+        });
+        player.on('loadedmetadata', () => {
+            durationEl.textContent = formatTime(player.duration());
+            updateQualityOptions();
+        });
+        player.on('qualitylevels', updateQualityOptions);
 
         // Control event listeners
+        bigPlayBtn.addEventListener('click', togglePlayPause);
         playPauseBtn.addEventListener('click', togglePlayPause);
-        playPauseBtnSmall.addEventListener('click', togglePlayPause);
         rewindBtn.addEventListener('click', rewind10);
         forwardBtn.addEventListener('click', forward10);
         
         volumeBtn.addEventListener('click', toggleMute);
         volumeSlider.addEventListener('input', (e) => {
-            player.volume(e.target.value);
+            player.volume(parseFloat(e.target.value));
             player.muted(e.target.value === 0);
+            updateVolumeUI();
+            showControls();
         });
+
+        qualityBtn.addEventListener('click', toggleQualityMenu);
 
         // Progress bar seeking
         progressBar.addEventListener('click', (e) => {
             const rect = progressBar.getBoundingClientRect();
             const percentage = (e.clientX - rect.left) / rect.width;
             player.currentTime(percentage * player.duration());
+            showControls();
         });
 
-        progressHandle.addEventListener('mousedown', () => {
+        progressBar.addEventListener('mousedown', (e) => {
             isSeeking = true;
+            showControls();
+            
+            const rect = progressBar.getBoundingClientRect();
+            const percentage = (e.clientX - rect.left) / rect.width;
+            player.currentTime(percentage * player.duration());
         });
 
         document.addEventListener('mousemove', (e) => {
@@ -2061,16 +2273,37 @@ if (document.getElementById('appContainer')) {
             const percentage = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
             progressFill.style.width = `${percentage * 100}%`;
             progressHandle.style.left = `${percentage * 100}%`;
+            progressBar.setAttribute('aria-valuenow', percentage * 100);
             currentTimeEl.textContent = formatTime(percentage * player.duration());
         });
 
         document.addEventListener('mouseup', () => {
             if (isSeeking) {
-                const rect = progressBar.getBoundingClientRect();
-                const percentage = parseFloat(progressFill.style.width) / 100;
-                player.currentTime(percentage * player.duration());
                 isSeeking = false;
+                showControls();
             }
+        });
+
+        // Keyboard support for progress bar
+        progressBar.addEventListener('keydown', (e) => {
+            const currentTime = player.currentTime();
+            const duration = player.duration();
+            
+            switch(e.key) {
+                case 'ArrowLeft':
+                    player.currentTime(Math.max(0, currentTime - 5));
+                    break;
+                case 'ArrowRight':
+                    player.currentTime(Math.min(duration, currentTime + 5));
+                    break;
+                case 'Home':
+                    player.currentTime(0);
+                    break;
+                case 'End':
+                    player.currentTime(duration);
+                    break;
+            }
+            showControls();
         });
 
         fullscreenBtn.addEventListener('click', toggleFullscreen);
@@ -2082,12 +2315,43 @@ if (document.getElementById('appContainer')) {
             }
         });
 
+        retryBtn.addEventListener('click', () => {
+            hideError();
+            player.src({
+                src: link.url,
+                type: 'application/x-mpegURL'
+            });
+            player.load();
+            player.play();
+        });
+
         // Mouse movement detection for controls
         modal.addEventListener('mousemove', showControls);
+        
+        // Hide controls when mouse leaves player area
+        modal.addEventListener('mouseleave', () => {
+            if (!player.paused() && !isSeeking && !isQualityMenuOpen) {
+                hideControls();
+            }
+        });
+
+        // Click outside quality menu to close it
+        document.addEventListener('click', (e) => {
+            if (isQualityMenuOpen && !qualityMenu.contains(e.target) && !qualityBtn.contains(e.target)) {
+                closeQualityMenu();
+            }
+        });
 
         // Fullscreen change events
         document.addEventListener('fullscreenchange', () => {
-            fullscreenBtn.classList.toggle('fullscreen', !!document.fullscreenElement);
+            const isFullscreen = !!document.fullscreenElement;
+            fullscreenBtn.classList.toggle('fullscreen', isFullscreen);
+            fullscreenBtn.setAttribute('aria-label', isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen');
+            
+            // Force video.js to recalculate dimensions
+            if (player) {
+                player.trigger('fullscreenchange');
+            }
         });
 
         // ESC key to close
@@ -2095,17 +2359,44 @@ if (document.getElementById('appContainer')) {
             if (e.key === 'Escape') {
                 if (document.fullscreenElement) {
                     document.exitFullscreen();
+                } else if (isQualityMenuOpen) {
+                    closeQualityMenu();
                 } else {
                     closeModal();
-                    document.removeEventListener('keydown', escHandler);
+                }
+            }
+            
+            // Space bar to play/pause
+            if (e.key === ' ' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT') {
+                togglePlayPause();
+                e.preventDefault();
+            }
+            
+            // Arrow keys for seeking when focus is on player
+            if (e.target === modal || e.target === progressBar) {
+                if (e.key === 'ArrowLeft') {
+                    rewind10();
+                    e.preventDefault();
+                } else if (e.key === 'ArrowRight') {
+                    forward10();
+                    e.preventDefault();
+                } else if (e.key === 'f' || e.key === 'F') {
+                    toggleFullscreen();
+                    e.preventDefault();
+                } else if (e.key === 'm' || e.key === 'M') {
+                    toggleMute();
+                    e.preventDefault();
                 }
             }
         };
+        
         document.addEventListener('keydown', escHandler);
 
         // Close modal function
         function closeModal() {
-            player.dispose();
+            if (player) {
+                player.dispose();
+            }
             tokenRefreshManager.stopRefresh(videoId);
             modal.remove();
             document.body.style.overflow = '';
@@ -2120,20 +2411,41 @@ if (document.getElementById('appContainer')) {
         player.on('pause', () => analyticsTracker.trackEvent(videoId, 'pause', player, tierId));
         player.on('ended', () => {
             analyticsTracker.trackEvent(videoId, 'ended', player, tierId);
-            closeModal();
+            // Reset to beginning when video ends
+            player.currentTime(0);
+            player.pause();
+            updatePlayPauseButtons();
+            showControls();
         });
         player.on('error', () => analyticsTracker.trackEvent(videoId, 'error', player, tierId));
         
         // Track watch time every 30 seconds
         let watchTimeTracker = setInterval(() => {
-            if (!player.paused()) {
+            if (player && !player.paused()) {
                 analyticsTracker.trackEvent(videoId, 'timeupdate', player, tierId);
             }
         }, 30000);
         
         // Cleanup on close
-        modal.addEventListener('close', () => {
+        const originalCloseModal = closeModal;
+        closeModal = function() {
             clearInterval(watchTimeTracker);
+            originalCloseModal();
+        };
+        
+        // Initial UI setup
+        updatePlayPauseButtons();
+        updateVolumeUI();
+        showControls();
+        
+        // Focus management
+        modal.focus();
+        
+        // Auto-play on click of big play button (optional)
+        bigPlayBtn.addEventListener('click', () => {
+            if (player.paused()) {
+                player.play();
+            }
         });
     }
 
