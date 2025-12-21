@@ -72,16 +72,12 @@
     <script src="https://unpkg.com/photoswipe@5.3.7/dist/umd/photoswipe-lightbox.umd.min.js"></script>
     <!-- Swiper JS -->
     <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
-    <!-- video.js Core + HLS -->
+    <!-- video.js JS - Fixed to use unpkg.com and removed duplicates -->
     <script src="https://unpkg.com/video.js@8.10.0/dist/video.min.js"></script>
-    <!-- Quality Levels Plugin (only once) -->
-    <script>
-    // Prevent duplicate plugin registration
-    if (!videojs.getComponent('qualityLevels')) {
-        document.write('<script src="https://unpkg.com/videojs-contrib-quality-levels@4.0.0/dist/videojs-contrib-quality-levels.min.js"><\/script>');
-        document.write('<script src="https://unpkg.com/videojs-hls-quality-selector@1.1.4/dist/videojs-hls-quality-selector.min.js"><\/script>');
-    }
-    </script>
+    <script src="https://unpkg.com/@videojs/http-streaming@3.8.0/dist/videojs-http-streaming.min.js"></script>
+    <!-- video.js Quality Levels Plugins -->
+    <script src="https://unpkg.com/videojs-contrib-quality-levels@4.0.0/dist/videojs-contrib-quality-levels.min.js"></script>
+    <script src="https://unpkg.com/videojs-hls-quality-selector@1.1.4/dist/videojs-hls-quality-selector.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
