@@ -1746,14 +1746,13 @@ if (document.getElementById('appContainer')) {
                             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                         </svg>
                     </button>
-                    <div class="player-title">${link.title}</div>
                 </div>
                 <div class="video-container">
                     <video 
                         id="netflixPlayer" 
                         class="video-js vjs-big-play-centered vjs-fluid"
                         preload="auto"
-                        data-setup='{"fluid": true, "aspectRatio": "16:9"}'
+                        data-setup='{}'
                     ></video>
                 </div>
                 <div class="player-controls-overlay">
@@ -1820,11 +1819,6 @@ if (document.getElementById('appContainer')) {
                                     <option value="auto">Auto</option>
                                 </select>
                             </div>
-                            <button class="settings-btn" aria-label="Settings">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-                                </svg>
-                            </button>
                             <button class="fullscreen-btn" aria-label="Fullscreen">
                                 <svg class="enter-fullscreen" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
@@ -1842,9 +1836,14 @@ if (document.getElementById('appContainer')) {
         document.body.appendChild(modal);
         document.body.style.overflow = 'hidden';
         
+        // Check if video.js is already initialized
+        if (videojs.getPlayer('netflixPlayer')) {
+            videojs.getPlayer('netflixPlayer').dispose();
+        }
+        
         // Initialize video.js with Netflix-like settings
         const player = videojs('netflixPlayer', {
-            controls: false, // We'll use our custom controls
+            controls: false,
             autoplay: false,
             preload: 'auto',
             fluid: true,
@@ -1853,14 +1852,10 @@ if (document.getElementById('appContainer')) {
             html5: {
                 vhs: {
                     overrideNative: true,
-                    enableLowInitialPlaylist: false,
+                    enableLowInitialPlaylist: true,
                     smoothQualityChange: true,
-                    useBandwidthFromLocalStorage: false,
-                    limitRenditionByPlayerDimensions: false,
-                    bandwidth: 5000000
-                },
-                nativeAudioTracks: false,
-                nativeVideoTracks: false
+                    limitRenditionByPlayerDimensions: false
+                }
             },
             userActions: {
                 hotkeys: function(event) {
@@ -1914,12 +1909,14 @@ if (document.getElementById('appContainer')) {
         const fullscreenBtn = modal.querySelector('.fullscreen-btn');
         const closeBtn = modal.querySelector('.netflix-close-btn');
         const controlsOverlay = modal.querySelector('.player-controls-overlay');
+        const qualityDropdown = modal.querySelector('.quality-dropdown');
         
         let controlsTimeout;
         let isSeeking = false;
 
         // Format time to MM:SS
         function formatTime(seconds) {
+            if (isNaN(seconds)) return '0:00';
             const mins = Math.floor(seconds / 60);
             const secs = Math.floor(seconds % 60);
             return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
@@ -1933,13 +1930,15 @@ if (document.getElementById('appContainer')) {
         }
 
         function hideControls() {
-            if (!player.paused()) {
+            if (player && !player.paused()) {
                 controlsOverlay.classList.remove('visible');
             }
         }
 
         // Toggle play/pause
         function togglePlayPause() {
+            if (!player) return;
+            
             if (player.paused()) {
                 player.play();
                 playPauseBtn.classList.add('playing');
@@ -1953,22 +1952,27 @@ if (document.getElementById('appContainer')) {
 
         // Rewind 10 seconds
         function rewind10() {
+            if (!player) return;
             player.currentTime(Math.max(0, player.currentTime() - 10));
         }
 
         // Forward 10 seconds
         function forward10() {
+            if (!player) return;
             player.currentTime(Math.min(player.duration(), player.currentTime() + 10));
         }
 
         // Toggle mute
         function toggleMute() {
+            if (!player) return;
             player.muted(!player.muted());
             updateVolumeUI();
         }
 
         // Update volume UI
         function updateVolumeUI() {
+            if (!player) return;
+            
             if (player.muted() || player.volume() === 0) {
                 volumeBtn.classList.remove('low', 'high');
                 volumeBtn.classList.add('mute');
@@ -1984,6 +1988,8 @@ if (document.getElementById('appContainer')) {
 
         // Toggle fullscreen
         function toggleFullscreen() {
+            if (!modal) return;
+            
             if (!document.fullscreenElement) {
                 modal.requestFullscreen();
                 fullscreenBtn.classList.add('fullscreen');
@@ -1995,41 +2001,99 @@ if (document.getElementById('appContainer')) {
 
         // Update progress bar
         function updateProgress() {
-            if (isSeeking) return;
+            if (isSeeking || !player) return;
             
             const currentTime = player.currentTime();
             const duration = player.duration();
-            const percentage = (currentTime / duration) * 100;
             
-            progressFill.style.width = `${percentage}%`;
-            progressHandle.style.left = `${percentage}%`;
-            currentTimeEl.textContent = formatTime(currentTime);
-            
-            if (duration) {
+            if (duration && !isNaN(duration)) {
+                const percentage = (currentTime / duration) * 100;
+                
+                progressFill.style.width = `${percentage}%`;
+                progressHandle.style.left = `${percentage}%`;
+                currentTimeEl.textContent = formatTime(currentTime);
                 durationEl.textContent = formatTime(duration);
             }
+        }
+
+        // Initialize quality selector
+        function initQualitySelector() {
+            if (!player || !qualityDropdown) return;
+            
+            // Clear existing options
+            qualityDropdown.innerHTML = '<option value="auto">Auto</option>';
+            
+            // Wait for player to be ready and quality levels to be available
+            setTimeout(() => {
+                try {
+                    const qualityLevels = player.qualityLevels();
+                    if (qualityLevels && qualityLevels.length > 1) {
+                        // Add quality options
+                        for (let i = 0; i < qualityLevels.length; i++) {
+                            const level = qualityLevels[i];
+                            const option = document.createElement('option');
+                            option.value = level.id;
+                            option.textContent = level.height ? `${level.height}p` : `Level ${i}`;
+                            qualityDropdown.appendChild(option);
+                        }
+                        
+                        // Listen for quality changes
+                        qualityLevels.on('change', function() {
+                            qualityDropdown.value = qualityLevels.selectedIndex;
+                        });
+                        
+                        // Handle quality selection
+                        qualityDropdown.addEventListener('change', function() {
+                            if (this.value === 'auto') {
+                                qualityLevels.selectedIndex = -1; // Auto
+                            } else {
+                                qualityLevels.selectedIndex = parseInt(this.value);
+                            }
+                        });
+                    } else {
+                        // Hide quality selector if only one quality
+                        qualityDropdown.parentElement.style.display = 'none';
+                    }
+                } catch (e) {
+                    // Silently handle error
+                    qualityDropdown.parentElement.style.display = 'none';
+                }
+            }, 1000);
         }
 
         // Event listeners
         player.on('timeupdate', updateProgress);
         player.on('durationchange', () => {
-            durationEl.textContent = formatTime(player.duration());
+            if (player && player.duration()) {
+                durationEl.textContent = formatTime(player.duration());
+            }
         });
         player.on('play', () => {
             playPauseBtn.classList.add('playing');
             playPauseBtnSmall.classList.add('playing');
+            hideControls(); // Hide controls when playing starts
         });
         player.on('pause', () => {
             playPauseBtn.classList.remove('playing');
             playPauseBtnSmall.classList.remove('playing');
+            showControls(); // Show controls when paused
         });
         player.on('volumechange', updateVolumeUI);
+        player.on('loadedmetadata', initQualitySelector);
 
         // Player ready
         player.ready(() => {
-            durationEl.textContent = formatTime(player.duration());
+            if (player.duration()) {
+                durationEl.textContent = formatTime(player.duration());
+            }
             updateVolumeUI();
             showControls();
+            
+            // Hide the big play button from video.js
+            const bigPlayButton = player.bigPlayButton;
+            if (bigPlayButton) {
+                bigPlayButton.hide();
+            }
         });
 
         // Control event listeners
@@ -2040,23 +2104,29 @@ if (document.getElementById('appContainer')) {
         
         volumeBtn.addEventListener('click', toggleMute);
         volumeSlider.addEventListener('input', (e) => {
+            if (!player) return;
             player.volume(e.target.value);
             player.muted(e.target.value === 0);
         });
 
         // Progress bar seeking
         progressBar.addEventListener('click', (e) => {
+            if (!player || !player.duration()) return;
+            
             const rect = progressBar.getBoundingClientRect();
-            const percentage = (e.clientX - rect.left) / rect.width;
+            const percentage = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
             player.currentTime(percentage * player.duration());
         });
 
-        progressHandle.addEventListener('mousedown', () => {
+        progressHandle.addEventListener('mousedown', (e) => {
+            e.preventDefault();
             isSeeking = true;
+            showControls();
         });
 
         document.addEventListener('mousemove', (e) => {
-            if (!isSeeking) return;
+            if (!isSeeking || !player || !player.duration()) return;
+            
             const rect = progressBar.getBoundingClientRect();
             const percentage = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
             progressFill.style.width = `${percentage * 100}%`;
@@ -2065,7 +2135,7 @@ if (document.getElementById('appContainer')) {
         });
 
         document.addEventListener('mouseup', () => {
-            if (isSeeking) {
+            if (isSeeking && player && player.duration()) {
                 const rect = progressBar.getBoundingClientRect();
                 const percentage = parseFloat(progressFill.style.width) / 100;
                 player.currentTime(percentage * player.duration());
@@ -2084,6 +2154,7 @@ if (document.getElementById('appContainer')) {
 
         // Mouse movement detection for controls
         modal.addEventListener('mousemove', showControls);
+        modal.addEventListener('mouseenter', showControls);
 
         // Fullscreen change events
         document.addEventListener('fullscreenchange', () => {
@@ -2105,11 +2176,22 @@ if (document.getElementById('appContainer')) {
 
         // Close modal function
         function closeModal() {
-            player.dispose();
+            if (player) {
+                player.dispose();
+            }
             tokenRefreshManager.stopRefresh(videoId);
-            modal.remove();
+            
+            if (modal && modal.parentNode) {
+                modal.parentNode.removeChild(modal);
+            }
+            
             document.body.style.overflow = '';
             document.removeEventListener('keydown', escHandler);
+            
+            // Clear all intervals
+            if (controlsTimeout) {
+                clearTimeout(controlsTimeout);
+            }
         }
 
         // Register for token refresh
@@ -2126,7 +2208,7 @@ if (document.getElementById('appContainer')) {
         
         // Track watch time every 30 seconds
         let watchTimeTracker = setInterval(() => {
-            if (!player.paused()) {
+            if (player && !player.paused()) {
                 analyticsTracker.trackEvent(videoId, 'timeupdate', player, tierId);
             }
         }, 30000);
