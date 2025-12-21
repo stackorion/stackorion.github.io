@@ -2057,11 +2057,12 @@ body.theme-dark .announcement-error {
 }
 
 /* ========================================
-   NETFLIX-STYLE VIDEO PLAYER
+   PREMIUM VIDEO PLAYER V2.0
+   Modern, accessible, production-ready
    ======================================== */
 
-/* Modal Container */
-.netflix-player-modal {
+/* Modal Container - Full Screen */
+.premium-player-modal {
     position: fixed;
     top: 0;
     left: 0;
@@ -2072,16 +2073,16 @@ body.theme-dark .announcement-error {
     display: flex;
     align-items: center;
     justify-content: center;
-    animation: netflixFadeIn 0.3s ease;
+    animation: playerFadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@keyframes netflixFadeIn {
+@keyframes playerFadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
 }
 
-/* Modal Content */
-.netflix-player-modal-content {
+/* Modal Content Wrapper */
+.premium-player-content {
     position: relative;
     width: 100%;
     height: 100%;
@@ -2090,31 +2091,162 @@ body.theme-dark .announcement-error {
     flex-direction: column;
 }
 
-/* Player Header */
-.player-header {
+/* Loading State Overlay */
+.player-loading-overlay {
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
-    padding: 20px 40px;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
     align-items: center;
-    z-index: 10;
-    background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%);
+    justify-content: center;
+    z-index: 100;
     opacity: 0;
+    pointer-events: none;
     transition: opacity 0.3s ease;
 }
 
-.netflix-player-modal-content:hover .player-header {
+.player-loading-overlay.active {
     opacity: 1;
+    pointer-events: auto;
 }
 
-.netflix-close-btn {
-    background: rgba(20, 20, 20, 0.7);
+.player-spinner {
+    width: 60px;
+    height: 60px;
+    border: 4px solid rgba(255, 255, 255, 0.1);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.player-loading-text {
+    color: #fff;
+    font-size: 1rem;
+    margin-top: 20px;
+    font-weight: 500;
+}
+
+/* Error State Overlay */
+.player-error-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 101;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.player-error-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.player-error-content {
+    text-align: center;
+    max-width: 500px;
+    padding: 40px;
+}
+
+.player-error-icon {
+    font-size: 4rem;
+    margin-bottom: 20px;
+}
+
+.player-error-title {
+    color: #fff;
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.player-error-message {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1rem;
+    line-height: 1.5;
+    margin-bottom: 30px;
+}
+
+.player-error-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.player-error-btn {
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
     border: none;
-    width: 40px;
-    height: 40px;
+    font-size: 0.95rem;
+}
+
+.player-error-btn-primary {
+    background: #fff;
+    color: #000;
+}
+
+.player-error-btn-primary:hover {
+    background: rgba(255, 255, 255, 0.9);
+    transform: scale(1.05);
+}
+
+.player-error-btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.player-error-btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Top Header Bar */
+.premium-player-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 24px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 50;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%);
+    opacity: 0;
+    transform: translateY(-20px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
+}
+
+.premium-player-header.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.premium-close-btn {
+    background: rgba(20, 20, 20, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -2124,331 +2256,759 @@ body.theme-dark .announcement-error {
     transition: all 0.2s ease;
 }
 
-.netflix-close-btn:hover {
-    background: rgba(229, 9, 20, 0.9);
+.premium-close-btn:hover {
+    background: rgba(255, 59, 48, 0.9);
+    border-color: rgba(255, 59, 48, 0.5);
     transform: scale(1.1);
 }
 
-.player-title {
+.premium-video-title {
     color: #fff;
-    font-size: 1.5rem;
-    font-weight: 500;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    font-size: 1.4rem;
+    font-weight: 600;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    flex: 1;
+    text-align: center;
+    padding: 0 20px;
+}
+
+.premium-header-spacer {
+    width: 44px;
 }
 
 /* Video Container */
-.video-container {
+.premium-video-wrapper {
     flex: 1;
     position: relative;
     overflow: hidden;
+    background: #000;
 }
 
-/* Custom Controls Overlay */
-.player-controls-overlay {
+/* Custom Controls Container */
+.premium-controls-wrapper {
     position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
-    padding: 20px 40px;
-    background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%);
+    z-index: 50;
     opacity: 0;
-    transition: opacity 0.3s ease;
-    z-index: 10;
+    transform: translateY(20px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
 }
 
-.player-controls-overlay.visible {
+.premium-controls-wrapper.visible {
     opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
 }
 
-.controls-top {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 20px;
+/* Controls Background Gradient */
+.premium-controls-bg {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 180px;
+    background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%);
+    pointer-events: none;
 }
 
-.title-overlay {
-    color: #fff;
-    font-size: 1.8rem;
-    font-weight: 600;
-    text-align: center;
-    text-shadow: 0 2px 8px rgba(0,0,0,0.7);
-}
-
-.controls-center {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 30px;
-}
-
-.play-pause-btn {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(229, 9, 20, 0.9);
-    color: #fff;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
+/* Progress Bar Container */
+.premium-progress-container {
+    padding: 0 40px 16px;
     position: relative;
+    z-index: 2;
 }
 
-.play-pause-btn:hover {
-    background: rgba(229, 9, 20, 1);
-    transform: scale(1.1);
-}
-
-.play-pause-btn .pause-icon {
-    display: none;
-}
-
-.play-pause-btn.playing .play-icon {
-    display: none;
-}
-
-.play-pause-btn.playing .pause-icon {
-    display: block;
-}
-
-.controls-bottom {
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-}
-
-.progress-container {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
-
-.progress-bar {
-    flex: 1;
-    height: 4px;
-    background: rgba(255,255,255,0.3);
-    border-radius: 2px;
+.premium-progress-bar {
+    height: 5px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
     position: relative;
     cursor: pointer;
+    transition: height 0.2s ease;
 }
 
-.progress-fill {
+.premium-progress-bar:hover {
+    height: 7px;
+}
+
+.premium-progress-buffered {
     position: absolute;
     top: 0;
     left: 0;
     height: 100%;
-    background: #e50914;
-    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
     width: 0%;
+    transition: width 0.3s ease;
 }
 
-.progress-handle {
+.premium-progress-played {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: #fff;
+    border-radius: 3px;
+    width: 0%;
+    transition: width 0.1s linear;
+}
+
+.premium-progress-handle {
     position: absolute;
     top: 50%;
-    transform: translate(-50%, -50%);
-    width: 12px;
-    height: 12px;
-    background: #e50914;
+    transform: translate(-50%, -50%) scale(0);
+    width: 16px;
+    height: 16px;
+    background: #fff;
     border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s ease;
+    pointer-events: none;
+}
+
+.premium-progress-bar:hover .premium-progress-handle,
+.premium-progress-bar.seeking .premium-progress-handle {
+    transform: translate(-50%, -50%) scale(1);
+}
+
+/* Thumbnail Preview on Progress Bar */
+.premium-progress-thumbnail {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-12px) scale(0.9);
+    width: 160px;
+    height: 90px;
+    background: rgba(20, 20, 20, 0.95);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    overflow: hidden;
     opacity: 0;
-    transition: opacity 0.2s ease;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
-.progress-bar:hover .progress-handle {
+.premium-progress-bar:hover .premium-progress-thumbnail {
     opacity: 1;
+    transform: translateX(-50%) translateY(-12px) scale(1);
 }
 
-.time-display {
+.premium-thumbnail-time {
+    position: absolute;
+    bottom: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
     color: #fff;
-    font-size: 0.9rem;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
     font-family: 'Courier New', monospace;
-    min-width: 100px;
-    text-align: right;
 }
 
-.control-buttons {
+/* Bottom Controls Row */
+.premium-controls-row {
+    padding: 0 40px 24px;
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 16px;
+    position: relative;
+    z-index: 2;
 }
 
-.control-buttons button {
+/* Control Buttons Base Style */
+.premium-control-btn {
     background: none;
     border: none;
     color: #fff;
     cursor: pointer;
-    padding: 8px;
-    border-radius: 4px;
+    padding: 10px;
+    border-radius: 6px;
     transition: all 0.2s ease;
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-.control-buttons button:hover {
-    background: rgba(255,255,255,0.1);
-}
-
-.play-pause-btn-small .pause-icon {
-    display: none;
-}
-
-.play-pause-btn-small.playing .play-icon {
-    display: none;
-}
-
-.play-pause-btn-small.playing .pause-icon {
-    display: block;
-}
-
-.volume-control {
-    display: flex;
-    align-items: center;
-    gap: 8px;
     position: relative;
 }
 
-.volume-slider-container {
+.premium-control-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: scale(1.1);
+}
+
+.premium-control-btn:active {
+    transform: scale(0.95);
+}
+
+.premium-control-btn svg {
+    width: 24px;
+    height: 24px;
+}
+
+/* Play/Pause Button - Larger */
+.premium-play-btn svg {
+    width: 32px;
+    height: 32px;
+}
+
+.premium-play-btn .pause-icon {
+    display: none;
+}
+
+.premium-play-btn.playing .play-icon {
+    display: none;
+}
+
+.premium-play-btn.playing .pause-icon {
+    display: block;
+}
+
+/* Skip Buttons */
+.premium-skip-btn svg {
+    width: 28px;
+    height: 28px;
+}
+
+/* Volume Control Group */
+.premium-volume-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.premium-volume-slider-wrapper {
     width: 0;
     overflow: hidden;
     transition: width 0.3s ease;
 }
 
-.volume-control:hover .volume-slider-container {
+.premium-volume-group:hover .premium-volume-slider-wrapper {
     width: 80px;
 }
 
-.volume-slider {
+.premium-volume-slider {
     width: 100%;
-    height: 4px;
+    height: 5px;
     -webkit-appearance: none;
-    background: rgba(255,255,255,0.3);
-    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
     outline: none;
-}
-
-.volume-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 12px;
-    height: 12px;
-    background: #e50914;
-    border-radius: 50%;
     cursor: pointer;
 }
 
-.volume-slider::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
-    background: #e50914;
+.premium-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.premium-volume-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: #fff;
     border-radius: 50%;
     cursor: pointer;
     border: none;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
-.volume-btn .volume-low,
-.volume-btn .volume-mute {
+.premium-volume-btn .volume-low,
+.premium-volume-btn .volume-mute {
     display: none;
 }
 
-.volume-btn.low .volume-high {
+.premium-volume-btn.low .volume-high {
     display: none;
 }
 
-.volume-btn.low .volume-low {
+.premium-volume-btn.low .volume-low {
     display: block;
 }
 
-.volume-btn.mute .volume-high,
-.volume-btn.mute .volume-low {
+.premium-volume-btn.mute .volume-high,
+.premium-volume-btn.mute .volume-low {
     display: none;
 }
 
-.volume-btn.mute .volume-mute {
+.premium-volume-btn.mute .volume-mute {
     display: block;
 }
 
-.quality-selector select {
-    background: rgba(20, 20, 20, 0.8);
+/* Time Display */
+.premium-time-display {
     color: #fff;
-    border: 1px solid rgba(255,255,255,0.3);
-    border-radius: 4px;
-    padding: 4px 8px;
     font-size: 0.9rem;
+    font-family: 'Courier New', monospace;
+    font-weight: 500;
+    white-space: nowrap;
+    user-select: none;
+}
+
+/* Spacer to push right controls */
+.premium-controls-spacer {
+    flex: 1;
+}
+
+/* Settings Menu Button */
+.premium-settings-btn {
+    position: relative;
+}
+
+.premium-settings-menu {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    margin-bottom: 12px;
+    background: rgba(20, 20, 20, 0.95);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    min-width: 200px;
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+
+.premium-settings-menu.active {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.premium-settings-section {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.premium-settings-section:last-child {
+    border-bottom: none;
+}
+
+.premium-settings-header {
+    padding: 12px 16px;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.premium-settings-item {
+    padding: 12px 16px;
+    color: #fff;
     cursor: pointer;
+    transition: background 0.2s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.95rem;
 }
 
-.quality-selector select:focus {
-    outline: none;
-    border-color: #e50914;
+.premium-settings-item:hover {
+    background: rgba(255, 255, 255, 0.1);
 }
 
-.fullscreen-btn .exit-fullscreen {
+.premium-settings-item.active {
+    background: rgba(255, 255, 255, 0.15);
+    font-weight: 600;
+}
+
+.premium-settings-item.active::after {
+    content: '✓';
+    font-size: 1rem;
+    margin-left: 12px;
+}
+
+/* Fullscreen Button */
+.premium-fullscreen-btn .exit-fullscreen {
     display: none;
 }
 
-.fullscreen-btn.fullscreen .enter-fullscreen {
+.premium-fullscreen-btn.fullscreen .enter-fullscreen {
     display: none;
 }
 
-.fullscreen-btn.fullscreen .exit-fullscreen {
+.premium-fullscreen-btn.fullscreen .exit-fullscreen {
     display: block;
 }
 
-/* Hide native video.js controls */
-.video-js .vjs-control-bar {
+/* Keyboard Shortcuts Tooltip */
+.premium-shortcuts-tooltip {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.9);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 24px 32px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    z-index: 60;
+    max-width: 400px;
+}
+
+.premium-shortcuts-tooltip.active {
+    opacity: 1;
+}
+
+.premium-shortcuts-title {
+    color: #fff;
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.premium-shortcuts-list {
+    display: grid;
+    gap: 12px;
+}
+
+.premium-shortcut-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+}
+
+.premium-shortcut-key {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    min-width: 60px;
+    text-align: center;
+}
+
+.premium-shortcut-desc {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9rem;
+    flex: 1;
+}
+
+/* Center Play/Pause Overlay */
+.premium-center-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 40;
+}
+
+.premium-center-play-btn {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.95);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    transform: scale(0.8);
+    pointer-events: auto;
+}
+
+.premium-center-play-btn.show {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.premium-center-play-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+.premium-center-play-btn svg {
+    width: 36px;
+    height: 36px;
+    fill: #000;
+}
+
+/* Quality/Speed Change Indicator */
+.premium-change-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(10px);
+    color: #fff;
+    padding: 16px 24px;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    z-index: 45;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.premium-change-indicator.show {
+    opacity: 1;
+}
+
+/* Hide native video.js UI */
+.video-js .vjs-control-bar,
+.video-js .vjs-big-play-button,
+.video-js .vjs-loading-spinner {
     display: none !important;
 }
 
-.video-js .vjs-big-play-button {
-    background: rgba(229, 9, 20, 0.9) !important;
-    border: none !important;
-    width: 80px !important;
-    height: 80px !important;
-    line-height: 80px !important;
-    border-radius: 50% !important;
-    font-size: 36px !important;
-    transition: all 0.3s ease !important;
+/* Video.js container adjustments */
+.video-js {
+    width: 100% !important;
+    height: 100% !important;
+    padding: 0 !important;
 }
 
-.video-js .vjs-big-play-button:hover {
-    background: rgba(229, 9, 20, 1) !important;
-    transform: scale(1.1) !important;
+.vjs-tech {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
 }
 
-/* Responsive */
+/* ============================================
+   MOBILE OPTIMIZATIONS (iPhone/Android)
+   ============================================ */
+
 @media (max-width: 768px) {
-    .player-header {
-        padding: 15px 20px;
+    .premium-player-header {
+        padding: 16px 20px;
     }
     
-    .player-title {
-        font-size: 1.2rem;
+    .premium-video-title {
+        font-size: 1.1rem;
+        padding: 0 12px;
     }
     
-    .player-controls-overlay {
-        padding: 15px 20px;
+    .premium-close-btn {
+        width: 40px;
+        height: 40px;
     }
     
-    .title-overlay {
-        font-size: 1.3rem;
+    .premium-controls-row {
+        padding: 0 20px 20px;
+        gap: 12px;
     }
     
-    .play-pause-btn {
-        width: 60px;
-        height: 60px;
+    .premium-progress-container {
+        padding: 0 20px 12px;
     }
     
-    .control-buttons {
-        gap: 10px;
+    .premium-control-btn {
+        padding: 8px;
     }
     
-    .control-buttons button {
+    .premium-control-btn svg {
+        width: 20px;
+        height: 20px;
+    }
+    
+    .premium-play-btn svg {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .premium-skip-btn svg {
+        width: 24px;
+        height: 24px;
+    }
+    
+    .premium-time-display {
+        font-size: 0.85rem;
+    }
+    
+    /* Hide volume slider on mobile (iOS doesn't allow volume control via JS) */
+    .premium-volume-slider-wrapper {
+        display: none;
+    }
+    
+    /* Settings menu positioning */
+    .premium-settings-menu {
+        right: -10px;
+        min-width: 180px;
+    }
+    
+    /* Larger touch targets */
+    .premium-progress-bar {
+        height: 8px;
+    }
+    
+    .premium-progress-bar:hover {
+        height: 8px;
+    }
+    
+    .premium-progress-handle {
+        width: 20px;
+        height: 20px;
+    }
+    
+    /* Center play button */
+    .premium-center-play-btn {
+        width: 70px;
+        height: 70px;
+    }
+    
+    .premium-center-play-btn svg {
+        width: 32px;
+        height: 32px;
+    }
+    
+    /* Loading overlay */
+    .player-spinner {
+        width: 50px;
+        height: 50px;
+    }
+    
+    /* Thumbnail preview - smaller */
+    .premium-progress-thumbnail {
+        width: 120px;
+        height: 68px;
+    }
+}
+
+@media (max-width: 480px) {
+    .premium-controls-row {
+        gap: 8px;
+    }
+    
+    .premium-control-btn {
         padding: 6px;
     }
     
-    .quality-selector,
-    .volume-slider-container {
+    /* Hide less critical buttons on very small screens */
+    .premium-skip-backward,
+    .premium-skip-forward {
         display: none;
+    }
+    
+    .premium-settings-menu {
+        min-width: 160px;
+        font-size: 0.9rem;
+    }
+    
+    .premium-video-title {
+        font-size: 1rem;
+    }
+}
+
+/* ============================================
+   TOUCH GESTURE FEEDBACK
+   ============================================ */
+
+.premium-gesture-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(10px);
+    color: #fff;
+    padding: 20px 28px;
+    border-radius: 50%;
+    font-size: 2rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 45;
+}
+
+.premium-gesture-indicator.show {
+    opacity: 1;
+}
+
+/* ============================================
+   ACCESSIBILITY ENHANCEMENTS
+   ============================================ */
+
+.premium-control-btn:focus,
+.premium-settings-item:focus,
+.premium-close-btn:focus {
+    outline: 2px solid rgba(255, 255, 255, 0.8);
+    outline-offset: 2px;
+}
+
+/* Screen reader only text */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ============================================
+   ANIMATIONS & TRANSITIONS
+   ============================================ */
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
     }
 }
