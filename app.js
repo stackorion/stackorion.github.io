@@ -10,6 +10,9 @@ let searchScope = 'platforms'; // Tracks search scope: 'platforms', 'tiers', or 
 let userInfo = null;
 let userSubscriptions = [];
 
+// --- NEW: Active Video Players Registry ---
+const activePlayers = new Map(); // playerId -> {player, modal}
+
 // --- Theme Manager ---
 class ThemeManager {
     constructor() {
@@ -2274,6 +2277,9 @@ if (document.getElementById('appContainer')) {
         modal._player = player;
         modal._playerId = playerId;
         
+        // --- NEW: Register player in global registry ---
+        activePlayers.set(playerId, { player, modal });
+        
         // Initialize managers
         const stateManager = new PremiumPlayerStateManager();
         const qualityManager = new PremiumQualityManager(player);
@@ -2345,15 +2351,32 @@ if (document.getElementById('appContainer')) {
         // Play/Pause
         const togglePlayPause = () => {
             try {
-                if (player && !player.isDisposed()) {
-                    if (player.paused()) {
-                        player.play();
-                    } else {
-                        player.pause();
-                    }
+                // Get player from registry
+                const playerData = activePlayers.get(playerId);
+                if (!playerData || !playerData.player) {
+                    return;
+                }
+                
+                const activePlayer = playerData.player;
+                
+                // Check if player is actually ready and not disposed
+                if (!activePlayer.el() || activePlayer.isDisposed()) {
+                    // Clean up if player is disposed
+                    activePlayers.delete(playerId);
+                    return;
+                }
+                
+                if (activePlayer.paused()) {
+                    activePlayer.play().catch(err => {
+                        // Silently handle play error
+                    });
+                } else {
+                    activePlayer.pause();
                 }
             } catch (error) {
-                // Player not ready
+                // Player not ready or disposed
+                // Clean up from registry
+                activePlayers.delete(playerId);
             }
         };
         
@@ -2570,6 +2593,9 @@ if (document.getElementById('appContainer')) {
         const closePlayer = () => {
             // Stop token refresh
             tokenRefreshManager.stopRefresh(videoId);
+            
+            // Remove from global registry
+            activePlayers.delete(playerId);
             
             // Remove event listeners
             document.removeEventListener('fullscreenchange', handleFullscreenChange);
@@ -2902,8 +2928,29 @@ if (document.getElementById('appContainer')) {
         });
     }
 
+    // --- Global cleanup function for video players ---
+    function cleanupAllVideoPlayers() {
+        activePlayers.forEach((playerData, playerId) => {
+            try {
+                if (playerData.player && !playerData.player.isDisposed()) {
+                    playerData.player.dispose();
+                }
+                if (playerData.modal && playerData.modal.parentNode) {
+                    playerData.modal.remove();
+                }
+            } catch (error) {
+                // Silently handle cleanup errors
+            }
+        });
+        activePlayers.clear();
+        tokenRefreshManager.stopAll();
+    }
+
     // --- Main Application Router ---
     async function router() {
+        // Clean up any existing video players before loading new content
+        cleanupAllVideoPlayers();
+        
         // Load user data at the start of router
         loadUserData();
         
@@ -2991,7 +3038,13 @@ if (document.getElementById('appContainer')) {
     window.onpopstate = router;
 
     logoutButton.addEventListener('click', () => {
+        cleanupAllVideoPlayers();
         localStorage.clear();
         window.location.href = 'index.html';
+    });
+    
+    // Add cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+        cleanupAllVideoPlayers();
     });
 }
