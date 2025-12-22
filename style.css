@@ -3014,3 +3014,122 @@ body.theme-dark .announcement-error {
 }
 
 .premium-fullscreen-btn { display: none !important; }
+
+/* ============================================
+   FULLSCREEN OPTIMIZATIONS
+   ============================================ */
+
+/* Ensure video fills the screen in fullscreen */
+.premium-player-modal.is-fullscreen .video-js {
+    width: 100vw !important;
+    height: 100vh !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    background: #000 !important;
+}
+
+/* Hide all UI elements except video in fullscreen */
+.premium-player-modal.is-fullscreen .premium-player-header,
+.premium-player-modal.is-fullscreen .premium-controls-wrapper {
+    transition: opacity 0.3s ease !important;
+}
+
+/* When controls are hidden in fullscreen, make them completely transparent */
+.premium-player-modal.is-fullscreen .premium-player-header:not(.visible),
+.premium-player-modal.is-fullscreen .premium-controls-wrapper:not(.visible) {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* Ensure proper z-index in fullscreen */
+.premium-player-modal.is-fullscreen {
+    z-index: 2147483647 !important; /* Maximum z-index */
+}
+
+/* Remove any padding/margin that might cause browser UI to show */
+.premium-player-modal.is-fullscreen .premium-player-content {
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+}
+
+/* For WebKit browsers (Chrome, Safari) */
+.premium-player-modal.is-fullscreen::-webkit-full-screen {
+    background-color: black !important;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* For Firefox */
+.premium-player-modal.is-fullscreen::-moz-full-screen {
+    background-color: black !important;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* For IE/Edge */
+.premium-player-modal.is-fullscreen::-ms-fullscreen {
+    background-color: black !important;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Ensure video controls don't cause browser UI to appear */
+.premium-player-modal.is-fullscreen .premium-controls-wrapper {
+    padding-bottom: env(safe-area-inset-bottom, 20px) !important;
+}
+
+/* iOS specific fullscreen fixes */
+@supports (-webkit-touch-callout: none) {
+    .premium-player-modal.is-fullscreen {
+        position: fixed !important;
+        top: env(safe-area-inset-top, 0px) !important;
+        left: env(safe-area-inset-left, 0px) !important;
+        right: env(safe-area-inset-right, 0px) !important;
+        bottom: env(safe-area-inset-bottom, 0px) !important;
+        width: calc(100% - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)) !important;
+        height: calc(100% - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+    }
+    
+    .premium-player-modal.is-fullscreen .video-js {
+        width: 100% !important;
+        height: 100% !important;
+    }
+}
+
+/* Hide the fullscreen button since we're doing it automatically */
+.premium-fullscreen-btn {
+    display: none !important;
+}
+
+/* Optional: Add a small indicator when video starts playing (for auto-fullscreen) */
+@keyframes fullscreenHint {
+    0% { opacity: 0; transform: translateY(20px); }
+    10% { opacity: 1; transform: translateY(0); }
+    90% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-20px); }
+}
+
+.premium-fullscreen-hint {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    z-index: 100;
+    animation: fullscreenHint 3s ease forwards;
+    display: none;
+}
+
+.premium-player-modal:fullscreen .premium-fullscreen-hint,
+.premium-player-modal:-webkit-full-screen .premium-fullscreen-hint,
+.premium-player-modal:-moz-full-screen .premium-fullscreen-hint,
+.premium-player-modal:-ms-fullscreen .premium-fullscreen-hint {
+    display: block;
+}

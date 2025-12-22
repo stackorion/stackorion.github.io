@@ -1744,7 +1744,7 @@ if (document.getElementById('appContainer')) {
                 history.pushState({view: 'tiers', platformId}, '', `?view=tiers&platform_id=${platformId}`);
                 router();
             } else if (backTo === 'platforms') {
-                history.pushState({view: 'platforms'}, '', `links.html`);
+                history.pushState({view: 'platforms'}, '', 'links.html');
                 router();
             } else if (backTo === 'history') {
                 // Use history.back() for gallery view
@@ -2056,6 +2056,10 @@ if (document.getElementById('appContainer')) {
         modal.setAttribute('role', 'dialog');
         modal.setAttribute('aria-label', 'Video player');
         modal.setAttribute('aria-modal', 'true');
+        
+        // --- NEW: Add fullscreen tracking attributes ---
+        modal.setAttribute('data-fullscreen-requested', 'false');
+        modal.setAttribute('data-is-ios', /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream);
         
         // Build HTML structure
         modal.innerHTML = `
@@ -2623,23 +2627,101 @@ if (document.getElementById('appContainer')) {
         
         // Fullscreen
         const toggleFullscreen = () => {
-            if (!document.fullscreenElement) {
-                modal.requestFullscreen();
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            if (!document.fullscreenElement && 
+                !document.webkitFullscreenElement &&
+                !document.mozFullScreenElement &&
+                !document.msFullscreenElement) {
+                // Enter fullscreen
+                if (modal.requestFullscreen) {
+                    modal.requestFullscreen({ navigationUI: "hide" }).catch(e => {
+                        // Fallback without navigationUI option
+                        modal.requestFullscreen();
+                    });
+                } else if (modal.webkitRequestFullscreen) {
+                    modal.webkitRequestFullscreen();
+                } else if (modal.webkitEnterFullscreen) {
+                    modal.webkitEnterFullscreen();
+                }
             } else {
-                document.exitFullscreen();
+                // Exit fullscreen
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.mozCancelFullScreen) {
+                    document.mozCancelFullScreen();
+                } else if (document.msExitFullscreen) {
+                    document.msExitFullscreen();
+                }
             }
         };
         
         controlsManager.elements.fullscreenBtn.addEventListener('click', toggleFullscreen);
         
+        // --- NEW: Improved fullscreen change handler ---
         const handleFullscreenChange = () => {
-            stateManager.isFullscreen = !!document.fullscreenElement;
+            const isFullscreen = !!document.fullscreenElement || 
+                                !!document.webkitFullscreenElement ||
+                                !!document.mozFullScreenElement ||
+                                !!document.msFullscreenElement;
+            
+            stateManager.isFullscreen = isFullscreen;
+            
+            if (isFullscreen) {
+                // Hide system UI in fullscreen (works in most browsers)
+                try {
+                    if (document.fullscreenElement && document.fullscreenElement.requestFullscreen) {
+                        document.fullscreenElement.requestFullscreen({ navigationUI: "hide" });
+                    }
+                } catch (e) {
+                    // Some browsers don't support navigationUI option
+                }
+                
+                // Force hide any remaining UI
+                document.documentElement.style.overflow = 'hidden';
+                if (controlsManager.elements.fullscreenBtn) {
+                    controlsManager.elements.fullscreenBtn.classList.add('fullscreen');
+                }
+                
+                // Add a class to the modal for fullscreen styling
+                modal.classList.add('is-fullscreen');
+            } else {
+                document.documentElement.style.overflow = '';
+                if (controlsManager.elements.fullscreenBtn) {
+                    controlsManager.elements.fullscreenBtn.classList.remove('fullscreen');
+                }
+                modal.classList.remove('is-fullscreen');
+                modal.dataset.fullscreenRequested = 'false';
+            }
         };
         
         document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+        document.addEventListener('MSFullscreenChange', handleFullscreenChange);
         
         // Close button and ESC key
         const closePlayer = () => {
+            // Exit fullscreen first if we're in it
+            if (document.fullscreenElement || 
+                document.webkitFullscreenElement ||
+                document.mozFullScreenElement ||
+                document.msFullscreenElement) {
+                
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.mozCancelFullScreen) {
+                    document.mozCancelFullScreen();
+                } else if (document.msExitFullscreen) {
+                    document.msExitFullscreen();
+                }
+            }
+            
             // Stop token refresh
             tokenRefreshManager.stopRefresh(videoId);
             
@@ -2648,6 +2730,9 @@ if (document.getElementById('appContainer')) {
             
             // Remove event listeners
             document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+            document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+            document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
             document.removeEventListener('click', closeSettingsMenu);
             document.removeEventListener('keydown', handleKeyDown);
             
@@ -2769,6 +2854,29 @@ if (document.getElementById('appContainer')) {
             stateManager.isPlaying = true;
             controlsManager.updatePlayButton(true);
             analyticsTracker.trackEvent(videoId, 'play', player, tierId);
+            
+            // --- NEW: Auto-fullscreen on play ---
+            // Check if not already in fullscreen and not iOS (iOS has restrictions)
+            if (!document.fullscreenElement && !modal.dataset.isIos && modal.dataset.fullscreenRequested === 'false') {
+                modal.dataset.fullscreenRequested = 'true';
+                
+                // Small delay to ensure video has started
+                setTimeout(() => {
+                    // Request fullscreen on the modal element
+                    if (modal.requestFullscreen) {
+                        modal.requestFullscreen().catch(e => {
+                            // If fullscreen fails, try entering fullscreen mode another way
+                            modal.dataset.fullscreenRequested = 'false';
+                        });
+                    } else if (modal.webkitRequestFullscreen) { // Safari
+                        modal.webkitRequestFullscreen().catch(e => {
+                            modal.dataset.fullscreenRequested = 'false';
+                        });
+                    } else if (modal.webkitEnterFullscreen) { // iOS Safari
+                        modal.webkitEnterFullscreen();
+                    }
+                }, 300);
+            }
         });
         
         player.on('pause', () => {
@@ -3023,6 +3131,79 @@ if (document.getElementById('appContainer')) {
             clearInterval(watchTimeTracker);
             closePlayer();
         });
+        
+        // --- NEW: Add CSS for fullscreen styling ---
+        const fullscreenStyle = document.createElement('style');
+        fullscreenStyle.textContent = `
+            .premium-player-modal.is-fullscreen {
+                background: #000 !important;
+            }
+            
+            .premium-player-modal.is-fullscreen .premium-player-content {
+                width: 100vw !important;
+                height: 100vh !important;
+                max-width: none !important;
+                max-height: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            
+            .premium-player-modal.is-fullscreen video {
+                object-fit: contain !important;
+            }
+            
+            /* Hide scrollbars and overscroll in fullscreen */
+            .premium-player-modal.is-fullscreen {
+                overscroll-behavior: none !important;
+                -webkit-overflow-scrolling: auto !important;
+            }
+            
+            /* iOS specific fixes */
+            .premium-player-modal[data-is-ios="true"] {
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+            }
+            
+            .premium-player-modal[data-is-ios="true"] .video-js {
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+            }
+        `;
+
+        document.head.appendChild(fullscreenStyle);
+        
+        // --- NEW: Add orientation lock for mobile devices ---
+        if ('screen' in window && 'orientation' in window.screen) {
+            modal.addEventListener('fullscreenchange', () => {
+                if (document.fullscreenElement) {
+                    // Suggest landscape for video
+                    if (window.screen.orientation && window.screen.orientation.lock) {
+                        try {
+                            window.screen.orientation.lock('landscape').catch(() => {});
+                        } catch (e) {
+                            // Orientation lock not supported
+                        }
+                    }
+                } else {
+                    // Unlock orientation when exiting fullscreen
+                    if (window.screen.orientation && window.screen.orientation.unlock) {
+                        try {
+                            window.screen.orientation.unlock();
+                        } catch (e) {
+                            // Orientation unlock not supported
+                        }
+                    }
+                }
+            });
+        }
     }
 
     // --- Global cleanup function for video players ---
