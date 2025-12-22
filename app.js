@@ -2090,7 +2090,7 @@ if (document.getElementById('appContainer')) {
                 <!-- Video Container -->
                 <div class="premium-video-wrapper">
                     <video 
-                        id="premiumPlayer" 
+                        id="premiumPlayer_${videoId}" 
                         class="video-js"
                         preload="auto"
                         playsinline
@@ -2247,20 +2247,11 @@ if (document.getElementById('appContainer')) {
         document.body.appendChild(modal);
         document.body.style.overflow = 'hidden';
         
-        // ⭐ AUTO-FULLSCREEN: Enter fullscreen immediately
-        setTimeout(() => {
-            modal.requestFullscreen().then(() => {
-                // Hide controls immediately when entering fullscreen
-                controlsManager.hideControls();
-                stateManager.showingControls = false;
-            }).catch(err => {
-                // Fallback if fullscreen fails (some browsers/mobile restrictions)
-                console.log('Fullscreen not available:', err);
-            });
-        }, 100);
+        // Create a unique ID for this player instance
+        const playerId = `premiumPlayer_${videoId}`;
         
         // Initialize Video.js with optimized settings
-        const player = videojs('premiumPlayer', {
+        const player = videojs(playerId, {
             controls: false,
             autoplay: false,
             preload: 'auto',
@@ -2278,6 +2269,10 @@ if (document.getElementById('appContainer')) {
                 nativeAudioTracks: false
             }
         });
+        
+        // Store player reference in the modal for cleanup
+        modal._player = player;
+        modal._playerId = playerId;
         
         // Initialize managers
         const stateManager = new PremiumPlayerStateManager();
@@ -2367,36 +2362,46 @@ if (document.getElementById('appContainer')) {
         
         // Skip buttons
         controlsManager.elements.skipBackward.addEventListener('click', () => {
-            player.currentTime(Math.max(0, player.currentTime() - 10));
-            controlsManager.showGestureIndicator('⏪');
+            if (player && !player.isDisposed()) {
+                player.currentTime(Math.max(0, player.currentTime() - 10));
+                controlsManager.showGestureIndicator('⏪');
+            }
         });
         
         controlsManager.elements.skipForward.addEventListener('click', () => {
-            player.currentTime(Math.min(player.duration(), player.currentTime() + 10));
-            controlsManager.showGestureIndicator('⏩');
+            if (player && !player.isDisposed()) {
+                player.currentTime(Math.min(player.duration(), player.currentTime() + 10));
+                controlsManager.showGestureIndicator('⏩');
+            }
         });
         
         // Volume controls
         const toggleMute = () => {
-            player.muted(!player.muted());
+            if (player && !player.isDisposed()) {
+                player.muted(!player.muted());
+            }
         };
         
         controlsManager.elements.volumeBtn.addEventListener('click', toggleMute);
         
         controlsManager.elements.volumeSlider.addEventListener('input', (e) => {
-            const volume = parseFloat(e.target.value);
-            player.volume(volume);
-            player.muted(volume === 0);
+            if (player && !player.isDisposed()) {
+                const volume = parseFloat(e.target.value);
+                player.volume(volume);
+                player.muted(volume === 0);
+            }
         });
         
         // Progress bar seeking
         let isSeeking = false;
         
         const handleProgressClick = (e) => {
-            const rect = controlsManager.elements.progressBar.getBoundingClientRect();
-            const percent = (e.clientX - rect.left) / rect.width;
-            const newTime = percent * player.duration();
-            player.currentTime(newTime);
+            if (player && !player.isDisposed()) {
+                const rect = controlsManager.elements.progressBar.getBoundingClientRect();
+                const percent = (e.clientX - rect.left) / rect.width;
+                const newTime = percent * player.duration();
+                player.currentTime(newTime);
+            }
         };
         
         controlsManager.elements.progressBar.addEventListener('click', handleProgressClick);
@@ -2408,7 +2413,7 @@ if (document.getElementById('appContainer')) {
         });
         
         document.addEventListener('mousemove', (e) => {
-            if (!isSeeking) return;
+            if (!isSeeking || !player || player.isDisposed()) return;
             const rect = controlsManager.elements.progressBar.getBoundingClientRect();
             const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
             controlsManager.elements.progressPlayed.style.width = `${percent * 100}%`;
@@ -2416,25 +2421,27 @@ if (document.getElementById('appContainer')) {
         });
         
         document.addEventListener('mouseup', () => {
-            if (isSeeking) {
+            if (isSeeking && player && !player.isDisposed()) {
                 const percent = parseFloat(controlsManager.elements.progressPlayed.style.width) / 100;
                 player.currentTime(percent * player.duration());
-                isSeeking = false;
-                stateManager.isSeeking = false;
-                controlsManager.elements.progressBar.classList.remove('seeking');
             }
+            isSeeking = false;
+            stateManager.isSeeking = false;
+            controlsManager.elements.progressBar.classList.remove('seeking');
         });
         
         // Progress bar hover - show thumbnail preview
         controlsManager.elements.progressBar.addEventListener('mousemove', (e) => {
-            const rect = controlsManager.elements.progressBar.getBoundingClientRect();
-            const percent = (e.clientX - rect.left) / rect.width;
-            const time = percent * player.duration();
-            
-            if (isFinite(time)) {
-                controlsManager.elements.thumbnailTime.textContent = controlsManager.formatTime(time);
-                controlsManager.elements.progressThumbnail.style.left = `${percent * 100}%`;
-                controlsManager.elements.progressThumbnail.style.display = 'block';
+            if (player && !player.isDisposed()) {
+                const rect = controlsManager.elements.progressBar.getBoundingClientRect();
+                const percent = (e.clientX - rect.left) / rect.width;
+                const time = percent * player.duration();
+                
+                if (isFinite(time)) {
+                    controlsManager.elements.thumbnailTime.textContent = controlsManager.formatTime(time);
+                    controlsManager.elements.progressThumbnail.style.left = `${percent * 100}%`;
+                    controlsManager.elements.progressThumbnail.style.display = 'block';
+                }
             }
         });
         
@@ -2450,83 +2457,96 @@ if (document.getElementById('appContainer')) {
         });
         
         // Close settings menu when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!controlsManager.elements.settingsMenu.contains(e.target) && 
+        const closeSettingsMenu = (e) => {
+            if (controlsManager.elements.settingsMenu && 
+                !controlsManager.elements.settingsMenu.contains(e.target) && 
                 !controlsManager.elements.settingsBtn.contains(e.target)) {
                 controlsManager.elements.settingsMenu.classList.remove('active');
                 controlsManager.elements.settingsBtn.setAttribute('aria-expanded', 'false');
             }
-        });
+        };
+        
+        document.addEventListener('click', closeSettingsMenu);
         
         // Render settings menu options
         function renderSettingsMenu() {
+            if (!player || player.isDisposed()) return;
+            
             // Quality options
             const qualities = qualityManager.getAvailableQualities();
-            controlsManager.elements.qualityOptions.innerHTML = '';
-            
-            qualities.forEach(quality => {
-                const option = document.createElement('div');
-                option.className = 'premium-settings-item';
-                option.textContent = quality === 'auto' ? 'Auto' : `${quality}p`;
-                option.dataset.quality = quality;
+            if (controlsManager.elements.qualityOptions) {
+                controlsManager.elements.qualityOptions.innerHTML = '';
                 
-                if (quality === qualityManager.currentQuality) {
-                    option.classList.add('active');
-                }
-                
-                option.addEventListener('click', () => {
-                    qualityManager.setQuality(quality);
-                    stateManager.currentQuality = quality;
+                qualities.forEach(quality => {
+                    const option = document.createElement('div');
+                    option.className = 'premium-settings-item';
+                    option.textContent = quality === 'auto' ? 'Auto' : `${quality}p`;
+                    option.dataset.quality = quality;
                     
-                    // Update active state
-                    controlsManager.elements.qualityOptions.querySelectorAll('.premium-settings-item').forEach(item => {
-                        item.classList.remove('active');
+                    if (quality === qualityManager.currentQuality) {
+                        option.classList.add('active');
+                    }
+                    
+                    option.addEventListener('click', () => {
+                        if (player && !player.isDisposed()) {
+                            qualityManager.setQuality(quality);
+                            stateManager.currentQuality = quality;
+                            
+                            // Update active state
+                            controlsManager.elements.qualityOptions.querySelectorAll('.premium-settings-item').forEach(item => {
+                                item.classList.remove('active');
+                            });
+                            option.classList.add('active');
+                            
+                            // Show indicator
+                            controlsManager.showChangeIndicator(`Quality: ${qualityManager.getCurrentQualityLabel()}`);
+                            
+                            // Close menu
+                            controlsManager.elements.settingsMenu.classList.remove('active');
+                        }
                     });
-                    option.classList.add('active');
                     
-                    // Show indicator
-                    controlsManager.showChangeIndicator(`Quality: ${qualityManager.getCurrentQualityLabel()}`);
-                    
-                    // Close menu
-                    controlsManager.elements.settingsMenu.classList.remove('active');
+                    controlsManager.elements.qualityOptions.appendChild(option);
                 });
-                
-                controlsManager.elements.qualityOptions.appendChild(option);
-            });
+            }
             
             // Speed options
             const speeds = speedManager.getAvailableSpeeds();
-            controlsManager.elements.speedOptions.innerHTML = '';
-            
-            speeds.forEach(speed => {
-                const option = document.createElement('div');
-                option.className = 'premium-settings-item';
-                option.textContent = speed === 1 ? 'Normal' : `${speed}x`;
-                option.dataset.speed = speed;
+            if (controlsManager.elements.speedOptions) {
+                controlsManager.elements.speedOptions.innerHTML = '';
                 
-                if (speed === speedManager.currentSpeed) {
-                    option.classList.add('active');
-                }
-                
-                option.addEventListener('click', () => {
-                    speedManager.setSpeed(speed);
-                    stateManager.currentSpeed = speed;
+                speeds.forEach(speed => {
+                    const option = document.createElement('div');
+                    option.className = 'premium-settings-item';
+                    option.textContent = speed === 1 ? 'Normal' : `${speed}x`;
+                    option.dataset.speed = speed;
                     
-                    // Update active state
-                    controlsManager.elements.speedOptions.querySelectorAll('.premium-settings-item').forEach(item => {
-                        item.classList.remove('active');
+                    if (speed === speedManager.currentSpeed) {
+                        option.classList.add('active');
+                    }
+                    
+                    option.addEventListener('click', () => {
+                        if (player && !player.isDisposed()) {
+                            speedManager.setSpeed(speed);
+                            stateManager.currentSpeed = speed;
+                            
+                            // Update active state
+                            controlsManager.elements.speedOptions.querySelectorAll('.premium-settings-item').forEach(item => {
+                                item.classList.remove('active');
+                            });
+                            option.classList.add('active');
+                            
+                            // Show indicator
+                            controlsManager.showChangeIndicator(`Speed: ${speedManager.getCurrentSpeedLabel()}`);
+                            
+                            // Close menu
+                            controlsManager.elements.settingsMenu.classList.remove('active');
+                        }
                     });
-                    option.classList.add('active');
                     
-                    // Show indicator
-                    controlsManager.showChangeIndicator(`Speed: ${speedManager.getCurrentSpeedLabel()}`);
-                    
-                    // Close menu
-                    controlsManager.elements.settingsMenu.classList.remove('active');
+                    controlsManager.elements.speedOptions.appendChild(option);
                 });
-                
-                controlsManager.elements.speedOptions.appendChild(option);
-            });
+            }
         }
         
         // Fullscreen
@@ -2540,28 +2560,48 @@ if (document.getElementById('appContainer')) {
         
         controlsManager.elements.fullscreenBtn.addEventListener('click', toggleFullscreen);
         
-        document.addEventListener('fullscreenchange', () => {
+        const handleFullscreenChange = () => {
             stateManager.isFullscreen = !!document.fullscreenElement;
-            
-            // If exiting fullscreen, close the video player entirely
-            if (!stateManager.isFullscreen) {
-                closePlayer();
-            }
-        });
+        };
+        
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
         
         // Close button and ESC key
         const closePlayer = () => {
-            player.dispose();
+            // Stop token refresh
             tokenRefreshManager.stopRefresh(videoId);
-            modal.remove();
+            
+            // Remove event listeners
+            document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            document.removeEventListener('click', closeSettingsMenu);
+            document.removeEventListener('keydown', handleKeyDown);
+            
+            // Dispose player safely
+            if (player && !player.isDisposed()) {
+                try {
+                    player.dispose();
+                } catch (e) {
+                    // Player already disposed
+                }
+            }
+            
+            // Remove modal
+            if (modal && modal.parentNode) {
+                modal.remove();
+            }
+            
+            // Restore body overflow
             document.body.style.overflow = '';
         };
         
         controlsManager.elements.closeBtn.addEventListener('click', closePlayer);
+        controlsManager.elements.closeErrorBtn.addEventListener('click', closePlayer);
         
+        // Keyboard handler
         const handleKeyDown = (e) => {
             // Don't handle if settings menu is open
-            if (controlsManager.elements.settingsMenu.classList.contains('active')) {
+            if (controlsManager.elements.settingsMenu && 
+                controlsManager.elements.settingsMenu.classList.contains('active')) {
                 if (e.key === 'Escape') {
                     controlsManager.elements.settingsMenu.classList.remove('active');
                     e.preventDefault();
@@ -2569,13 +2609,12 @@ if (document.getElementById('appContainer')) {
                 return;
             }
             
+            if (!player || player.isDisposed()) return;
+            
             switch(e.key) {
                 case 'Escape':
-                    if (document.fullscreenElement) {
-                        document.exitFullscreen();
-                    } else {
-                        closePlayer();
-                    }
+                    e.preventDefault();
+                    closePlayer();
                     break;
                 case ' ':
                 case 'k':
@@ -2584,13 +2623,17 @@ if (document.getElementById('appContainer')) {
                     break;
                 case 'ArrowLeft':
                     e.preventDefault();
-                    player.currentTime(Math.max(0, player.currentTime() - 10));
-                    controlsManager.showGestureIndicator('⏪');
+                    if (player && !player.isDisposed()) {
+                        player.currentTime(Math.max(0, player.currentTime() - 10));
+                        controlsManager.showGestureIndicator('⏪');
+                    }
                     break;
                 case 'ArrowRight':
                     e.preventDefault();
-                    player.currentTime(Math.min(player.duration(), player.currentTime() + 10));
-                    controlsManager.showGestureIndicator('⏩');
+                    if (player && !player.isDisposed()) {
+                        player.currentTime(Math.min(player.duration(), player.currentTime() + 10));
+                        controlsManager.showGestureIndicator('⏩');
+                    }
                     break;
                 case 'm':
                     e.preventDefault();
@@ -2602,10 +2645,14 @@ if (document.getElementById('appContainer')) {
                     break;
                 case '?':
                     e.preventDefault();
-                    controlsManager.elements.shortcutsTooltip.classList.toggle('active');
-                    setTimeout(() => {
-                        controlsManager.elements.shortcutsTooltip.classList.remove('active');
-                    }, 3000);
+                    if (controlsManager.elements.shortcutsTooltip) {
+                        controlsManager.elements.shortcutsTooltip.classList.toggle('active');
+                        setTimeout(() => {
+                            if (controlsManager.elements.shortcutsTooltip) {
+                                controlsManager.elements.shortcutsTooltip.classList.remove('active');
+                            }
+                        }, 3000);
+                    }
                     break;
             }
             
@@ -2618,14 +2665,14 @@ if (document.getElementById('appContainer')) {
         controlsManager.elements.retryBtn.addEventListener('click', () => {
             controlsManager.showErrorOverlay(false);
             controlsManager.showLoadingOverlay(true);
-            player.src({
-                src: link.url,
-                type: 'application/x-mpegURL'
-            });
-            player.load();
+            if (player && !player.isDisposed()) {
+                player.src({
+                    src: link.url,
+                    type: 'application/x-mpegURL'
+                });
+                player.load();
+            }
         });
-        
-        controlsManager.elements.closeErrorBtn.addEventListener('click', closePlayer);
         
         // --- Video.js Event Listeners ---
         
@@ -2685,6 +2732,8 @@ if (document.getElementById('appContainer')) {
         });
         
         player.on('volumechange', () => {
+            if (!player || player.isDisposed()) return;
+            
             const volume = player.volume();
             const muted = player.muted();
             
@@ -2739,15 +2788,18 @@ if (document.getElementById('appContainer')) {
         });
         
         // Click on video area to toggle play/pause
-        controlsManager.elements.progressBar.parentElement.parentElement.addEventListener('click', (e) => {
-            // Only toggle if clicking on video area, not on controls
-            if (e.target.closest('.premium-controls-row') || 
-                e.target.closest('.premium-progress-container') ||
-                e.target.closest('.premium-settings-menu')) {
-                return;
-            }
-            togglePlayPause();
-        });
+        const videoArea = controlsManager.elements.progressBar.parentElement.parentElement;
+        if (videoArea) {
+            videoArea.addEventListener('click', (e) => {
+                // Only toggle if clicking on video area, not on controls
+                if (e.target.closest('.premium-controls-row') || 
+                    e.target.closest('.premium-progress-container') ||
+                    e.target.closest('.premium-settings-menu')) {
+                    return;
+                }
+                togglePlayPause();
+            });
+        }
         
         // --- Mobile Touch Gestures ---
         
@@ -2756,12 +2808,16 @@ if (document.getElementById('appContainer')) {
         let touchStartTime = 0;
         
         modal.addEventListener('touchstart', (e) => {
-            touchStartX = e.touches[0].clientX;
-            touchStartY = e.touches[0].clientY;
-            touchStartTime = player.currentTime();
+            if (player && !player.isDisposed()) {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+                touchStartTime = player.currentTime();
+            }
         }, { passive: true });
         
         modal.addEventListener('touchend', (e) => {
+            if (!player || player.isDisposed()) return;
+            
             const touchEndX = e.changedTouches[0].clientX;
             const touchEndY = e.changedTouches[0].clientY;
             
@@ -2788,6 +2844,8 @@ if (document.getElementById('appContainer')) {
         const doubleTapThreshold = 300;
         
         modal.addEventListener('touchend', (e) => {
+            if (!player || player.isDisposed()) return;
+            
             const currentTime = Date.now();
             const tapLength = currentTime - lastTapTime;
             
@@ -2817,7 +2875,7 @@ if (document.getElementById('appContainer')) {
         controlsManager.showControls();
         
         // Start auto-hide timer
-        setInterval(() => {
+        let hideControlsInterval = setInterval(() => {
             if (stateManager.shouldHideControls()) {
                 controlsManager.hideControls();
             }
@@ -2831,19 +2889,17 @@ if (document.getElementById('appContainer')) {
         
         // Track watch time every 30 seconds
         let watchTimeTracker = setInterval(() => {
-            if (!player.paused()) {
+            if (player && !player.paused() && !player.isDisposed()) {
                 analyticsTracker.trackEvent(videoId, 'timeupdate', player, tierId);
             }
         }, 30000);
         
         // Cleanup on close
-        const cleanup = () => {
+        modal.addEventListener('remove', () => {
+            clearInterval(hideControlsInterval);
             clearInterval(watchTimeTracker);
-            document.removeEventListener('keydown', handleKeyDown);
-            player.dispose();
-        };
-        
-        modal.addEventListener('remove', cleanup);
+            closePlayer();
+        });
     }
 
     // --- Main Application Router ---
