@@ -2346,37 +2346,72 @@ if (document.getElementById('appContainer')) {
             setTimeout(() => clearInterval(checkQualityLevels), 10000);
         });
         
+        // --- NEW: Helper function to safely get player ---
+        const getSafePlayer = () => {
+            const playerData = activePlayers.get(playerId);
+            if (!playerData || !playerData.player) return null;
+            
+            const activePlayer = playerData.player;
+            if (!activePlayer.el() || activePlayer.isDisposed()) {
+                activePlayers.delete(playerId);
+                return null;
+            }
+            
+            return activePlayer;
+        };
+        
+        // --- NEW: Player health check function ---
+        const isPlayerHealthy = (id) => {
+            try {
+                const playerData = activePlayers.get(id);
+                if (!playerData || !playerData.player) return false;
+                
+                const player = playerData.player;
+                return player && 
+                       player.el() && 
+                       !player.isDisposed() && 
+                       typeof player.paused === 'function';
+            } catch (error) {
+                return false;
+            }
+        };
+        
+        // --- NEW: Cleanup function ---
+        const cleanupPlayer = (id) => {
+            const playerData = activePlayers.get(id);
+            if (playerData) {
+                try {
+                    if (playerData.player && !playerData.player.isDisposed()) {
+                        playerData.player.dispose();
+                    }
+                    if (playerData.modal && playerData.modal.parentNode) {
+                        playerData.modal.remove();
+                    }
+                } catch (e) {
+                    // Already cleaned up
+                }
+                activePlayers.delete(id);
+            }
+        };
+        
         // --- Event Handlers ---
         
         // Play/Pause
         const togglePlayPause = () => {
+            if (!isPlayerHealthy(playerId)) {
+                cleanupPlayer(playerId);
+                return;
+            }
+            
+            const activePlayer = activePlayers.get(playerId).player;
             try {
-                // Get player from registry
-                const playerData = activePlayers.get(playerId);
-                if (!playerData || !playerData.player) {
-                    return;
-                }
-                
-                const activePlayer = playerData.player;
-                
-                // Check if player is actually ready and not disposed
-                if (!activePlayer.el() || activePlayer.isDisposed()) {
-                    // Clean up if player is disposed
-                    activePlayers.delete(playerId);
-                    return;
-                }
-                
                 if (activePlayer.paused()) {
-                    activePlayer.play().catch(err => {
-                        // Silently handle play error
-                    });
+                    activePlayer.play().catch(() => {});
                 } else {
                     activePlayer.pause();
                 }
             } catch (error) {
-                // Player not ready or disposed
-                // Clean up from registry
-                activePlayers.delete(playerId);
+                cleanupPlayer(playerId);
             }
         };
         
@@ -2385,46 +2420,51 @@ if (document.getElementById('appContainer')) {
         
         // Skip buttons
         controlsManager.elements.skipBackward.addEventListener('click', () => {
-            if (player && !player.isDisposed()) {
-                player.currentTime(Math.max(0, player.currentTime() - 10));
-                controlsManager.showGestureIndicator('⏪');
-            }
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            activePlayer.currentTime(Math.max(0, activePlayer.currentTime() - 10));
+            controlsManager.showGestureIndicator('⏪');
         });
         
         controlsManager.elements.skipForward.addEventListener('click', () => {
-            if (player && !player.isDisposed()) {
-                player.currentTime(Math.min(player.duration(), player.currentTime() + 10));
-                controlsManager.showGestureIndicator('⏩');
-            }
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            activePlayer.currentTime(Math.min(activePlayer.duration(), activePlayer.currentTime() + 10));
+            controlsManager.showGestureIndicator('⏩');
         });
         
         // Volume controls
         const toggleMute = () => {
-            if (player && !player.isDisposed()) {
-                player.muted(!player.muted());
-            }
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            activePlayer.muted(!activePlayer.muted());
         };
         
         controlsManager.elements.volumeBtn.addEventListener('click', toggleMute);
         
         controlsManager.elements.volumeSlider.addEventListener('input', (e) => {
-            if (player && !player.isDisposed()) {
-                const volume = parseFloat(e.target.value);
-                player.volume(volume);
-                player.muted(volume === 0);
-            }
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            const volume = parseFloat(e.target.value);
+            activePlayer.volume(volume);
+            activePlayer.muted(volume === 0);
         });
         
         // Progress bar seeking
         let isSeeking = false;
         
         const handleProgressClick = (e) => {
-            if (player && !player.isDisposed()) {
-                const rect = controlsManager.elements.progressBar.getBoundingClientRect();
-                const percent = (e.clientX - rect.left) / rect.width;
-                const newTime = percent * player.duration();
-                player.currentTime(newTime);
-            }
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            const rect = controlsManager.elements.progressBar.getBoundingClientRect();
+            const percent = (e.clientX - rect.left) / rect.width;
+            const newTime = percent * activePlayer.duration();
+            activePlayer.currentTime(newTime);
         };
         
         controlsManager.elements.progressBar.addEventListener('click', handleProgressClick);
@@ -2436,7 +2476,10 @@ if (document.getElementById('appContainer')) {
         });
         
         document.addEventListener('mousemove', (e) => {
-            if (!isSeeking || !player || player.isDisposed()) return;
+            if (!isSeeking) return;
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
             const rect = controlsManager.elements.progressBar.getBoundingClientRect();
             const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
             controlsManager.elements.progressPlayed.style.width = `${percent * 100}%`;
@@ -2444,10 +2487,12 @@ if (document.getElementById('appContainer')) {
         });
         
         document.addEventListener('mouseup', () => {
-            if (isSeeking && player && !player.isDisposed()) {
-                const percent = parseFloat(controlsManager.elements.progressPlayed.style.width) / 100;
-                player.currentTime(percent * player.duration());
-            }
+            if (!isSeeking) return;
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            const percent = parseFloat(controlsManager.elements.progressPlayed.style.width) / 100;
+            activePlayer.currentTime(percent * activePlayer.duration());
             isSeeking = false;
             stateManager.isSeeking = false;
             controlsManager.elements.progressBar.classList.remove('seeking');
@@ -2455,16 +2500,17 @@ if (document.getElementById('appContainer')) {
         
         // Progress bar hover - show thumbnail preview
         controlsManager.elements.progressBar.addEventListener('mousemove', (e) => {
-            if (player && !player.isDisposed()) {
-                const rect = controlsManager.elements.progressBar.getBoundingClientRect();
-                const percent = (e.clientX - rect.left) / rect.width;
-                const time = percent * player.duration();
-                
-                if (isFinite(time)) {
-                    controlsManager.elements.thumbnailTime.textContent = controlsManager.formatTime(time);
-                    controlsManager.elements.progressThumbnail.style.left = `${percent * 100}%`;
-                    controlsManager.elements.progressThumbnail.style.display = 'block';
-                }
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            const rect = controlsManager.elements.progressBar.getBoundingClientRect();
+            const percent = (e.clientX - rect.left) / rect.width;
+            const time = percent * activePlayer.duration();
+            
+            if (isFinite(time)) {
+                controlsManager.elements.thumbnailTime.textContent = controlsManager.formatTime(time);
+                controlsManager.elements.progressThumbnail.style.left = `${percent * 100}%`;
+                controlsManager.elements.progressThumbnail.style.display = 'block';
             }
         });
         
@@ -2493,7 +2539,8 @@ if (document.getElementById('appContainer')) {
         
         // Render settings menu options
         function renderSettingsMenu() {
-            if (!player || player.isDisposed()) return;
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
             
             // Quality options
             const qualities = qualityManager.getAvailableQualities();
@@ -2511,22 +2558,23 @@ if (document.getElementById('appContainer')) {
                     }
                     
                     option.addEventListener('click', () => {
-                        if (player && !player.isDisposed()) {
-                            qualityManager.setQuality(quality);
-                            stateManager.currentQuality = quality;
-                            
-                            // Update active state
-                            controlsManager.elements.qualityOptions.querySelectorAll('.premium-settings-item').forEach(item => {
-                                item.classList.remove('active');
-                            });
-                            option.classList.add('active');
-                            
-                            // Show indicator
-                            controlsManager.showChangeIndicator(`Quality: ${qualityManager.getCurrentQualityLabel()}`);
-                            
-                            // Close menu
-                            controlsManager.elements.settingsMenu.classList.remove('active');
-                        }
+                        const player = getSafePlayer();
+                        if (!player) return;
+                        
+                        qualityManager.setQuality(quality);
+                        stateManager.currentQuality = quality;
+                        
+                        // Update active state
+                        controlsManager.elements.qualityOptions.querySelectorAll('.premium-settings-item').forEach(item => {
+                            item.classList.remove('active');
+                        });
+                        option.classList.add('active');
+                        
+                        // Show indicator
+                        controlsManager.showChangeIndicator(`Quality: ${qualityManager.getCurrentQualityLabel()}`);
+                        
+                        // Close menu
+                        controlsManager.elements.settingsMenu.classList.remove('active');
                     });
                     
                     controlsManager.elements.qualityOptions.appendChild(option);
@@ -2549,22 +2597,23 @@ if (document.getElementById('appContainer')) {
                     }
                     
                     option.addEventListener('click', () => {
-                        if (player && !player.isDisposed()) {
-                            speedManager.setSpeed(speed);
-                            stateManager.currentSpeed = speed;
-                            
-                            // Update active state
-                            controlsManager.elements.speedOptions.querySelectorAll('.premium-settings-item').forEach(item => {
-                                item.classList.remove('active');
-                            });
-                            option.classList.add('active');
-                            
-                            // Show indicator
-                            controlsManager.showChangeIndicator(`Speed: ${speedManager.getCurrentSpeedLabel()}`);
-                            
-                            // Close menu
-                            controlsManager.elements.settingsMenu.classList.remove('active');
-                        }
+                        const player = getSafePlayer();
+                        if (!player) return;
+                        
+                        speedManager.setSpeed(speed);
+                        stateManager.currentSpeed = speed;
+                        
+                        // Update active state
+                        controlsManager.elements.speedOptions.querySelectorAll('.premium-settings-item').forEach(item => {
+                            item.classList.remove('active');
+                        });
+                        option.classList.add('active');
+                        
+                        // Show indicator
+                        controlsManager.showChangeIndicator(`Speed: ${speedManager.getCurrentSpeedLabel()}`);
+                        
+                        // Close menu
+                        controlsManager.elements.settingsMenu.classList.remove('active');
                     });
                     
                     controlsManager.elements.speedOptions.appendChild(option);
@@ -2635,7 +2684,8 @@ if (document.getElementById('appContainer')) {
                 return;
             }
             
-            if (!player || player.isDisposed()) return;
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
             
             switch(e.key) {
                 case 'Escape':
@@ -2649,17 +2699,13 @@ if (document.getElementById('appContainer')) {
                     break;
                 case 'ArrowLeft':
                     e.preventDefault();
-                    if (player && !player.isDisposed()) {
-                        player.currentTime(Math.max(0, player.currentTime() - 10));
-                        controlsManager.showGestureIndicator('⏪');
-                    }
+                    activePlayer.currentTime(Math.max(0, activePlayer.currentTime() - 10));
+                    controlsManager.showGestureIndicator('⏪');
                     break;
                 case 'ArrowRight':
                     e.preventDefault();
-                    if (player && !player.isDisposed()) {
-                        player.currentTime(Math.min(player.duration(), player.currentTime() + 10));
-                        controlsManager.showGestureIndicator('⏩');
-                    }
+                    activePlayer.currentTime(Math.min(activePlayer.duration(), activePlayer.currentTime() + 10));
+                    controlsManager.showGestureIndicator('⏩');
                     break;
                 case 'm':
                     e.preventDefault();
@@ -2691,12 +2737,13 @@ if (document.getElementById('appContainer')) {
         controlsManager.elements.retryBtn.addEventListener('click', () => {
             controlsManager.showErrorOverlay(false);
             controlsManager.showLoadingOverlay(true);
-            if (player && !player.isDisposed()) {
-                player.src({
+            const activePlayer = getSafePlayer();
+            if (activePlayer) {
+                activePlayer.src({
                     src: link.url,
                     type: 'application/x-mpegURL'
                 });
-                player.load();
+                activePlayer.load();
             }
         });
         
@@ -2737,39 +2784,85 @@ if (document.getElementById('appContainer')) {
             analyticsTracker.trackEvent(videoId, 'ended', player, tierId);
         });
         
+        // Updated timeupdate handler with defensive programming
         player.on('timeupdate', () => {
             try {
-                if (!isSeeking && player && !player.isDisposed()) {
-                    const current = player.currentTime();
-                    const duration = player.duration();
+                // Check if player still exists and is valid
+                const playerData = activePlayers.get(playerId);
+                if (!playerData || !playerData.player) {
+                    return;
+                }
+                
+                const activePlayer = playerData.player;
+                
+                // Multiple safety checks
+                if (!activePlayer || 
+                    !activePlayer.el() || 
+                    activePlayer.isDisposed() ||
+                    typeof activePlayer.currentTime !== 'function') {
+                    return;
+                }
+                
+                if (!isSeeking) {
+                    const current = activePlayer.currentTime();
+                    const duration = activePlayer.duration();
                     
-                    // Get buffered time
-                    let buffered = 0;
-                    if (player.buffered().length > 0) {
-                        buffered = player.buffered().end(player.buffered().length - 1);
+                    // Check if values are valid
+                    if (!isFinite(current) || !isFinite(duration) || duration <= 0) {
+                        return;
                     }
                     
-                    controlsManager.updateProgress(current, duration, buffered);
-                    controlsManager.updateTimeDisplay(current, duration);
+                    // Get buffered time safely
+                    let buffered = 0;
+                    try {
+                        if (activePlayer.buffered && 
+                            activePlayer.buffered().length > 0) {
+                            buffered = activePlayer.buffered().end(activePlayer.buffered().length - 1);
+                        }
+                    } catch (e) {
+                        // Silently handle buffered error
+                    }
+                    
+                    if (controlsManager && 
+                        controlsManager.updateProgress && 
+                        controlsManager.updateTimeDisplay) {
+                        controlsManager.updateProgress(current, duration, buffered);
+                        controlsManager.updateTimeDisplay(current, duration);
+                    }
                 }
             } catch (error) {
-                // Player disposed or not ready
+                // Player disposed or not ready - clean up
+                activePlayers.delete(playerId);
             }
         });
         
+        // Updated volumechange handler with defensive programming
         player.on('volumechange', () => {
-            if (!player || player.isDisposed()) return;
-            
-            const volume = player.volume();
-            const muted = player.muted();
-            
-            stateManager.volume = volume;
-            stateManager.isMuted = muted;
-            
-            controlsManager.updateVolumeButton(volume, muted);
-            
-            if (controlsManager.elements.volumeSlider) {
-                controlsManager.elements.volumeSlider.value = muted ? 0 : volume;
+            try {
+                const playerData = activePlayers.get(playerId);
+                if (!playerData || !playerData.player) return;
+                
+                const activePlayer = playerData.player;
+                if (!activePlayer || !activePlayer.el() || activePlayer.isDisposed()) {
+                    return;
+                }
+                
+                const volume = activePlayer.volume();
+                const muted = activePlayer.muted();
+                
+                stateManager.volume = volume;
+                stateManager.isMuted = muted;
+                
+                if (controlsManager && controlsManager.updateVolumeButton) {
+                    controlsManager.updateVolumeButton(volume, muted);
+                }
+                
+                if (controlsManager.elements && controlsManager.elements.volumeSlider) {
+                    controlsManager.elements.volumeSlider.value = muted ? 0 : volume;
+                }
+            } catch (error) {
+                // Silently handle
+                activePlayers.delete(playerId);
             }
         });
         
@@ -2834,15 +2927,17 @@ if (document.getElementById('appContainer')) {
         let touchStartTime = 0;
         
         modal.addEventListener('touchstart', (e) => {
-            if (player && !player.isDisposed()) {
-                touchStartX = e.touches[0].clientX;
-                touchStartY = e.touches[0].clientY;
-                touchStartTime = player.currentTime();
-            }
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+            touchStartTime = activePlayer.currentTime();
         }, { passive: true });
         
         modal.addEventListener('touchend', (e) => {
-            if (!player || player.isDisposed()) return;
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
             
             const touchEndX = e.changedTouches[0].clientX;
             const touchEndY = e.changedTouches[0].clientY;
@@ -2853,8 +2948,8 @@ if (document.getElementById('appContainer')) {
             // Only handle horizontal swipes (ignore vertical scrolls)
             if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
                 const seekAmount = (deltaX / window.innerWidth) * 30; // Max 30 seconds per full swipe
-                const newTime = Math.max(0, Math.min(player.duration(), touchStartTime + seekAmount));
-                player.currentTime(newTime);
+                const newTime = Math.max(0, Math.min(activePlayer.duration(), touchStartTime + seekAmount));
+                activePlayer.currentTime(newTime);
                 
                 if (seekAmount > 0) {
                     controlsManager.showGestureIndicator('⏩');
@@ -2870,7 +2965,8 @@ if (document.getElementById('appContainer')) {
         const doubleTapThreshold = 300;
         
         modal.addEventListener('touchend', (e) => {
-            if (!player || player.isDisposed()) return;
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
             
             const currentTime = Date.now();
             const tapLength = currentTime - lastTapTime;
@@ -2882,11 +2978,11 @@ if (document.getElementById('appContainer')) {
                 
                 if (tapX < screenWidth / 3) {
                     // Left side - rewind
-                    player.currentTime(Math.max(0, player.currentTime() - 10));
+                    activePlayer.currentTime(Math.max(0, activePlayer.currentTime() - 10));
                     controlsManager.showGestureIndicator('⏪ 10s');
                 } else if (tapX > (screenWidth * 2) / 3) {
                     // Right side - forward
-                    player.currentTime(Math.min(player.duration(), player.currentTime() + 10));
+                    activePlayer.currentTime(Math.min(activePlayer.duration(), activePlayer.currentTime() + 10));
                     controlsManager.showGestureIndicator('⏩ 10s');
                 }
                 
@@ -2915,8 +3011,9 @@ if (document.getElementById('appContainer')) {
         
         // Track watch time every 30 seconds
         let watchTimeTracker = setInterval(() => {
-            if (player && !player.paused() && !player.isDisposed()) {
-                analyticsTracker.trackEvent(videoId, 'timeupdate', player, tierId);
+            const activePlayer = getSafePlayer();
+            if (activePlayer && !activePlayer.paused()) {
+                analyticsTracker.trackEvent(videoId, 'timeupdate', activePlayer, tierId);
             }
         }, 30000);
         
