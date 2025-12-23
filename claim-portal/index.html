@@ -260,12 +260,16 @@
                 const data = await response.json();
                 
                 if (response.ok && data.status === 'success') {
-                    // Success! Redirect to access URL
-                    showMessage('✓ Activating your access...', 'success');
+                    // ✅ NEW: Redirect to signup page with handoff token
+                    showMessage('✓ Code verified! Setting up your account...', 'success');
+                    
+                    // Build signup URL with handoff token in fragment
+                    const signupUrl = data.redirect_url || 'https://zenith-396835e0.pages.dev/signup.html';
+                    const finalUrl = `${signupUrl}#handoff=${encodeURIComponent(data.handoff_token)}`;
                     
                     // Redirect after short delay
                     setTimeout(() => {
-                        window.location.href = data.access_url;
+                        window.location.href = finalUrl;
                     }, 1000);
                 } else {
                     // Handle errors

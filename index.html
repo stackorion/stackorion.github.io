@@ -122,6 +122,7 @@
         const urlParams = new URLSearchParams(window.location.search);
         const accessToken = urlParams.get('access_token');
         
+        // If no token in URL check:
         // If no token in URL, check if user already has a valid JWT session
         if (!accessToken) {
             const existingJWT = localStorage.getItem('lustroom_jwt');

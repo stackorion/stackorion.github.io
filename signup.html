@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Your Signup - The Echo Chamber</title>
+    
+    <!-- 🔒 Hide everything until handoff validation -->
+    <style>
+        html, body {
+            display: none !important;
+            visibility: hidden !important;
+        }
+    </style>
+    
+    <script>
+    (function() {
+        'use strict';
+        
+        const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
+        
+        // Check for handoff token in URL fragment
+        const fragment = window.location.hash.substring(1);
+        const params = new URLSearchParams(fragment);
+        const handoffToken = params.get('handoff');
+        
+        if (!handoffToken) {
+            // No handoff token → Stealth 404
+            document.open();
+            document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>404 - Page Not Found</title>
+                    <style>
+                        body { 
+                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+                            margin: 0; padding: 0; background: #fff;
+                        }
+                        .container { 
+                            max-width: 600px; margin: 0 auto; padding: 100px 40px; text-align: center; 
+                        }
+                        h1 { 
+                            font-size: 48px; margin-bottom: 10px; font-weight: 300; color: #24292e;
+                        }
+                        p { color: #586069; font-size: 16px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>404</h1>
+                        <p>This is not the web page you are looking for.</p>
+                    </div>
+                </body>
+                </html>
+            `);
+            document.close();
+            return;
+        }
+        
+        // Show loading state
+        document.open();
+        document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Setting Up Your Account...</title>
+                <style>
+                    body { 
+                        margin: 0; 
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                        display: flex; align-items: center; justify-content: center;
+                        min-height: 100vh;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    }
+                    .loader {
+                        background: white; padding: 40px; border-radius: 12px;
+                        box-shadow: 0 10px 40px rgba(0,0,0,0.2); text-align: center;
+                    }
+                    .spinner {
+                        border: 4px solid #f3f3f3; border-top: 4px solid #667eea;
+                        border-radius: 50%; width: 50px; height: 50px;
+                        animation: spin 1s linear infinite; margin: 0 auto 20px;
+                    }
+                    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                    h2 { font-size: 24px; font-weight: 600; color: #333; margin: 0 0 10px; }
+                    p { color: #666; font-size: 16px; margin: 0; }
+                </style>
+            </head>
+            <body>
+                <div class="loader">
+                    <div class="spinner"></div>
+                    <h2>Validating Access</h2>
+                    <p>Please wait...</p>
+                </div>
+            </body>
+            </html>
+        `);
+        document.close();
+        
+        // Exchange handoff token for provision session
+        fetch(`${API_BASE_URL}/auth/exchange-handoff`, {
+            method: 'POST',
+            headers: {
+                'X-Handoff-Token': handoffToken
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success' && data.user_email) {
+                // Success! Render signup form
+                renderSignupForm(data.user_email);
+            } else {
+                throw new Error(data.message || 'Invalid handoff token');
+            }
+        })
+        .catch(error => {
+            // Show error as stealth 404
+            document.open();
+            document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>404 - Page Not Found</title>
+                    <style>
+                        body { 
+                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+                            margin: 0; padding: 0; background: #fff;
+                        }
+                        .container { 
+                            max-width: 600px; margin: 0 auto; padding: 100px 40px; text-align: center; 
+                        }
+                        h1 { font-size: 48px; margin-bottom: 10px; font-weight: 300; color: #24292e; }
+                        p { color: #586069; font-size: 16px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>404</h1>
+                        <p>This link has expired or is invalid.</p>
+                    </div>
+                </body>
+                </html>
+            `);
+            document.close();
+        });
+        
+        function renderSignupForm(userEmail) {
+            document.open();
+            document.write(`
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Complete Your Signup</title>
+                    <style>
+                        * { margin: 0; padding: 0; box-sizing: border-box; }
+                        body {
+                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            min-height: 100vh; display: flex; align-items: center; justify-content: center;
+                            padding: 20px;
+                        }
+                        .container {
+                            background: white; border-radius: 16px;
+                            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                            max-width: 500px; width: 100%; padding: 40px;
+                        }
+                        h1 { font-size: 28px; color: #2c3e50; margin-bottom: 10px; font-weight: 600; text-align: center; }
+                        .subtitle { color: #7f8c8d; font-size: 15px; margin-bottom: 35px; text-align: center; }
+                        .input-group { margin-bottom: 25px; }
+                        label { display: block; margin-bottom: 8px; color: #34495e; font-size: 14px; font-weight: 500; }
+                        input {
+                            width: 100%; padding: 14px 16px; border: 2px solid #e0e0e0;
+                            border-radius: 8px; font-size: 16px; transition: all 0.3s;
+                            font-family: inherit;
+                        }
+                        input:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+                        input:disabled { background: #f5f5f5; cursor: not-allowed; }
+                        .password-requirements {
+                            margin-top: 8px; padding: 12px; background: #f8f9fa;
+                            border-radius: 6px; font-size: 13px; color: #666;
+                        }
+                        .requirement { margin: 4px 0; padding-left: 20px; position: relative; }
+                        .requirement::before { content: "•"; position: absolute; left: 8px; color: #999; }
+                        .requirement.met { color: #27ae60; }
+                        .requirement.met::before { content: "✓"; color: #27ae60; }
+                        button {
+                            width: 100%; padding: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            color: white; border: none; border-radius: 8px;
+                            font-size: 16px; font-weight: 600; cursor: pointer;
+                            transition: transform 0.2s, box-shadow 0.2s;
+                        }
+                        button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); }
+                        button:active:not(:disabled) { transform: translateY(0); }
+                        button:disabled { opacity: 0.6; cursor: not-allowed; }
+                        .message {
+                            margin-top: 20px; padding: 14px; border-radius: 8px;
+                            font-size: 14px; display: none;
+                        }
+                        .message.error { background: #fee; color: #c33; border: 1px solid #fcc; }
+                        .message.success { background: #efe; color: #393; border: 1px solid #cfc; }
+                        .loading {
+                            display: inline-block; width: 18px; height: 18px;
+                            border: 3px solid rgba(255, 255, 255, 0.3);
+                            border-top-color: white; border-radius: 50%;
+                            animation: spin 0.8s linear infinite;
+                        }
+                        @keyframes spin { to { transform: rotate(360deg); } }
+                        .help-text {
+                            margin-top: 25px; padding-top: 25px; border-top: 1px solid #e0e0e0;
+                            font-size: 13px; color: #7f8c8d; text-align: center; line-height: 1.6;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>Complete Your Signup</h1>
+                        <p class="subtitle">Set your password to activate your account</p>
+                        
+                        <form id="signupForm">
+                            <div class="input-group">
+                                <label for="email">Email</label>
+                                <input 
+                                    type="email" 
+                                    id="email" 
+                                    value="${userEmail}"
+                                    disabled
+                                    readonly
+                                >
+                            </div>
+                            
+                            <div class="input-group">
+                                <label for="password">Create Password</label>
+                                <input 
+                                    type="password" 
+                                    id="password" 
+                                    name="password"
+                                    placeholder="Enter a strong password"
+                                    required
+                                    autofocus
+                                    minlength="8"
+                                >
+                                <div class="password-requirements">
+                                    <div class="requirement" id="req-length">At least 8 characters</div>
+                                    <div class="requirement" id="req-letter">Contains a letter</div>
+                                    <div class="requirement" id="req-number">Contains a number</div>
+                                </div>
+                            </div>
+                            
+                            <div class="input-group">
+                                <label for="confirmPassword">Confirm Password</label>
+                                <input 
+                                    type="password" 
+                                    id="confirmPassword" 
+                                    name="confirmPassword"
+                                    placeholder="Re-enter your password"
+                                    required
+                                    minlength="8"
+                                >
+                            </div>
+                            
+                            <button type="submit" id="submitBtn">
+                                Complete Signup
+                            </button>
+                        </form>
+                        
+                        <div id="message" class="message"></div>
+                        
+                        <div class="help-text">
+                            <p>Your password will be used to access your account.</p>
+                            <p>Keep it secure and don't share it with anyone.</p>
+                        </div>
+                    </div>
+                    
+                    <script>
+                        const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
+                        
+                        const form = document.getElementById('signupForm');
+                        const passwordInput = document.getElementById('password');
+                        const confirmPasswordInput = document.getElementById('confirmPassword');
+                        const submitBtn = document.getElementById('submitBtn');
+                        const messageDiv = document.getElementById('message');
+                        
+                        // Password validation feedback
+                        passwordInput.addEventListener('input', (e) => {
+                            const password = e.target.value;
+                            
+                            // Length check
+                            const lengthReq = document.getElementById('req-length');
+                            if (password.length >= 8) {
+                                lengthReq.classList.add('met');
+                            } else {
+                                lengthReq.classList.remove('met');
+                            }
+                            
+                            // Letter check
+                            const letterReq = document.getElementById('req-letter');
+                            if (/[a-zA-Z]/.test(password)) {
+                                letterReq.classList.add('met');
+                            } else {
+                                letterReq.classList.remove('met');
+                            }
+                            
+                            // Number check
+                            const numberReq = document.getElementById('req-number');
+                            if (/[0-9]/.test(password)) {
+                                numberReq.classList.add('met');
+                            } else {
+                                numberReq.classList.remove('met');
+                            }
+                        });
+                        
+                        function showMessage(text, type) {
+                            messageDiv.textContent = text;
+                            messageDiv.className = 'message ' + type;
+                            messageDiv.style.display = 'block';
+                        }
+                        
+                        function hideMessage() {
+                            messageDiv.style.display = 'none';
+                        }
+                        
+                        form.addEventListener('submit', async (e) => {
+                            e.preventDefault();
+                            hideMessage();
+                            
+                            const password = passwordInput.value.trim();
+                            const confirmPassword = confirmPasswordInput.value.trim();
+                            
+                            // Validation
+                            if (password.length < 8) {
+                                showMessage('Password must be at least 8 characters long', 'error');
+                                return;
+                            }
+                            
+                            if (!/[a-zA-Z]/.test(password)) {
+                                showMessage('Password must contain at least one letter', 'error');
+                                return;
+                            }
+                            
+                            if (!/[0-9]/.test(password)) {
+                                showMessage('Password must contain at least one number', 'error');
+                                return;
+                            }
+                            
+                            if (password !== confirmPassword) {
+                                showMessage('Passwords do not match', 'error');
+                                return;
+                            }
+                            
+                            // Disable form
+                            submitBtn.disabled = true;
+                            submitBtn.innerHTML = '<span class="loading"></span>';
+                            passwordInput.disabled = true;
+                            confirmPasswordInput.disabled = true;
+                            
+                            try {
+                                const response = await fetch(\`\${API_BASE_URL}/auth/complete-signup\`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json'
+                                    },
+                                    credentials: 'include', // Include cookies
+                                    body: JSON.stringify({ password: password })
+                                });
+                                
+                                const data = await response.json();
+                                
+                                if (response.ok && data.status === 'success') {
+                                    // Store JWT and user info
+                                    localStorage.setItem('lustroom_jwt', data.access_token);
+                                    localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
+                                    localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
+                                    localStorage.setItem('user_info', JSON.stringify(data.user));
+                                    
+                                    // Fetch profile data with subscriptions
+                                    const profileResponse = await fetch(\`\${API_BASE_URL}/profile\`, {
+                                        headers: { 'Authorization': \`Bearer \${data.access_token}\` }
+                                    });
+                                    
+                                    const profileData = await profileResponse.json();
+                                    
+                                    if (profileResponse.ok && profileData.status === 'success') {
+                                        localStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions || []));
+                                        
+                                        if (profileData.announcements) {
+                                            localStorage.setItem('global_announcements', JSON.stringify(profileData.announcements));
+                                        }
+                                    }
+                                    
+                                    // Success! Redirect
+                                    showMessage('✓ Account created! Redirecting...', 'success');
+                                    setTimeout(() => {
+                                        window.location.href = 'links.html';
+                                    }, 1000);
+                                } else {
+                                    throw new Error(data.message || 'Signup failed');
+                                }
+                                
+                            } catch (error) {
+                                showMessage(error.message || 'An error occurred. Please try again.', 'error');
+                                
+                                // Re-enable form
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = 'Complete Signup';
+                                passwordInput.disabled = false;
+                                confirmPasswordInput.disabled = false;
+                            }
+                        });
+                    </script>
+                </body>
+                </html>
+            `);
+            document.close();
+        }
+    })();
+    </script>
+</head>
+<body>
+    <!-- This body will never render if the gate script works -->
+    <p style="display:none;">Loading...</p>
+</body>
+</html>
