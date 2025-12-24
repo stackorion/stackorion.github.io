@@ -148,6 +148,7 @@
             document.close();
         });
         
+        // FIXED FUNCTION BELOW
         function renderSignupForm(userEmail) {
             document.open();
             document.write(`
@@ -360,12 +361,13 @@
                             confirmPasswordInput.disabled = true;
                             
                             try {
-                                const response = await fetch(\`\${API_BASE_URL}/auth/complete-signup\`, {
+                                // NOTE: Using string concatenation (+) instead of template literals to avoid escaping issues
+                                const response = await fetch(API_BASE_URL + '/auth/complete-signup', {
                                     method: 'POST',
                                     headers: {
                                         'Content-Type': 'application/json'
                                     },
-                                    credentials: 'include', // Include cookies
+                                    credentials: 'include',
                                     body: JSON.stringify({ password: password })
                                 });
                                 
@@ -379,8 +381,8 @@
                                     localStorage.setItem('user_info', JSON.stringify(data.user));
                                     
                                     // Fetch profile data with subscriptions
-                                    const profileResponse = await fetch(\`\${API_BASE_URL}/profile\`, {
-                                        headers: { 'Authorization': \`Bearer \${data.access_token}\` }
+                                    const profileResponse = await fetch(API_BASE_URL + '/profile', {
+                                        headers: { 'Authorization': 'Bearer ' + data.access_token }
                                     });
                                     
                                     const profileData = await profileResponse.json();
@@ -412,7 +414,7 @@
                                 confirmPasswordInput.disabled = false;
                             }
                         });
-                    </script>
+                    <\/script>
                 </body>
                 </html>
             `);
