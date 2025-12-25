@@ -857,7 +857,7 @@ function renderRenewalBanner() {
     }
 }
 
-function renderHeaderActions() {
+async function renderHeaderActions() {
     // --- 1. Handle Support Link with Priority Logic ---
     let supportUrl = null;
     if (userSubscriptions.length > 0) {
@@ -883,19 +883,40 @@ function renderHeaderActions() {
         supportLink.style.display = 'none';
     }
 
-    // --- 2. Handle Global Download App Button (NEW: Dynamic from system_config) ---
+    // --- 2. ✅ FIXED: Fetch Fresh System Config from Backend ---
     const downloadAppButton = document.getElementById('downloadAppButton');
     if (downloadAppButton) {
-        // ✅ Load system_config from localStorage
-        const systemConfig = JSON.parse(localStorage.getItem('system_config') || '{}');
-        
-        const showButton = systemConfig.show_download_button === 'true';
-        const downloadUrl = systemConfig.download_app_url || '';
-        
-        if (showButton && downloadUrl) {
-            downloadAppButton.href = downloadUrl;
-            downloadAppButton.style.display = 'inline-block';
-        } else {
+        try {
+            // Fetch live system settings from backend
+            const token = localStorage.getItem('lustroom_jwt');
+            if (!token) {
+                downloadAppButton.style.display = 'none';
+                return;
+            }
+
+            const response = await fetch(`${API_BASE_URL}/profile`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.status === 'success' && data.system_config) {
+                // ✅ Use fresh data from backend, not stale localStorage
+                const systemConfig = data.system_config;
+                const showButton = systemConfig.show_download_button === 'true';
+                const downloadUrl = systemConfig.download_app_url || '';
+                
+                if (showButton && downloadUrl) {
+                    downloadAppButton.href = downloadUrl;
+                    downloadAppButton.style.display = 'inline-block';
+                } else {
+                    downloadAppButton.style.display = 'none';
+                }
+            } else {
+                downloadAppButton.style.display = 'none';
+            }
+        } catch (error) {
+            // Silently handle error
             downloadAppButton.style.display = 'none';
         }
     }
@@ -1474,7 +1495,7 @@ if (document.getElementById('appContainer')) {
                 card.dataset.searchText = generateSearchableText(link);
                 card.dataset.tierName = tierName;
                 card.dataset.platformId = platformId;
-                card.dataset.tierId = tierName; // NEW: Store tier ID
+                card.dataset.tierId = link.tier_id; // ✅ FIX: Use numeric ID from API
 
                 // Handle Gallery content type differently
                 const isGallery = link.content_type === 'Gallery';
@@ -3087,7 +3108,7 @@ if (document.getElementById('appContainer')) {
         
         // Render renewal banner and header actions
         renderRenewalBanner();
-        renderHeaderActions();
+        await renderHeaderActions();
 
         if (!isTokenValid()) {
             window.location.href = 'login.html';
