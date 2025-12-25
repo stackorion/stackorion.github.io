@@ -5,14 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - The Echo Chamber</title>
     
-    <!-- 🔒 NUCLEAR GATE - HIDE EVERYTHING IMMEDIATELY -->
-    <style>
-        html, body {
-            display: none !important;
-            visibility: hidden !important;
-        }
-    </style>
-    
     <!-- ========================================== -->
     <!-- 🔒 TOKEN GATE - EXECUTES BEFORE EVERYTHING -->
     <!-- ========================================== -->
@@ -115,7 +107,7 @@
         
         // Check rate limit first
         if (!checkRateLimit()) {
-            return; // Already showing 404 with rate limit message
+            return;
         }
         
         // Check if there's an access token in the URL
@@ -134,9 +126,8 @@
                 const isStillValid = (obtainedAt + expiresIn - 60) > nowInSeconds;
                 
                 if (isStillValid) {
-                    // User has valid session, redirect to app
                     window.location.href = 'links.html';
-                    return; // Stop execution
+                    return;
                 }
             }
             
@@ -149,7 +140,6 @@
         // TOKEN VALIDATION FLOW
         // ====================================
         
-        // Show loading state
         function showLoading() {
             document.open();
             document.write(`
@@ -214,13 +204,11 @@
             document.close();
         }
         
-        // Show error (uses stealth 404)
         function showError() {
             recordFailedAttempt();
             renderAuthPage();
         }
         
-        // Start validation
         showLoading();
         
         // Validate token with backend
@@ -239,13 +227,11 @@
         })
         .then(data => {
             if (data.status === 'success' && data.access_token) {
-                // Store JWT session token
                 localStorage.setItem('lustroom_jwt', data.access_token);
                 localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
                 localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
                 localStorage.setItem('user_info', JSON.stringify(data.user_info));
                 
-                // Fetch profile data with subscriptions
                 return fetch(`${API_BASE_URL}/profile`, {
                     headers: { 'Authorization': `Bearer ${data.access_token}` }
                 });
@@ -256,7 +242,6 @@
         .then(response => response.json())
         .then(profileData => {
             if (profileData.status === 'success') {
-                // Store subscriptions and announcements
                 localStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions || []));
                 
                 if (profileData.announcements) {
@@ -265,10 +250,7 @@
                     localStorage.removeItem('global_announcements');
                 }
                 
-                // Clear failed attempts on success
                 clearFailedAttempts();
-                
-                // Success! Redirect to main app
                 window.location.href = 'links.html';
             } else {
                 throw new Error('Failed to load user profile');
@@ -387,13 +369,11 @@
                         <h1>Welcome Back</h1>
                         <p class="subtitle">Sign in to your account</p>
                         
-                        <!-- Toggle between Login and Forgot Password -->
                         <div class="form-toggle">
                             <button class="toggle-btn active" data-panel="login">Login</button>
                             <button class="toggle-btn" data-panel="forgot">Forgot Password</button>
                         </div>
                         
-                        <!-- LOGIN FORM -->
                         <div id="login-panel" class="form-panel active">
                             <form id="loginForm">
                                 <div class="input-group">
@@ -427,7 +407,6 @@
                             </form>
                         </div>
                         
-                        <!-- FORGOT PASSWORD FORM -->
                         <div id="forgot-panel" class="form-panel">
                             <form id="forgotForm">
                                 <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 20px; line-height: 1.5;">
@@ -461,7 +440,6 @@
                     <script>
                         const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
                         
-                        // Tab switching
                         const toggleBtns = document.querySelectorAll('.toggle-btn');
                         const panels = document.querySelectorAll('.form-panel');
                         
@@ -469,20 +447,16 @@
                             btn.addEventListener('click', () => {
                                 const targetPanel = btn.dataset.panel;
                                 
-                                // Update buttons
                                 toggleBtns.forEach(b => b.classList.remove('active'));
                                 btn.classList.add('active');
                                 
-                                // Update panels
                                 panels.forEach(p => p.classList.remove('active'));
                                 document.getElementById(targetPanel + '-panel').classList.add('active');
                                 
-                                // Clear messages
                                 document.querySelectorAll('.message').forEach(m => m.style.display = 'none');
                             });
                         });
                         
-                        // Helper functions
                         function showMessage(elementId, text, type) {
                             const el = document.getElementById(elementId);
                             el.textContent = text;
@@ -494,7 +468,6 @@
                             document.getElementById(elementId).style.display = 'none';
                         }
                         
-                        // LOGIN FORM HANDLER
                         const loginForm = document.getElementById('loginForm');
                         const loginBtn = document.getElementById('loginBtn');
                         const loginEmailInput = document.getElementById('login-email');
@@ -512,7 +485,6 @@
                                 return;
                             }
                             
-                            // Disable form
                             loginBtn.disabled = true;
                             loginBtn.innerHTML = '<span class="loading"></span>';
                             loginEmailInput.disabled = true;
@@ -531,13 +503,11 @@
                                 const data = await response.json();
                                 
                                 if (response.ok && data.status === 'success') {
-                                    // Store JWT and user info
                                     localStorage.setItem('lustroom_jwt', data.access_token);
                                     localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
                                     localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
                                     localStorage.setItem('user_info', JSON.stringify(data.user));
                                     
-                                    // Fetch profile
                                     const profileResponse = await fetch(\`\${API_BASE_URL}/profile\`, {
                                         headers: { 'Authorization': \`Bearer \${data.access_token}\` }
                                     });
@@ -552,7 +522,6 @@
                                         }
                                     }
                                     
-                                    // Success!
                                     showMessage('login-message', '✓ Login successful! Redirecting...', 'success');
                                     setTimeout(() => {
                                         window.location.href = 'links.html';
@@ -564,7 +533,6 @@
                             } catch (error) {
                                 showMessage('login-message', error.message || 'An error occurred. Please try again.', 'error');
                                 
-                                // Re-enable form
                                 loginBtn.disabled = false;
                                 loginBtn.textContent = 'Log In';
                                 loginEmailInput.disabled = false;
@@ -572,7 +540,6 @@
                             }
                         });
                         
-                        // FORGOT PASSWORD FORM HANDLER
                         const forgotForm = document.getElementById('forgotForm');
                         const forgotBtn = document.getElementById('forgotBtn');
                         const forgotEmailInput = document.getElementById('forgot-email');
@@ -588,7 +555,6 @@
                                 return;
                             }
                             
-                            // Disable form
                             forgotBtn.disabled = true;
                             forgotBtn.innerHTML = '<span class="loading"></span>';
                             forgotEmailInput.disabled = true;
@@ -614,13 +580,12 @@
                             } catch (error) {
                                 showMessage('forgot-message', error.message || 'An error occurred. Please try again.', 'error');
                             } finally {
-                                // Re-enable form
                                 forgotBtn.disabled = false;
                                 forgotBtn.textContent = 'Send Reset Link';
                                 forgotEmailInput.disabled = false;
                             }
                         });
-                    <\/script> <!-- FIX: Escaped the closing script tag -->
+                    <\/script>
                 </body>
                 </html>
             `);
@@ -630,8 +595,6 @@
     </script>
 </head>
 <body>
-    <!-- This body content will NEVER render if the gate is working -->
-    <!-- It only exists as a fallback for ancient browsers -->
     <div style="display:none;">
         <p>Loading...</p>
     </div>
