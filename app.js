@@ -250,14 +250,23 @@ class VideoAnalyticsTracker {
         this.trackedVideos = new Map(); // videoId -> analytics state
         this.batchQueue = [];
         this.batchInterval = 10000; // Send batch every 10 seconds
+        this.tierIdCache = new Map(); // Cache videoId -> numeric tierId
         this.startBatchTimer();
     }
 
-    trackEvent(videoId, event, player, tierId) {
+    // ✅ NEW: Store tier ID mapping when video is opened
+    setVideoTierMapping(videoId, numericTierId) {
+        this.tierIdCache.set(videoId, numericTierId);
+    }
+
+    trackEvent(videoId, event, player, tierName) {
+        // ✅ FIX: Get numeric tier ID from cache or use default
+        const numericTierId = this.tierIdCache.get(videoId) || 1;
+        
         const eventData = {
             event: event,
             video_id: videoId,
-            tier_id: tierId,
+            tier_id: numericTierId,  // ✅ NOW: Numeric tier ID
             current_time: player ? player.currentTime() : 0,
             duration: player ? player.duration() : 0,
             quality: player ? this.getCurrentQuality(player) : 'auto'
@@ -294,7 +303,7 @@ class VideoAnalyticsTracker {
             const token = localStorage.getItem('lustroom_jwt');
             if (!token) return;
 
-            // Send each event (you can batch them in backend later)
+            // Send each event
             for (const event of batch) {
                 await fetch(`${API_BASE_URL}/analytics/track`, {
                     method: 'POST',
@@ -2086,6 +2095,10 @@ if (document.getElementById('appContainer')) {
         const videoId = videoIdMatch[1];
         const libraryIdMatch = link.url.match(/library_id=(\d+)/);
         const libraryId = libraryIdMatch ? libraryIdMatch[1] : '555806';
+        
+        // ✅ NEW: Store numeric tier ID for analytics
+        const numericTierId = link.tier_id || 1; // Use the tier_id from the link data
+        analyticsTracker.setVideoTierMapping(videoId, numericTierId);
         
         // Create modal
         const modal = document.createElement('div');
