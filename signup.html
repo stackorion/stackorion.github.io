@@ -148,7 +148,7 @@
             document.close();
         });
         
-        // FIXED FUNCTION BELOW
+        // UPDATED FUNCTION WITH DEBUG LOGGING
         function renderSignupForm(userEmail) {
             document.open();
             document.write(`
@@ -361,6 +361,11 @@
                             confirmPasswordInput.disabled = true;
                             
                             try {
+                                // 🔍 DEBUG: Check what cookies we have
+                                console.log('🍪 About to send /complete-signup request');
+                                console.log('🍪 Document.cookie:', document.cookie);
+                                console.log('🍪 Credentials mode:', 'include');
+                                
                                 // NOTE: Using string concatenation (+) instead of template literals to avoid escaping issues
                                 const response = await fetch(API_BASE_URL + '/auth/complete-signup', {
                                     method: 'POST',
@@ -370,6 +375,10 @@
                                     credentials: 'include',
                                     body: JSON.stringify({ password: password })
                                 });
+                                
+                                // 🔍 DEBUG: Response status
+                                console.log('📬 Response status:', response.status);
+                                console.log('📬 Response headers:', [...response.headers.entries()]);
                                 
                                 const data = await response.json();
                                 
