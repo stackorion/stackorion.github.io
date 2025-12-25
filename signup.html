@@ -110,6 +110,9 @@
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success' && data.user_email) {
+                // Store provision session in sessionStorage
+                sessionStorage.setItem('provision_session', data.provision_session_id);
+                
                 // Success! Render signup form
                 renderSignupForm(data.user_email);
             } else {
@@ -361,24 +364,18 @@
                             confirmPasswordInput.disabled = true;
                             
                             try {
-                                // 🔍 DEBUG: Check what cookies we have
-                                console.log('🍪 About to send /complete-signup request');
-                                console.log('🍪 Document.cookie:', document.cookie);
-                                console.log('🍪 Credentials mode:', 'include');
+                                // Retrieve provision session from sessionStorage
+                                const provisionSession = sessionStorage.getItem('provision_session');
                                 
                                 // NOTE: Using string concatenation (+) instead of template literals to avoid escaping issues
                                 const response = await fetch(API_BASE_URL + '/auth/complete-signup', {
                                     method: 'POST',
                                     headers: {
-                                        'Content-Type': 'application/json'
+                                        'Content-Type': 'application/json',
+                                        'X-Provision-Session': provisionSession  // ✅ Send as header instead
                                     },
-                                    credentials: 'include',
                                     body: JSON.stringify({ password: password })
                                 });
-                                
-                                // 🔍 DEBUG: Response status
-                                console.log('📬 Response status:', response.status);
-                                console.log('📬 Response headers:', [...response.headers.entries()]);
                                 
                                 const data = await response.json();
                                 
