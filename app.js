@@ -251,7 +251,26 @@ class VideoAnalyticsTracker {
         this.batchQueue = [];
         this.batchInterval = 10000; // Send batch every 10 seconds
         this.tierIdCache = new Map(); // Cache videoId -> numeric tierId
+        this.sessionIdCache = new Map();  // ✅ NEW: Track session IDs
         this.startBatchTimer();
+    }
+
+    // ✅ NEW: Generate unique session ID for each viewing session
+    generateSessionId() {
+        return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+
+    // ✅ NEW: Get or create session ID for a video
+    getSessionId(videoId) {
+        if (!this.sessionIdCache.has(videoId)) {
+            this.sessionIdCache.set(videoId, this.generateSessionId());
+        }
+        return this.sessionIdCache.get(videoId);
+    }
+
+    // ✅ NEW: Clear session ID when video is closed
+    clearSession(videoId) {
+        this.sessionIdCache.delete(videoId);
     }
 
     // ✅ NEW: Store tier ID mapping when video is opened
@@ -262,10 +281,12 @@ class VideoAnalyticsTracker {
     trackEvent(videoId, event, player, tierName) {
         // ✅ FIX: Get numeric tier ID from cache or use default
         const numericTierId = this.tierIdCache.get(videoId) || 1;
+        const sessionId = this.getSessionId(videoId);  // ✅ NEW: Get session ID
         
         const eventData = {
             event: event,
             video_id: videoId,
+            session_id: sessionId,  // ✅ NEW: Include session ID
             tier_id: numericTierId,  // ✅ NOW: Numeric tier ID
             current_time: player ? player.currentTime() : 0,
             duration: player ? player.duration() : 0,
@@ -2694,6 +2715,9 @@ if (document.getElementById('appContainer')) {
         
         // Close button and ESC key
         const closePlayer = () => {
+            // ✅ NEW: Clear session tracking
+            analyticsTracker.clearSession(videoId);
+            
             // Stop token refresh
             tokenRefreshManager.stopRefresh(videoId);
             
