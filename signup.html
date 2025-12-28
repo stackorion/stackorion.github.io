@@ -109,11 +109,12 @@
         })
         .then(response => response.json())
         .then(data => {
-            if (data.status === 'success' && data.user_email) {
+            if (data.status === 'success') {
                 // Store provision session in sessionStorage
                 sessionStorage.setItem('provision_session', data.provision_session_id);
                 
                 // Success! Render signup form
+                // user_email will be null for floating codes (VIP invites)
                 renderSignupForm(data.user_email);
             } else {
                 throw new Error(data.message || 'Invalid handoff token');
