@@ -6,13 +6,106 @@
     <title>Login - The Echo Chamber</title>
     
     <!-- ========================================== -->
-    <!-- 🔒 TOKEN GATE - EXECUTES BEFORE EVERYTHING -->
+    <!-- 🎯 INSTANT LOADING GATE - RENDERS BEFORE JS -->
+    <!-- ========================================== -->
+    <style>
+        /* Instant loader styles - inline for zero delay */
+        #instant-gate {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 999999;
+            transition: opacity 0.4s ease;
+        }
+        
+        #instant-gate.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .gate-spinner {
+            width: 70px;
+            height: 70px;
+            border: 5px solid rgba(255, 255, 255, 0.2);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: gate-spin 0.8s linear infinite;
+        }
+        
+        @keyframes gate-spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .gate-title {
+            color: white;
+            font-size: 28px;
+            font-weight: 700;
+            margin-top: 30px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        
+        .gate-message {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 16px;
+            margin-top: 12px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            animation: gate-pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes gate-pulse {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+        
+        .gate-subtext {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 13px;
+            margin-top: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <!-- ========================================== -->
+    <!-- INSTANT GATE: Shows IMMEDIATELY (no JS wait) -->
+    <!-- ========================================== -->
+    <div id="instant-gate">
+        <div class="gate-spinner"></div>
+        <div class="gate-title">THE BLACK ZENITH</div>
+        <div class="gate-message" id="gate-status">Initializing...</div>
+        <div class="gate-subtext" id="gate-subtext"></div>
+    </div>
+    
+    <!-- ========================================== -->
+    <!-- 🔒 TOKEN GATE - EXECUTES AFTER DOM READY -->
     <!-- ========================================== -->
     <script>
     (function() {
         'use strict';
         
         const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
+        const gateStatus = document.getElementById('gate-status');
+        const gateSubtext = document.getElementById('gate-subtext');
+        
+        // Update status message
+        function updateStatus(message, subtext = '') {
+            gateStatus.textContent = message;
+            gateSubtext.textContent = subtext;
+        }
+        
+        // Remove gate with fade animation
+        function removeGate() {
+            const gate = document.getElementById('instant-gate');
+            gate.classList.add('fade-out');
+            setTimeout(() => gate.remove(), 400);
+        }
         
         // ====================================
         // RATE LIMITING - Prevent brute force
@@ -44,7 +137,7 @@
         }
         
         // ====================================
-        // STEALTH 404 PAGE - Looks like GitHub Pages
+        // STEALTH 404 PAGE
         // ====================================
         function show404(rateLimited = false, minutesRemaining = 0) {
             const message = rateLimited 
@@ -116,6 +209,8 @@
         
         // If no token in URL, check if user already has a valid JWT session
         if (!accessToken) {
+            updateStatus('Checking session...', 'Please wait');
+            
             const existingJWT = localStorage.getItem('lustroom_jwt');
             const obtainedAt = parseInt(localStorage.getItem('lustroom_jwt_obtained_at'), 10);
             const expiresIn = parseInt(localStorage.getItem('lustroom_jwt_expires_in'), 10);
@@ -126,13 +221,20 @@
                 const isStillValid = (obtainedAt + expiresIn - 60) > nowInSeconds;
                 
                 if (isStillValid) {
-                    window.location.href = 'links.html';
+                    updateStatus('Session found!', 'Redirecting...');
+                    setTimeout(() => {
+                        window.location.href = 'links.html';
+                    }, 300);
                     return;
                 }
             }
             
             // No valid session → Render login/forgot password page
-            renderAuthPage();
+            updateStatus('Loading login...', '');
+            setTimeout(() => {
+                removeGate();
+                renderAuthPage();
+            }, 500);
             return;
         }
         
@@ -140,76 +242,7 @@
         // TOKEN VALIDATION FLOW
         // ====================================
         
-        function showLoading() {
-            document.open();
-            document.write(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Validating Access...</title>
-                    <style>
-                        body { 
-                            margin: 0; 
-                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            min-height: 100vh;
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        }
-                        .gate-container {
-                            background: white;
-                            padding: 40px;
-                            border-radius: 12px;
-                            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-                            text-align: center;
-                            max-width: 400px;
-                        }
-                        .gate-spinner {
-                            border: 4px solid #f3f3f3;
-                            border-top: 4px solid #667eea;
-                            border-radius: 50%;
-                            width: 50px;
-                            height: 50px;
-                            animation: spin 1s linear infinite;
-                            margin: 0 auto 20px;
-                        }
-                        @keyframes spin {
-                            0% { transform: rotate(0deg); }
-                            100% { transform: rotate(360deg); }
-                        }
-                        .gate-title {
-                            font-size: 24px;
-                            font-weight: 600;
-                            color: #333;
-                            margin-bottom: 10px;
-                        }
-                        .gate-message {
-                            color: #666;
-                            font-size: 16px;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="gate-container">
-                        <div class="gate-spinner"></div>
-                        <div class="gate-title">Validating Access</div>
-                        <div class="gate-message">Please wait...</div>
-                    </div>
-                </body>
-                </html>
-            `);
-            document.close();
-        }
-        
-        function showError() {
-            recordFailedAttempt();
-            renderAuthPage();
-        }
-        
-        showLoading();
+        updateStatus('Waking up server...', 'This may take up to 30 seconds on first load');
         
         // Validate token with backend
         fetch(`${API_BASE_URL}/auth/validate-token`, {
@@ -227,6 +260,8 @@
         })
         .then(data => {
             if (data.status === 'success' && data.access_token) {
+                updateStatus('Authenticated!', 'Loading profile...');
+                
                 localStorage.setItem('lustroom_jwt', data.access_token);
                 localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
                 localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
@@ -251,14 +286,22 @@
                 }
                 
                 clearFailedAttempts();
-                window.location.href = 'links.html';
+                updateStatus('Success!', 'Entering...');
+                setTimeout(() => {
+                    window.location.href = 'links.html';
+                }, 300);
             } else {
                 throw new Error('Failed to load user profile');
             }
         })
         .catch(error => {
             console.error('Token validation error:', error);
-            showError();
+            recordFailedAttempt();
+            updateStatus('Authentication failed', 'Loading login...');
+            setTimeout(() => {
+                removeGate();
+                renderAuthPage();
+            }, 800);
         });
         
         // ====================================
@@ -280,6 +323,11 @@
                             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                             min-height: 100vh; display: flex; align-items: center; justify-content: center;
                             padding: 20px;
+                            animation: fadeIn 0.5s ease;
+                        }
+                        @keyframes fadeIn {
+                            from { opacity: 0; }
+                            to { opacity: 1; }
                         }
                         .container {
                             background: white; border-radius: 16px;
@@ -307,9 +355,9 @@
                         .toggle-btn.active {
                             color: #667eea; border-bottom-color: #667eea;
                         }
-                        .form-panel { display: none; animation: fadeIn 0.3s; }
+                        .form-panel { display: none; animation: formFadeIn 0.3s; }
                         .form-panel.active { display: block; }
-                        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                        @keyframes formFadeIn { from { opacity: 0; } to { opacity: 1; } }
                         .input-group { margin-bottom: 20px; }
                         label { 
                             display: block; margin-bottom: 8px; color: #34495e; 
@@ -593,10 +641,5 @@
         }
     })();
     </script>
-</head>
-<body>
-    <div style="display:none;">
-        <p>Loading...</p>
-    </div>
 </body>
 </html>

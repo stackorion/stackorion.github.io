@@ -3134,6 +3134,20 @@ if (document.getElementById('appContainer')) {
         // Load user data at the start of router
         loadUserData();
         
+        // 🎯 NEW: Hide app loader after first successful load
+        const appLoader = document.getElementById('app-loader');
+        const appContainer = document.getElementById('appContainer');
+        
+        function hideAppLoader() {
+            if (appLoader && appContainer) {
+                appLoader.style.opacity = '0';
+                appContainer.style.display = 'block';
+                setTimeout(() => {
+                    appLoader.remove();
+                }, 400);
+            }
+        }
+        
         // ⚡ NEW: Start session refresh manager
         if (!sessionRefreshManager.refreshTimer) {
             sessionRefreshManager.start();
@@ -3163,6 +3177,9 @@ if (document.getElementById('appContainer')) {
             if (view === 'gallery' && slug) {
                 await fetchAndDisplayGallery(slug);
                 renderSubscriptionStatus();
+                
+                // 🎯 NEW: Hide loader after content is ready
+                hideAppLoader();
                 return;
             }
 
@@ -3203,9 +3220,13 @@ if (document.getElementById('appContainer')) {
             }
 
             renderSubscriptionStatus();
+            
+            // 🎯 NEW: Hide loader after content is ready
+            hideAppLoader();
         } catch (error) {
             // Silently handle error without logging to console
             displayError("An error occurred while loading the page. Please try again.");
+            hideAppLoader(); // Hide loader even on error
         }
     }
 
