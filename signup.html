@@ -227,14 +227,16 @@
                         <p class="subtitle">Set your password to activate your account</p>
                         
                         <form id="signupForm">
+                            <!-- ✅ UPDATED EMAIL INPUT -->
                             <div class="input-group">
                                 <label for="email">Email</label>
                                 <input 
                                     type="email" 
                                     id="email" 
-                                    value="${userEmail}"
-                                    disabled
-                                    readonly
+                                    name="email"
+                                    value="${userEmail || ''}"
+                                    ${userEmail ? 'disabled readonly' : 'required'}
+                                    placeholder="${userEmail ? '' : 'Enter your email address'}"
                                 >
                             </div>
                             
@@ -367,6 +369,15 @@
                                 // Retrieve provision session from sessionStorage
                                 const provisionSession = sessionStorage.getItem('provision_session');
                                 
+                                // 🎯 NEW: Include email for floating codes
+                                const emailInput = document.getElementById('email');
+                                const requestBody = { password: password };
+
+                                if (emailInput && !emailInput.disabled) {
+                                    // Floating code - include email
+                                    requestBody.email = emailInput.value.trim();
+                                }
+
                                 // NOTE: Using string concatenation (+) instead of template literals to avoid escaping issues
                                 const response = await fetch(API_BASE_URL + '/auth/complete-signup', {
                                     method: 'POST',
@@ -374,7 +385,7 @@
                                         'Content-Type': 'application/json',
                                         'X-Provision-Session': provisionSession  // ✅ Send as header instead
                                     },
-                                    body: JSON.stringify({ password: password })
+                                    body: JSON.stringify(requestBody)
                                 });
                                 
                                 const data = await response.json();
