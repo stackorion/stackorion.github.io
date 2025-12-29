@@ -3090,20 +3090,27 @@ if (document.getElementById('appContainer')) {
         
         tokenRefreshManager.registerVideo(videoId, player, tierId, libraryId);
         
-        // --- Analytics Integration ---
+                // --- Analytics Integration ---
         
-        // Track watch time every 30 seconds
-        let watchTimeTracker = setInterval(() => {
+        // Track timeupdate every 5 seconds (throttled)
+        let lastTrackedTime = 0;
+        player.on('timeupdate', () => {
             const activePlayer = getSafePlayer();
-            if (activePlayer && !activePlayer.paused()) {
+            if (!activePlayer) return;
+
+            const currentTime = activePlayer.currentTime();
+            
+            // Only track every 5 seconds to avoid spam
+            if (currentTime - lastTrackedTime >= 5) {
                 analyticsTracker.trackEvent(videoId, 'timeupdate', activePlayer, tierId);
+                lastTrackedTime = currentTime;
             }
-        }, 30000);
+        });
         
         // Cleanup on close
         modal.addEventListener('remove', () => {
             clearInterval(hideControlsInterval);
-            clearInterval(watchTimeTracker);
+            // Note: player.dispose() will remove event listeners automatically
             closePlayer();
         });
     }
