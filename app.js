@@ -2107,7 +2107,7 @@ if (document.getElementById('appContainer')) {
     }
 }
 
-    // --- PREMIUM VIDEO PLAYER (PRODUCTION v2.0) ---
+    // --- PREMIUM VIDEO PLAYER (PRODUCTION v2.1 MOBILE FIX) ---
     function openVideoPlayer(link, tierId) {
         // Extract video ID and library ID
         const videoIdMatch = link.url.match(/\/([a-f0-9-]{36})\//);
@@ -2117,8 +2117,11 @@ if (document.getElementById('appContainer')) {
         const libraryIdMatch = link.url.match(/library_id=(\d+)/);
         const libraryId = libraryIdMatch ? libraryIdMatch[1] : '555806';
         
-        // ✅ NEW: Store numeric tier ID for analytics
-        const numericTierId = link.tier_id || 1; // Use the tier_id from the link data
+        // ✅ FIX 1: Detect mobile device
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        
+        const numericTierId = link.tier_id || 1;
         analyticsTracker.setVideoTierMapping(videoId, numericTierId);
         
         // Create modal
@@ -2128,7 +2131,12 @@ if (document.getElementById('appContainer')) {
         modal.setAttribute('aria-label', 'Video player');
         modal.setAttribute('aria-modal', 'true');
         
-        // Build HTML structure
+        // ✅ FIX 2: Add mobile-specific class
+        if (isMobile) {
+            modal.classList.add('mobile-player');
+        }
+        
+        // Build HTML structure (same as before)
         modal.innerHTML = `
             <div class="premium-player-content">
                 <!-- Loading Overlay -->
@@ -2168,6 +2176,10 @@ if (document.getElementById('appContainer')) {
                         class="video-js"
                         preload="auto"
                         playsinline
+                        webkit-playsinline
+                        x5-playsinline
+                        x5-video-player-type="h5"
+                        x5-video-player-fullscreen="true"
                     ></video>
                     
                     <!-- Center Play Button Overlay -->
@@ -2311,16 +2323,19 @@ if (document.getElementById('appContainer')) {
         document.body.appendChild(modal);
         document.body.style.overflow = 'hidden';
         
-        // Create a unique ID for this player instance
         const playerId = `premiumPlayer_${videoId}`;
         
-        // ✅ REQUEST FULLSCREEN IMMEDIATELY ON MODAL CREATION
-        // This works because it's triggered by the user's click action
+        // ✅ FIX 3: Smart Fullscreen Request (Desktop only)
         const requestFullscreen = () => {
+            // Skip fullscreen on mobile - let native controls handle it
+            if (isMobile) {
+                return;
+            }
+            
             const elem = modal;
             if (elem.requestFullscreen) {
                 elem.requestFullscreen().catch(() => {
-                    // Fullscreen failed - silently continue
+                    // Fullscreen failed - continue anyway
                 });
             } else if (elem.webkitRequestFullscreen) {
                 elem.webkitRequestFullscreen();
@@ -2331,10 +2346,9 @@ if (document.getElementById('appContainer')) {
             }
         };
         
-        // Request fullscreen after a tiny delay to ensure DOM is ready
         setTimeout(requestFullscreen, 50);
         
-        // Initialize Video.js with optimized settings
+        // ✅ FIX 4: Initialize Video.js with mobile optimizations
         const player = videojs(playerId, {
             controls: false,
             autoplay: false,
@@ -2342,26 +2356,26 @@ if (document.getElementById('appContainer')) {
             playsinline: true,
             responsive: true,
             fluid: true,
+            // ✅ Mobile-specific config
+            nativeControlsForTouch: false, // Use custom controls on mobile
             html5: {
                 vhs: {
                     enableLowInitialPlaylist: true,
                     smoothQualityChange: true,
-                    overrideNative: true,
-                    bandwidth: 5000000
+                    overrideNative: !isIOS, // Let iOS use native HLS
+                    bandwidth: isMobile ? 2000000 : 5000000 // Lower initial bandwidth on mobile
                 },
-                nativeVideoTracks: false,
-                nativeAudioTracks: false
+                nativeVideoTracks: isIOS, // iOS handles tracks better natively
+                nativeAudioTracks: isIOS
             }
         });
         
-        // Store player reference in the modal for cleanup
         modal._player = player;
         modal._playerId = playerId;
         
-        // --- NEW: Register player in global registry ---
         activePlayers.set(playerId, { player, modal });
         
-        // Initialize managers
+        // Initialize managers (same as before)
         const stateManager = new PremiumPlayerStateManager();
         const qualityManager = new PremiumQualityManager(player);
         const speedManager = new PremiumSpeedManager(player);
@@ -2398,6 +2412,46 @@ if (document.getElementById('appContainer')) {
             gestureIndicator: modal.querySelector('.premium-gesture-indicator'),
             shortcutsTooltip: modal.querySelector('.premium-shortcuts-tooltip')
         };
+        
+        // ✅ FIX 5: Mobile-specific touch improvements
+        if (isMobile) {
+            // Disable default touch actions on video element
+            const videoElement = player.el().querySelector('video');
+            if (videoElement) {
+                videoElement.style.touchAction = 'none';
+                
+                // Prevent context menu on long press
+                videoElement.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    return false;
+                });
+            }
+            
+            // Enhanced touch controls visibility
+            let touchTimer;
+            modal.addEventListener('touchstart', () => {
+                controlsManager.showControls();
+                clearTimeout(touchTimer);
+                touchTimer = setTimeout(() => {
+                    if (!player.paused()) {
+                        controlsManager.hideControls();
+                    }
+                }, 4000);
+            }, { passive: true });
+        }
+        
+        // ✅ FIX 6: Handle iOS inline playback properly
+        if (isIOS) {
+            // iOS needs user interaction to start playback
+            player.one('play', () => {
+                // Ensure video element has correct attributes
+                const videoEl = player.el().querySelector('video');
+                if (videoEl) {
+                    videoEl.setAttribute('playsinline', '');
+                    videoEl.setAttribute('webkit-playsinline', '');
+                }
+            });
+        }
         
         // Set video source
         player.src({
@@ -2701,17 +2755,32 @@ if (document.getElementById('appContainer')) {
             }
         }
         
-        // ✅ UPDATED: Exit fullscreen triggers close
+        // ✅ FIX 7: Mobile fullscreen handling
         const handleFullscreenChange = () => {
             stateManager.isFullscreen = !!document.fullscreenElement;
             
-            // If user exits fullscreen manually, close the player
-            if (!document.fullscreenElement) {
+            // Only close on desktop fullscreen exit
+            if (!document.fullscreenElement && !isMobile) {
                 closePlayer();
             }
         };
         
         document.addEventListener('fullscreenchange', handleFullscreenChange);
+        
+        // ✅ FIX 8: iOS video fullscreen events
+        if (isIOS) {
+            const videoElement = player.el().querySelector('video');
+            if (videoElement) {
+                videoElement.addEventListener('webkitbeginfullscreen', () => {
+                    stateManager.isFullscreen = true;
+                });
+                
+                videoElement.addEventListener('webkitendfullscreen', () => {
+                    stateManager.isFullscreen = false;
+                    // Don't auto-close on iOS - user might want to continue watching
+                });
+            }
+        }
         
         // Close button and ESC key
         const closePlayer = () => {
@@ -2979,15 +3048,12 @@ if (document.getElementById('appContainer')) {
         
         // --- Controls Visibility Logic ---
         
-        // Show controls on mouse movement
-        modal.addEventListener('mousemove', () => {
-            controlsManager.showControls();
-        });
-        
-        // Show controls on touch
-        modal.addEventListener('touchstart', () => {
-            controlsManager.showControls();
-        });
+        // Show controls on mouse movement (non-mobile)
+        if (!isMobile) {
+            modal.addEventListener('mousemove', () => {
+                controlsManager.showControls();
+            });
+        }
         
         // Click on video area to toggle play/pause
         const videoArea = controlsManager.elements.progressBar.parentElement.parentElement;
@@ -3079,18 +3145,21 @@ if (document.getElementById('appContainer')) {
         
         controlsManager.showControls();
         
-        // Start auto-hide timer
-        let hideControlsInterval = setInterval(() => {
-            if (stateManager.shouldHideControls()) {
-                controlsManager.hideControls();
-            }
-        }, 1000);
+        // Start auto-hide timer (desktop only, mobile handled by touchstart above)
+        let hideControlsInterval;
+        if (!isMobile) {
+            hideControlsInterval = setInterval(() => {
+                if (stateManager.shouldHideControls()) {
+                    controlsManager.hideControls();
+                }
+            }, 1000);
+        }
         
         // --- Token Refresh Integration ---
         
         tokenRefreshManager.registerVideo(videoId, player, tierId, libraryId);
         
-                // --- Analytics Integration ---
+        // --- Analytics Integration ---
         
         // Track timeupdate every 5 seconds (throttled)
         let lastTrackedTime = 0;

@@ -3086,3 +3086,187 @@ body.theme-dark .announcement-error {
         opacity: 1; 
     }
 }
+
+/* ============================================================================
+   MOBILE VIDEO PLAYER FIXES - Add to styles.css
+   ============================================================================ */
+
+/* ✅ FIX 1: Mobile-specific modal adjustments */
+.premium-player-modal.mobile-player {
+    /* Allow native scrolling if needed */
+    -webkit-overflow-scrolling: touch;
+}
+
+.premium-player-modal.mobile-player .premium-player-content {
+    /* Ensure video fills screen on mobile */
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile browsers */
+}
+
+/* ✅ FIX 2: iOS safe areas (notch support) */
+@supports (padding: env(safe-area-inset-top)) {
+    .premium-player-modal.mobile-player .premium-player-header {
+        padding-top: calc(12px + env(safe-area-inset-top));
+    }
+    
+    .premium-player-modal.mobile-player .premium-controls-wrapper {
+        padding-bottom: calc(8px + env(safe-area-inset-bottom));
+    }
+}
+
+/* ✅ FIX 3: Larger touch targets on mobile */
+@media (max-width: 768px) {
+    .premium-control-btn {
+        min-width: 48px; /* Apple/Android minimum touch target */
+        min-height: 48px;
+        padding: 12px;
+    }
+    
+    .premium-close-btn {
+        min-width: 48px;
+        min-height: 48px;
+        padding: 12px;
+    }
+    
+    .premium-center-play-btn {
+        width: 80px !important;
+        height: 80px !important;
+    }
+    
+    /* Larger progress bar for easier touch */
+    .premium-progress-bar {
+        height: 6px;
+        cursor: pointer;
+    }
+    
+    .premium-progress-handle {
+        width: 16px;
+        height: 16px;
+    }
+    
+    /* Make settings menu full-width on mobile */
+    .premium-settings-menu {
+        right: auto;
+        left: 50%;
+        transform: translateX(-50%);
+        min-width: 90%;
+        max-width: 320px;
+        bottom: 70px;
+    }
+}
+
+/* ✅ FIX 4: Landscape mode optimizations */
+@media (max-width: 926px) and (orientation: landscape) {
+    .premium-player-header {
+        padding: 8px 16px;
+    }
+    
+    .premium-video-title {
+        font-size: 14px;
+    }
+    
+    .premium-controls-row {
+        padding: 4px 12px;
+    }
+    
+    .premium-control-btn {
+        min-width: 40px;
+        min-height: 40px;
+        padding: 8px;
+    }
+}
+
+/* ✅ FIX 5: Disable text selection on mobile (prevents accidental selection during gestures) */
+.premium-player-modal.mobile-player * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none; /* Disable iOS callout */
+}
+
+.premium-player-modal.mobile-player input,
+.premium-player-modal.mobile-player textarea {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+/* ✅ FIX 6: Prevent bounce scrolling on iOS */
+.premium-player-modal.mobile-player {
+    overscroll-behavior: contain;
+}
+
+/* ✅ FIX 7: Android-specific fixes */
+@supports (-webkit-appearance: none) {
+    /* Android Chrome/Samsung Internet */
+    .premium-player-modal.mobile-player .video-js video {
+        object-fit: contain; /* Prevent stretching */
+    }
+}
+
+/* ✅ FIX 8: Gesture indicators - larger on mobile */
+@media (max-width: 768px) {
+    .premium-gesture-indicator {
+        font-size: 64px;
+        padding: 20px;
+    }
+    
+    .premium-change-indicator {
+        font-size: 18px;
+        padding: 16px 24px;
+    }
+}
+
+/* ✅ FIX 9: Volume controls - hide slider on mobile (use system volume) */
+@media (max-width: 768px) {
+    .premium-volume-slider-wrapper {
+        display: none; /* Mobile devices use hardware volume buttons */
+    }
+    
+    .premium-volume-group {
+        /* Just show mute button */
+    }
+}
+
+/* ✅ FIX 10: Skip buttons - more prominent on mobile */
+@media (max-width: 768px) {
+    .premium-skip-btn {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 8px;
+    }
+    
+    .premium-skip-btn:active {
+        background: rgba(255, 255, 255, 0.3);
+        transform: scale(0.95);
+    }
+}
+
+/* ✅ FIX 11: Loading overlay - ensure it covers video on mobile */
+.premium-player-modal.mobile-player .player-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+    pointer-events: auto; /* Block interaction while loading */
+}
+
+/* ✅ FIX 12: Error overlay - better mobile formatting */
+@media (max-width: 768px) {
+    .player-error-content {
+        padding: 24px;
+        max-width: 90%;
+    }
+    
+    .player-error-title {
+        font-size: 20px;
+    }
+    
+    .player-error-message {
+        font-size: 14px;
+    }
+    
+    .player-error-btn {
+        padding: 12px 24px;
+        font-size: 16px;
+    }
+}
