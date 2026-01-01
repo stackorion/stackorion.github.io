@@ -307,337 +307,354 @@
         // ====================================
         // LOGIN & FORGOT PASSWORD PAGE
         // ====================================
+        
+        // ✅ NEW: iOS-safe render function
         function renderAuthPage() {
-            document.open();
-            document.write(`
-                <!DOCTYPE html>
-                <html lang="en">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Login - The Echo Chamber</title>
-                    <style>
-                        * { margin: 0; padding: 0; box-sizing: border-box; }
-                        body {
-                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                            min-height: 100vh; display: flex; align-items: center; justify-content: center;
-                            padding: 20px;
-                            animation: fadeIn 0.5s ease;
-                        }
-                        @keyframes fadeIn {
-                            from { opacity: 0; }
-                            to { opacity: 1; }
-                        }
-                        .container {
-                            background: white; border-radius: 16px;
-                            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-                            max-width: 480px; width: 100%; padding: 40px;
-                        }
-                        h1 { 
-                            font-size: 28px; color: #2c3e50; margin-bottom: 10px; 
-                            font-weight: 600; text-align: center; 
-                        }
-                        .subtitle { 
-                            color: #7f8c8d; font-size: 15px; margin-bottom: 35px; 
-                            text-align: center; 
-                        }
-                        .form-toggle {
-                            display: flex; gap: 10px; margin-bottom: 30px;
-                            border-bottom: 2px solid #e0e0e0;
-                        }
-                        .toggle-btn {
-                            flex: 1; padding: 12px; background: none; border: none;
-                            border-bottom: 3px solid transparent; cursor: pointer;
-                            font-size: 15px; font-weight: 600; color: #7f8c8d;
-                            transition: all 0.3s;
-                        }
-                        .toggle-btn.active {
-                            color: #667eea; border-bottom-color: #667eea;
-                        }
-                        .form-panel { display: none; animation: formFadeIn 0.3s; }
-                        .form-panel.active { display: block; }
-                        @keyframes formFadeIn { from { opacity: 0; } to { opacity: 1; } }
-                        .input-group { margin-bottom: 20px; }
-                        label { 
-                            display: block; margin-bottom: 8px; color: #34495e; 
-                            font-size: 14px; font-weight: 500; 
-                        }
-                        input {
-                            width: 100%; padding: 14px 16px; border: 2px solid #e0e0e0;
-                            border-radius: 8px; font-size: 16px; transition: all 0.3s;
-                            font-family: inherit;
-                        }
-                        input:focus { 
-                            outline: none; border-color: #667eea; 
-                            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); 
-                        }
-                        button {
-                            width: 100%; padding: 16px; 
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                            color: white; border: none; border-radius: 8px;
-                            font-size: 16px; font-weight: 600; cursor: pointer;
-                            transition: transform 0.2s, box-shadow 0.2s;
-                        }
-                        button:hover:not(:disabled) { 
-                            transform: translateY(-2px); 
-                            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); 
-                        }
-                        button:active:not(:disabled) { transform: translateY(0); }
-                        button:disabled { opacity: 0.6; cursor: not-allowed; }
-                        .message {
-                            margin-top: 15px; padding: 14px; border-radius: 8px;
-                            font-size: 14px; display: none; animation: slideIn 0.3s;
-                        }
-                        .message.error { 
-                            background: #fee; color: #c33; border: 1px solid #fcc; 
-                        }
-                        .message.success { 
-                            background: #efe; color: #393; border: 1px solid #cfc; 
-                        }
-                        .loading {
-                            display: inline-block; width: 18px; height: 18px;
-                            border: 3px solid rgba(255, 255, 255, 0.3);
-                            border-top-color: white; border-radius: 50%;
-                            animation: spin 0.8s linear infinite;
-                        }
-                        @keyframes spin { to { transform: rotate(360deg); } }
-                        @keyframes slideIn { 
-                            from { opacity: 0; transform: translateY(-10px); } 
-                            to { opacity: 1; transform: translateY(0); } 
-                        }
-                        .help-text {
-                            margin-top: 20px; padding-top: 20px; border-top: 1px solid #e0e0e0;
-                            font-size: 13px; color: #7f8c8d; text-align: center;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <h1>Welcome Back</h1>
-                        <p class="subtitle">Sign in to your account</p>
-                        
-                        <div class="form-toggle">
-                            <button class="toggle-btn active" data-panel="login">Login</button>
-                            <button class="toggle-btn" data-panel="forgot">Forgot Password</button>
+            // ✅ iOS FIX: Use DOM manipulation instead of document.write()
+            
+            // Remove the instant gate
+            const gate = document.getElementById('instant-gate');
+            if (gate) gate.remove();
+            
+            // Clear body and rebuild
+            document.body.innerHTML = '';
+            
+            // Add styles
+            const style = document.createElement('style');
+            style.textContent = `
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+                    padding: 20px;
+                    animation: fadeIn 0.5s ease;
+                }
+                @keyframes fadeIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                .container {
+                    background: white; border-radius: 16px;
+                    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                    max-width: 480px; width: 100%; padding: 40px;
+                }
+                h1 { 
+                    font-size: 28px; color: #2c3e50; margin-bottom: 10px; 
+                    font-weight: 600; text-align: center; 
+                }
+                .subtitle { 
+                    color: #7f8c8d; font-size: 15px; margin-bottom: 35px; 
+                    text-align: center; 
+                }
+                .form-toggle {
+                    display: flex; gap: 10px; margin-bottom: 30px;
+                    border-bottom: 2px solid #e0e0e0;
+                }
+                .toggle-btn {
+                    flex: 1; padding: 12px; background: none; border: none;
+                    border-bottom: 3px solid transparent; cursor: pointer;
+                    font-size: 15px; font-weight: 600; color: #7f8c8d;
+                    transition: all 0.3s;
+                }
+                .toggle-btn.active {
+                    color: #667eea; border-bottom-color: #667eea;
+                }
+                .form-panel { display: none; animation: formFadeIn 0.3s; }
+                .form-panel.active { display: block; }
+                @keyframes formFadeIn { from { opacity: 0; } to { opacity: 1; } }
+                .input-group { margin-bottom: 20px; }
+                label { 
+                    display: block; margin-bottom: 8px; color: #34495e; 
+                    font-size: 14px; font-weight: 500; 
+                }
+                input {
+                    width: 100%; padding: 14px 16px; border: 2px solid #e0e0e0;
+                    border-radius: 8px; font-size: 16px; transition: all 0.3s;
+                    font-family: inherit;
+                }
+                input:focus { 
+                    outline: none; border-color: #667eea; 
+                    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); 
+                }
+                button {
+                    width: 100%; padding: 16px; 
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white; border: none; border-radius: 8px;
+                    font-size: 16px; font-weight: 600; cursor: pointer;
+                    transition: transform 0.2s, box-shadow 0.2s;
+                }
+                button:hover:not(:disabled) { 
+                    transform: translateY(-2px); 
+                    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); 
+                }
+                button:active:not(:disabled) { transform: translateY(0); }
+                button:disabled { opacity: 0.6; cursor: not-allowed; }
+                .message {
+                    margin-top: 15px; padding: 14px; border-radius: 8px;
+                    font-size: 14px; display: none; animation: slideIn 0.3s;
+                }
+                .message.error { 
+                    background: #fee; color: #c33; border: 1px solid #fcc; 
+                }
+                .message.success { 
+                    background: #efe; color: #393; border: 1px solid #cfc; 
+                }
+                .loading {
+                    display: inline-block; width: 18px; height: 18px;
+                    border: 3px solid rgba(255, 255, 255, 0.3);
+                    border-top-color: white; border-radius: 50%;
+                    animation: spin 0.8s linear infinite;
+                }
+                @keyframes spin { to { transform: rotate(360deg); } }
+                @keyframes slideIn { 
+                    from { opacity: 0; transform: translateY(-10px); } 
+                    to { opacity: 1; transform: translateY(0); } 
+                }
+                .help-text {
+                    margin-top: 20px; padding-top: 20px; border-top: 1px solid #e0e0e0;
+                    font-size: 13px; color: #7f8c8d; text-align: center;
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // Build HTML structure
+            const container = document.createElement('div');
+            container.className = 'container';
+            container.innerHTML = `
+                <h1>Welcome Back</h1>
+                <p class="subtitle">Sign in to your account</p>
+                
+                <div class="form-toggle">
+                    <button class="toggle-btn active" data-panel="login">Login</button>
+                    <button class="toggle-btn" data-panel="forgot">Forgot Password</button>
+                </div>
+                
+                <div id="login-panel" class="form-panel active">
+                    <form id="loginForm">
+                        <div class="input-group">
+                            <label for="login-email">Email</label>
+                            <input 
+                                type="email" 
+                                id="login-email" 
+                                name="email"
+                                placeholder="your.email@example.com"
+                                required
+                                autofocus
+                            >
                         </div>
                         
-                        <div id="login-panel" class="form-panel active">
-                            <form id="loginForm">
-                                <div class="input-group">
-                                    <label for="login-email">Email</label>
-                                    <input 
-                                        type="email" 
-                                        id="login-email" 
-                                        name="email"
-                                        placeholder="your.email@example.com"
-                                        required
-                                        autofocus
-                                    >
-                                </div>
-                                
-                                <div class="input-group">
-                                    <label for="login-password">Password</label>
-                                    <input 
-                                        type="password" 
-                                        id="login-password" 
-                                        name="password"
-                                        placeholder="Enter your password"
-                                        required
-                                    >
-                                </div>
-                                
-                                <button type="submit" id="loginBtn">
-                                    Log In
-                                </button>
-                                
-                                <div id="login-message" class="message"></div>
-                            </form>
+                        <div class="input-group">
+                            <label for="login-password">Password</label>
+                            <input 
+                                type="password" 
+                                id="login-password" 
+                                name="password"
+                                placeholder="Enter your password"
+                                required
+                            >
                         </div>
                         
-                        <div id="forgot-panel" class="form-panel">
-                            <form id="forgotForm">
-                                <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 20px; line-height: 1.5;">
-                                    Enter your email address and we'll send you a link to reset your password.
-                                </p>
-                                
-                                <div class="input-group">
-                                    <label for="forgot-email">Email</label>
-                                    <input 
-                                        type="email" 
-                                        id="forgot-email" 
-                                        name="email"
-                                        placeholder="your.email@example.com"
-                                        required
-                                    >
-                                </div>
-                                
-                                <button type="submit" id="forgotBtn">
-                                    Send Reset Link
-                                </button>
-                                
-                                <div id="forgot-message" class="message"></div>
-                            </form>
+                        <button type="submit" id="loginBtn">
+                            Log In
+                        </button>
+                        
+                        <div id="login-message" class="message"></div>
+                    </form>
+                </div>
+                
+                <div id="forgot-panel" class="form-panel">
+                    <form id="forgotForm">
+                        <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 20px; line-height: 1.5;">
+                            Enter your email address and we'll send you a link to reset your password.
+                        </p>
+                        
+                        <div class="input-group">
+                            <label for="forgot-email">Email</label>
+                            <input 
+                                type="email" 
+                                id="forgot-email" 
+                                name="email"
+                                placeholder="your.email@example.com"
+                                required
+                            >
                         </div>
                         
-                        <div class="help-text">
-                            <p>Need help? Contact support.</p>
-                        </div>
-                    </div>
+                        <button type="submit" id="forgotBtn">
+                            Send Reset Link
+                        </button>
+                        
+                        <div id="forgot-message" class="message"></div>
+                    </form>
+                </div>
+                
+                <div class="help-text">
+                    <p>Need help? Contact support.</p>
+                </div>
+            `;
+            
+            document.body.appendChild(container);
+            
+            // ✅ iOS FIX: Attach event listeners AFTER DOM is ready
+            setTimeout(() => {
+                attachLoginEventListeners();
+            }, 0);
+        }
+
+        // ✅ NEW: Separate function for event listeners (iOS-safe)
+        function attachLoginEventListeners() {
+            const toggleBtns = document.querySelectorAll('.toggle-btn');
+            const panels = document.querySelectorAll('.form-panel');
+            
+            toggleBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const targetPanel = btn.dataset.panel;
                     
-                    <script>
-                        const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
+                    toggleBtns.forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    
+                    panels.forEach(p => p.classList.remove('active'));
+                    document.getElementById(targetPanel + '-panel').classList.add('active');
+                    
+                    document.querySelectorAll('.message').forEach(m => m.style.display = 'none');
+                });
+            });
+            
+            function showMessage(elementId, text, type) {
+                const el = document.getElementById(elementId);
+                if (!el) return;
+                el.textContent = text;
+                el.className = 'message ' + type;
+                el.style.display = 'block';
+            }
+            
+            function hideMessage(elementId) {
+                const el = document.getElementById(elementId);
+                if (el) el.style.display = 'none';
+            }
+            
+            const loginForm = document.getElementById('loginForm');
+            const loginBtn = document.getElementById('loginBtn');
+            const loginEmailInput = document.getElementById('login-email');
+            const loginPasswordInput = document.getElementById('login-password');
+            
+            if (loginForm) {
+                loginForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    hideMessage('login-message');
+                    
+                    const email = loginEmailInput.value.trim();
+                    const password = loginPasswordInput.value;
+                    
+                    if (!email || !password) {
+                        showMessage('login-message', 'Please fill in all fields', 'error');
+                        return;
+                    }
+                    
+                    loginBtn.disabled = true;
+                    loginBtn.innerHTML = '<span class="loading"></span>';
+                    loginEmailInput.disabled = true;
+                    loginPasswordInput.disabled = true;
+                    
+                    try {
+                        const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            credentials: 'include',
+                            body: JSON.stringify({ email, password })
+                        });
                         
-                        const toggleBtns = document.querySelectorAll('.toggle-btn');
-                        const panels = document.querySelectorAll('.form-panel');
+                        const data = await response.json();
                         
-                        toggleBtns.forEach(btn => {
-                            btn.addEventListener('click', () => {
-                                const targetPanel = btn.dataset.panel;
-                                
-                                toggleBtns.forEach(b => b.classList.remove('active'));
-                                btn.classList.add('active');
-                                
-                                panels.forEach(p => p.classList.remove('active'));
-                                document.getElementById(targetPanel + '-panel').classList.add('active');
-                                
-                                document.querySelectorAll('.message').forEach(m => m.style.display = 'none');
+                        if (response.ok && data.status === 'success') {
+                            localStorage.setItem('lustroom_jwt', data.access_token);
+                            localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
+                            localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
+                            localStorage.setItem('user_info', JSON.stringify(data.user));
+                            
+                            const profileResponse = await fetch(`${API_BASE_URL}/profile`, {
+                                headers: { 'Authorization': `Bearer ${data.access_token}` }
                             });
-                        });
-                        
-                        function showMessage(elementId, text, type) {
-                            const el = document.getElementById(elementId);
-                            el.textContent = text;
-                            el.className = 'message ' + type;
-                            el.style.display = 'block';
+                            
+                            const profileData = await profileResponse.json();
+                            
+                            if (profileResponse.ok && profileData.status === 'success') {
+                                localStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions || []));
+                                
+                                if (profileData.announcements) {
+                                    localStorage.setItem('global_announcements', JSON.stringify(profileData.announcements));
+                                }
+                            }
+                            
+                            clearFailedAttempts();
+                            showMessage('login-message', '✓ Login successful! Redirecting...', 'success');
+                            setTimeout(() => {
+                                window.location.href = 'links.html';
+                            }, 1000);
+                        } else {
+                            throw new Error(data.message || 'Login failed');
                         }
                         
-                        function hideMessage(elementId) {
-                            document.getElementById(elementId).style.display = 'none';
+                    } catch (error) {
+                        showMessage('login-message', error.message || 'An error occurred. Please try again.', 'error');
+                        
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'Log In';
+                        loginEmailInput.disabled = false;
+                        loginPasswordInput.disabled = false;
+                    }
+                });
+            }
+            
+            const forgotForm = document.getElementById('forgotForm');
+            const forgotBtn = document.getElementById('forgotBtn');
+            const forgotEmailInput = document.getElementById('forgot-email');
+            
+            if (forgotForm) {
+                forgotForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    hideMessage('forgot-message');
+                    
+                    const email = forgotEmailInput.value.trim();
+                    
+                    if (!email) {
+                        showMessage('forgot-message', 'Please enter your email address', 'error');
+                        return;
+                    }
+                    
+                    forgotBtn.disabled = true;
+                    forgotBtn.innerHTML = '<span class="loading"></span>';
+                    forgotEmailInput.disabled = true;
+                    
+                    try {
+                        const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ email })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (response.ok && data.status === 'success') {
+                            showMessage('forgot-message', '✓ ' + data.message, 'success');
+                            forgotEmailInput.value = '';
+                        } else {
+                            throw new Error(data.message || 'Request failed');
                         }
                         
-                        const loginForm = document.getElementById('loginForm');
-                        const loginBtn = document.getElementById('loginBtn');
-                        const loginEmailInput = document.getElementById('login-email');
-                        const loginPasswordInput = document.getElementById('login-password');
-                        
-                        loginForm.addEventListener('submit', async (e) => {
-                            e.preventDefault();
-                            hideMessage('login-message');
-                            
-                            const email = loginEmailInput.value.trim();
-                            const password = loginPasswordInput.value;
-                            
-                            if (!email || !password) {
-                                showMessage('login-message', 'Please fill in all fields', 'error');
-                                return;
-                            }
-                            
-                            loginBtn.disabled = true;
-                            loginBtn.innerHTML = '<span class="loading"></span>';
-                            loginEmailInput.disabled = true;
-                            loginPasswordInput.disabled = true;
-                            
-                            try {
-                                const response = await fetch(\`\${API_BASE_URL}/auth/login\`, {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json'
-                                    },
-                                    credentials: 'include',
-                                    body: JSON.stringify({ email, password })
-                                });
-                                
-                                const data = await response.json();
-                                
-                                if (response.ok && data.status === 'success') {
-                                    localStorage.setItem('lustroom_jwt', data.access_token);
-                                    localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
-                                    localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
-                                    localStorage.setItem('user_info', JSON.stringify(data.user));
-                                    
-                                    const profileResponse = await fetch(\`\${API_BASE_URL}/profile\`, {
-                                        headers: { 'Authorization': \`Bearer \${data.access_token}\` }
-                                    });
-                                    
-                                    const profileData = await profileResponse.json();
-                                    
-                                    if (profileResponse.ok && profileData.status === 'success') {
-                                        localStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions || []));
-                                        
-                                        if (profileData.announcements) {
-                                            localStorage.setItem('global_announcements', JSON.stringify(profileData.announcements));
-                                        }
-                                    }
-                                    
-                                    showMessage('login-message', '✓ Login successful! Redirecting...', 'success');
-                                    setTimeout(() => {
-                                        window.location.href = 'links.html';
-                                    }, 1000);
-                                } else {
-                                    throw new Error(data.message || 'Login failed');
-                                }
-                                
-                            } catch (error) {
-                                showMessage('login-message', error.message || 'An error occurred. Please try again.', 'error');
-                                
-                                loginBtn.disabled = false;
-                                loginBtn.textContent = 'Log In';
-                                loginEmailInput.disabled = false;
-                                loginPasswordInput.disabled = false;
-                            }
-                        });
-                        
-                        const forgotForm = document.getElementById('forgotForm');
-                        const forgotBtn = document.getElementById('forgotBtn');
-                        const forgotEmailInput = document.getElementById('forgot-email');
-                        
-                        forgotForm.addEventListener('submit', async (e) => {
-                            e.preventDefault();
-                            hideMessage('forgot-message');
-                            
-                            const email = forgotEmailInput.value.trim();
-                            
-                            if (!email) {
-                                showMessage('forgot-message', 'Please enter your email address', 'error');
-                                return;
-                            }
-                            
-                            forgotBtn.disabled = true;
-                            forgotBtn.innerHTML = '<span class="loading"></span>';
-                            forgotEmailInput.disabled = true;
-                            
-                            try {
-                                const response = await fetch(\`\${API_BASE_URL}/auth/forgot-password\`, {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json'
-                                    },
-                                    body: JSON.stringify({ email })
-                                });
-                                
-                                const data = await response.json();
-                                
-                                if (response.ok && data.status === 'success') {
-                                    showMessage('forgot-message', '✓ ' + data.message, 'success');
-                                    forgotEmailInput.value = '';
-                                } else {
-                                    throw new Error(data.message || 'Request failed');
-                                }
-                                
-                            } catch (error) {
-                                showMessage('forgot-message', error.message || 'An error occurred. Please try again.', 'error');
-                            } finally {
-                                forgotBtn.disabled = false;
-                                forgotBtn.textContent = 'Send Reset Link';
-                                forgotEmailInput.disabled = false;
-                            }
-                        });
-                    <\/script>
-                </body>
-                </html>
-            `);
-            document.close();
+                    } catch (error) {
+                        showMessage('forgot-message', error.message || 'An error occurred. Please try again.', 'error');
+                    } finally {
+                        forgotBtn.disabled = false;
+                        forgotBtn.textContent = 'Send Reset Link';
+                        forgotEmailInput.disabled = false;
+                    }
+                });
+            }
         }
     })();
     </script>
