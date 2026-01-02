@@ -183,7 +183,6 @@ class SessionRefreshManager {
         }, this.checkInterval);
     }
 
-    // ✅ UPDATED: Safer version with explicit expiry handling
     async checkAndRefresh() {
         const token = localStorage.getItem('lustroom_jwt');
         const obtainedAt = parseInt(localStorage.getItem('lustroom_jwt_obtained_at'), 10);
@@ -198,19 +197,12 @@ class SessionRefreshManager {
         const expiryTime = obtainedAt + expiresIn;
         const timeUntilExpiry = expiryTime - nowInSeconds;
 
-        // ✅ FIX: Only refresh if less than 10 minutes remaining AND still valid
+        // Refresh if less than 10 minutes remaining
         if (timeUntilExpiry < 600 && timeUntilExpiry > 0) {
             await this.refreshSession();
-        } else if (timeUntilExpiry <= 0) {
-            // ✅ FIX: Token actually expired - redirect to login
-            console.log('[Session] Token expired, redirecting to login');
-            this.stop();
-            localStorage.clear();
-            window.location.replace('login.html');
         }
     }
 
-    // ✅ UPDATED: Better error handling (don't logout on network errors)
     async refreshSession() {
         try {
             const token = localStorage.getItem('lustroom_jwt');
@@ -226,24 +218,18 @@ class SessionRefreshManager {
             const data = await response.json();
 
             if (response.ok && data.status === 'success') {
-                // ✅ Update stored token
+                // Update stored token
                 localStorage.setItem('lustroom_jwt', data.access_token);
                 localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
                 localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
-                console.log('[Session] Token refreshed successfully');
-            } else if (response.status === 403 || response.status === 401) {
-                // ✅ FIX: Only clear and redirect on auth failure
-                console.log('[Session] Refresh failed - auth error');
+            } else if (response.status === 403) {
+                // Subscription expired - redirect to login
                 this.stop();
                 localStorage.clear();
-                window.location.replace('login.html');
-            } else {
-                // ✅ FIX: Other errors (500, network, etc.) - don't log out, just retry later
-                console.warn('[Session] Refresh failed, will retry:', response.status);
+                window.location.href = 'login.html';
             }
         } catch (error) {
-            // ✅ FIX: Network errors shouldn't log you out
-            console.warn('[Session] Refresh network error, will retry:', error);
+            // Silently handle errors
         }
     }
 
@@ -557,7 +543,6 @@ class PremiumControlsManager {
 
     updatePlayButton(isPlaying) {
         try {
-            // Update bottom control play button
             if (this.elements.playBtn) {
                 if (isPlaying) {
                     this.elements.playBtn.classList.add('playing');
@@ -568,27 +553,21 @@ class PremiumControlsManager {
                 }
             }
             
-            // ✅ FIX: Update center play button visibility
             if (this.elements.centerPlayBtn) {
-                if (isPlaying) {
-                    // Hide center button when playing
-                    this.elements.centerPlayBtn.classList.remove('show');
-                    this.elements.centerPlayBtn.style.display = 'none';
-                } else {
-                    // Show center button when paused
+                if (!isPlaying) {
                     this.elements.centerPlayBtn.classList.add('show');
-                    this.elements.centerPlayBtn.style.display = 'flex';
+                } else {
+                    this.elements.centerPlayBtn.classList.remove('show');
                 }
             }
         } catch (error) {
-            console.error('[Video] Update play button error:', error);
+            // Silently handle errors
         }
     }
 
     updateVolumeButton(volume, muted) {
         if (!this.elements.volumeBtn) return;
         
-        // ✅ FIX: Clear all classes first
         this.elements.volumeBtn.classList.remove('low', 'mute');
         
         if (muted || volume === 0) {
@@ -600,9 +579,6 @@ class PremiumControlsManager {
         } else {
             this.elements.volumeBtn.setAttribute('aria-label', 'Mute');
         }
-        
-        // ✅ FIX: Force visual update by toggling a data attribute
-        this.elements.volumeBtn.setAttribute('data-muted', muted ? 'true' : 'false');
     }
 
     updateTimeDisplay(current, duration) {
@@ -977,6 +953,7 @@ async function renderHeaderActions() {
 }
 
 // --- Logic for login.html ---
+// --- Logic for login.html ---
 if (document.getElementById('loginForm')) {
     const loginForm = document.getElementById('loginForm');
     const emailInput = document.getElementById('email');
@@ -1087,9 +1064,6 @@ if (document.getElementById('loginForm')) {
 }
 
 // --- Logic for links.html (The main application view) ---
-// ✅ FIX: Declare announcementSlider globally
-let announcementSlider = null;
-
 if (document.getElementById('appContainer')) {
     const mainContent = document.getElementById('mainContent');
     const logoutButton = document.getElementById('logoutButton');
@@ -1097,37 +1071,16 @@ if (document.getElementById('appContainer')) {
     const searchInput = document.getElementById('searchInput');
 
     const themeManager = new ThemeManager();
-    announcementSlider = new AnnouncementSlider('#announcementSliderContainer');
+    const announcementSlider = new AnnouncementSlider('#announcementSliderContainer');
 
     // --- Utility Functions ---
-    // ✅ UPDATED: Debugging logs added to isTokenValid
     function isTokenValid() {
         const token = localStorage.getItem('lustroom_jwt');
         const obtainedAt = parseInt(localStorage.getItem('lustroom_jwt_obtained_at'), 10);
         const expiresIn = parseInt(localStorage.getItem('lustroom_jwt_expires_in'), 10);
-        
-        if (!token || isNaN(obtainedAt) || isNaN(expiresIn)) {
-            console.log('[Auth] Token invalid - missing data:', {
-                hasToken: !!token,
-                obtainedAt: obtainedAt,
-                expiresIn: expiresIn
-            });
-            return false;
-        }
-        
+        if (!token || isNaN(obtainedAt) || isNaN(expiresIn)) return false;
         const nowInSeconds = Math.floor(Date.now() / 1000);
-        const expiryTime = obtainedAt + expiresIn;
-        const timeUntilExpiry = expiryTime - nowInSeconds;
-        const isValid = timeUntilExpiry > 60;
-        
-        console.log('[Auth] Token check:', {
-            expiresIn: expiresIn,
-            timeUntilExpiry: timeUntilExpiry,
-            isValid: isValid,
-            willExpireAt: new Date(expiryTime * 1000).toLocaleString()
-        });
-        
-        return isValid;
+        return (obtainedAt + expiresIn - 60) > nowInSeconds;
     }
 
     function displayError(message, container = mainContent) {
@@ -1607,19 +1560,12 @@ if (document.getElementById('appContainer')) {
                     thumbnailImage.loading = 'lazy';
                     thumbnailContainer.appendChild(thumbnailImage);
                     
-                    // ✅ FIX 2: Enhanced click handler
+                    // NEW: Add click handler for video playback
                     if (!isGallery && !link.locked) {
                         thumbnailContainer.style.cursor = 'pointer';
-                        
-                        // ✅ iOS: Use touchend for better mobile response
-                        const handlePlayRequest = (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
+                        thumbnailContainer.addEventListener('click', () => {
                             openVideoPlayer(link, tierName);
-                        };
-                        
-                        thumbnailContainer.addEventListener('click', handlePlayRequest);
-                        thumbnailContainer.addEventListener('touchend', handlePlayRequest);
+                        });
                     }
                     
                     card.appendChild(thumbnailContainer);
@@ -2228,25 +2174,13 @@ if (document.getElementById('appContainer')) {
                     <video 
                         id="premiumPlayer_${videoId}" 
                         class="video-js"
-                        preload="metadata"
+                        preload="auto"
                         playsinline
                         webkit-playsinline
                         x5-playsinline
                         x5-video-player-type="h5"
                         x5-video-player-fullscreen="true"
                     ></video>
-                    
-                    <!-- ✅ iOS FIX: Add tap-to-play overlay -->
-                    ${isIOS ? `
-                    <div class="ios-tap-to-play-overlay" id="iosTapOverlay_${videoId}">
-                        <div class="ios-tap-icon">
-                            <svg viewBox="0 0 24 24">
-                                <path d="M8 5v14l11-7z"/>
-                            </svg>
-                        </div>
-                        <div class="ios-tap-text">Tap to Play Video</div>
-                    </div>
-                    ` : ''}
                     
                     <!-- Center Play Button Overlay -->
                     <div class="premium-center-overlay">
@@ -2391,18 +2325,17 @@ if (document.getElementById('appContainer')) {
         
         const playerId = `premiumPlayer_${videoId}`;
         
-        // ✅ FIX 4: Don't auto-request fullscreen, it blocks video playback
+        // ✅ FIX 3: Smart Fullscreen Request (Desktop only)
         const requestFullscreen = () => {
-            // Skip on all mobile devices
-            if (isMobile || isIOS) {
-                console.log('[iOS Video] Skipping auto-fullscreen on mobile');
+            // Skip fullscreen on mobile - let native controls handle it
+            if (isMobile) {
                 return;
             }
             
             const elem = modal;
             if (elem.requestFullscreen) {
-                elem.requestFullscreen().catch((err) => {
-                    console.log('[iOS Video] Fullscreen not available:', err);
+                elem.requestFullscreen().catch(() => {
+                    // Fullscreen failed - continue anyway
                 });
             } else if (elem.webkitRequestFullscreen) {
                 elem.webkitRequestFullscreen();
@@ -2413,70 +2346,34 @@ if (document.getElementById('appContainer')) {
             }
         };
         
-        // ✅ iOS FIX: Don't auto-request fullscreen on mobile
-        if (!isMobile && !isIOS) {
-            setTimeout(requestFullscreen, 50);
-        }
+        setTimeout(requestFullscreen, 50);
         
-        // ✅ FIX 5: Enhanced Video.js config for iOS
+        // ✅ FIX 4: Initialize Video.js with mobile optimizations
         const player = videojs(playerId, {
             controls: false,
             autoplay: false,
-            preload: 'metadata', // ✅ iOS: Use metadata instead of auto
+            preload: 'auto',
             playsinline: true,
             responsive: true,
             fluid: true,
-            // ✅ iOS-specific config
-            nativeControlsForTouch: false, // Keep custom controls
-            muted: false, // ✅ iOS: Start unmuted (muted autoplay is allowed, but we want user-initiated)
+            // ✅ Mobile-specific config
+            nativeControlsForTouch: false, // Use custom controls on mobile
             html5: {
                 vhs: {
                     enableLowInitialPlaylist: true,
                     smoothQualityChange: true,
-                    overrideNative: !isIOS, // ✅ iOS: Let Safari handle HLS natively
-                    bandwidth: isMobile ? 2000000 : 5000000
+                    overrideNative: !isIOS, // Let iOS use native HLS
+                    bandwidth: isMobile ? 2000000 : 5000000 // Lower initial bandwidth on mobile
                 },
-                nativeVideoTracks: isIOS, // ✅ iOS handles tracks better natively
-                nativeAudioTracks: isIOS,
-                nativeTextTracks: isIOS
-            },
-            // ✅ iOS FIX: Add these tech options
-            techOrder: ['html5'],
-            sources: [{
-                src: link.url,
-                type: 'application/x-mpegURL'
-            }]
+                nativeVideoTracks: isIOS, // iOS handles tracks better natively
+                nativeAudioTracks: isIOS
+            }
         });
         
         modal._player = player;
         modal._playerId = playerId;
         
         activePlayers.set(playerId, { player, modal });
-        
-        // ✅ iOS FIX: Handle tap-to-play overlay
-        if (isIOS) {
-            const iosOverlay = document.getElementById(`iosTapOverlay_${videoId}`);
-            if (iosOverlay) {
-                const handleIOSTap = async (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    try {
-                        const playPromise = player.play();
-                        if (playPromise !== undefined) {
-                            await playPromise;
-                            iosOverlay.classList.add('hidden');
-                        }
-                    } catch (error) {
-                        console.error('[iOS Video] Tap-to-play failed:', error);
-                        alert('Unable to play video. Please try again.');
-                    }
-                };
-                
-                iosOverlay.addEventListener('click', handleIOSTap);
-                iosOverlay.addEventListener('touchend', handleIOSTap);
-            }
-        }
         
         // Initialize managers (same as before)
         const stateManager = new PremiumPlayerStateManager();
@@ -2634,7 +2531,6 @@ if (document.getElementById('appContainer')) {
         // --- Event Handlers ---
         
         // Play/Pause
-        // ✅ FIX 1: Direct play with promise handling
         const togglePlayPause = () => {
             if (!isPlayerHealthy(playerId)) {
                 cleanupPlayer(playerId);
@@ -2644,244 +2540,44 @@ if (document.getElementById('appContainer')) {
             const activePlayer = activePlayers.get(playerId).player;
             try {
                 if (activePlayer.paused()) {
-                    // ✅ iOS CRITICAL: Use promise-based play with explicit user interaction
-                    const playPromise = activePlayer.play();
-                    
-                    if (playPromise !== undefined) {
-                        playPromise
-                            .then(() => {
-                                console.log('[iOS Video] Playback started successfully');
-                            })
-                            .catch(error => {
-                                console.error('[iOS Video] Playback failed:', error);
-                                // Show user-friendly error
-                                if (error.name === 'NotAllowedError') {
-                                    alert('Please tap the play button to start the video.');
-                                }
-                            });
-                    }
+                    activePlayer.play().catch(() => {});
                 } else {
                     activePlayer.pause();
                 }
             } catch (error) {
-                console.error('[iOS Video] Toggle error:', error);
                 cleanupPlayer(playerId);
             }
         };
-
-        // --- Controls Visibility Logic (Issue 4) ---
         
-        // Always show controls initially
-        controlsManager.showControls();
+        controlsManager.elements.playBtn.addEventListener('click', togglePlayPause);
+        controlsManager.elements.centerPlayBtn.addEventListener('click', togglePlayPause);
         
-        // Mouse movement shows controls (desktop)
-        if (!isMobile) {
-            modal.addEventListener('mousemove', (e) => {
-                // Don't hide controls if hovering over them
-                if (e.target.closest('.premium-controls-wrapper') || 
-                    e.target.closest('.premium-player-header')) {
-                    controlsManager.showControls();
-                }
-                controlsManager.showControls();
-            });
-        }
-        
-        // ✅ FIX: Touch interaction shows controls (mobile)
-        if (isMobile || isIOS) {
-            let lastTouchTime = 0;
-            
-            modal.addEventListener('touchstart', (e) => {
-                const now = Date.now();
-                
-                // If touching controls area, keep them visible
-                if (e.target.closest('.premium-controls-wrapper') || 
-                    e.target.closest('.premium-player-header')) {
-                    e.stopPropagation();
-                    controlsManager.showControls();
-                    return;
-                }
-                
-                // Single tap on video area toggles controls visibility
-                if (now - lastTouchTime < 300) {
-                    // Double tap - let other handlers deal with it
-                    lastTouchTime = 0;
-                } else {
-                    // Single tap - toggle controls
-                    if (stateManager.showingControls) {
-                        controlsManager.hideControls();
-                    } else {
-                        controlsManager.showControls();
-                    }
-                    lastTouchTime = now;
-                }
-            }, { passive: true });
-        }
-        
-        // ✅ FIX: Keep controls visible when hovering over them
-        const controlsWrapper = modal.querySelector('.premium-controls-wrapper');
-        if (controlsWrapper) {
-            controlsWrapper.addEventListener('mouseenter', () => {
-                controlsManager.showControls();
-                // Prevent auto-hide while hovering controls
-                if (stateManager.controlsTimeout) {
-                    clearTimeout(stateManager.controlsTimeout);
-                }
-            });
-            
-            controlsWrapper.addEventListener('mouseleave', () => {
-                controlsManager.resetControlsTimeout();
-            });
-        }
-        
-        const headerEl = modal.querySelector('.premium-player-header');
-        if (headerEl) {
-            headerEl.addEventListener('mouseenter', () => {
-                controlsManager.showControls();
-                if (stateManager.controlsTimeout) {
-                    clearTimeout(stateManager.controlsTimeout);
-                }
-            });
-            
-            headerEl.addEventListener('mouseleave', () => {
-                controlsManager.resetControlsTimeout();
-            });
-        }
-        
-        // ✅ FIX: Enhanced settings menu handler (Issue 5)
-        if (controlsManager.elements.settingsBtn) {
-            const handleSettingsToggle = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
-                controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
-                
-                // Keep controls visible when settings menu is open
-                if (isActive) {
-                    controlsManager.showControls();
-                    if (stateManager.controlsTimeout) {
-                        clearTimeout(stateManager.controlsTimeout);
-                    }
-                }
-            };
-            
-            controlsManager.elements.settingsBtn.addEventListener('click', handleSettingsToggle);
-            controlsManager.elements.settingsBtn.addEventListener('touchend', handleSettingsToggle);
-        }
-
-        // ✅ FIX: Universal button handler for mouse + touch (Issue 6)
-        const setupButton = (element, handler) => {
-            if (!element) return;
-            
-            const wrappedHandler = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handler(e);
-            };
-            
-            element.addEventListener('click', wrappedHandler);
-            element.addEventListener('touchend', wrappedHandler);
-        };
-        
-        // ✅ FIX: Use setupButton for all controls (Issue 6)
-        setupButton(controlsManager.elements.playBtn, togglePlayPause);
-        setupButton(controlsManager.elements.centerPlayBtn, togglePlayPause);
-        
-        setupButton(controlsManager.elements.skipBackward, () => {
+        // Skip buttons
+        controlsManager.elements.skipBackward.addEventListener('click', () => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
+            
             activePlayer.currentTime(Math.max(0, activePlayer.currentTime() - 10));
             controlsManager.showGestureIndicator('⏪');
         });
         
-        setupButton(controlsManager.elements.skipForward, () => {
+        controlsManager.elements.skipForward.addEventListener('click', () => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
+            
             activePlayer.currentTime(Math.min(activePlayer.duration(), activePlayer.currentTime() + 10));
             controlsManager.showGestureIndicator('⏩');
         });
         
-        setupButton(controlsManager.elements.volumeBtn, toggleMute);
-        
-        // ✅ FIX: Improved video area click handler with proper event delegation (Issue 2)
-        const videoWrapper = modal.querySelector('.premium-video-wrapper');
-        if (videoWrapper) {
-            const handleVideoAreaClick = (e) => {
-                // Don't intercept if clicking on:
-                // 1. Any control button
-                // 2. Progress bar
-                // 3. Settings menu
-                // 4. Header
-                if (e.target.closest('.premium-control-btn') ||
-                    e.target.closest('.premium-controls-row') || 
-                    e.target.closest('.premium-progress-container') ||
-                    e.target.closest('.premium-settings-menu') ||
-                    e.target.closest('.premium-player-header') ||
-                    e.target.closest('.premium-center-play-btn') ||
-                    e.target.closest('button') ||
-                    e.target.closest('input')) {
-                    return;
-                }
-                
-                // Only toggle play/pause if clicking on the video itself
-                if (e.target.closest('.premium-video-wrapper')) {
-                    e.stopPropagation();
-                    togglePlayPause();
-                }
-            };
-            
-            videoWrapper.addEventListener('click', handleVideoAreaClick);
-            videoWrapper.addEventListener('touchend', (e) => {
-                // For touch devices, we need to prevent default to avoid double-firing
-                if (!e.target.closest('.premium-control-btn') &&
-                    !e.target.closest('.premium-controls-row') &&
-                    !e.target.closest('button')) {
-                    e.preventDefault();
-                    handleVideoAreaClick(e);
-                }
-            });
-        }
-        
-        // ✅ FIX 3: Enhanced mute toggle
-        const toggleMute = (e) => {
-            if (e) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-            
+        // Volume controls
+        const toggleMute = () => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
-            try {
-                const currentMuted = activePlayer.muted();
-                const newMuted = !currentMuted;
-                
-                console.log('[Video] Toggle mute:', currentMuted, '->', newMuted);
-                
-                activePlayer.muted(newMuted);
-                
-                // Force UI update
-                const volume = activePlayer.volume();
-                controlsManager.updateVolumeButton(volume, newMuted);
-                
-                // Update volume slider
-                if (controlsManager.elements.volumeSlider) {
-                    controlsManager.elements.volumeSlider.value = newMuted ? 0 : volume;
-                }
-                
-            } catch (error) {
-                console.error('[Video] Mute toggle error:', error);
-            }
+            activePlayer.muted(!activePlayer.muted());
         };
         
-        // ✅ FIX 3: Volume button with proper event handling
-        if (controlsManager.elements.volumeBtn) {
-            controlsManager.elements.volumeBtn.addEventListener('click', toggleMute, { capture: false });
-            controlsManager.elements.volumeBtn.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                toggleMute(e);
-            }, { capture: false });
-        }
+        controlsManager.elements.volumeBtn.addEventListener('click', toggleMute);
         
         controlsManager.elements.volumeSlider.addEventListener('input', (e) => {
             const activePlayer = getSafePlayer();
@@ -2892,120 +2588,48 @@ if (document.getElementById('appContainer')) {
             activePlayer.muted(volume === 0);
         });
         
-        // ✅ FIX 4: Enhanced progress bar seeking with proper event handling
+        // Progress bar seeking
         let isSeeking = false;
-        let wasPlaying = false;
         
         const handleProgressClick = (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
             const rect = controlsManager.elements.progressBar.getBoundingClientRect();
-            const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            const percent = (e.clientX - rect.left) / rect.width;
             const newTime = percent * activePlayer.duration();
-            
-            if (isFinite(newTime)) {
-                activePlayer.currentTime(newTime);
-                console.log('[Video] Seeked to:', newTime);
-            }
+            activePlayer.currentTime(newTime);
         };
         
-        const startSeeking = (e) => {
-            const activePlayer = getSafePlayer();
-            if (!activePlayer) return;
-            
+        controlsManager.elements.progressBar.addEventListener('click', handleProgressClick);
+        
+        controlsManager.elements.progressBar.addEventListener('mousedown', () => {
             isSeeking = true;
-            wasPlaying = !activePlayer.paused();
-            
-            if (wasPlaying) {
-                activePlayer.pause();
-            }
-            
             stateManager.isSeeking = true;
             controlsManager.elements.progressBar.classList.add('seeking');
-            controlsManager.showControls();
-            
-            console.log('[Video] Started seeking');
-        };
+        });
         
-        const updateSeeking = (e) => {
+        document.addEventListener('mousemove', (e) => {
             if (!isSeeking) return;
-            
-            const rect = controlsManager.elements.progressBar.getBoundingClientRect();
-            const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-            
-            controlsManager.elements.progressPlayed.style.width = `${percent * 100}%`;
-            controlsManager.elements.progressHandle.style.left = `${percent * 100}%`;
-            
-            // Show time preview
-            const activePlayer = getSafePlayer();
-            if (activePlayer && isFinite(activePlayer.duration())) {
-                const previewTime = percent * activePlayer.duration();
-                if (controlsManager.elements.thumbnailTime) {
-                    controlsManager.elements.thumbnailTime.textContent = controlsManager.formatTime(previewTime);
-                }
-            }
-        };
-        
-        const endSeeking = (e) => {
-            if (!isSeeking) return;
-            
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
             const rect = controlsManager.elements.progressBar.getBoundingClientRect();
             const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-            const newTime = percent * activePlayer.duration();
+            controlsManager.elements.progressPlayed.style.width = `${percent * 100}%`;
+            controlsManager.elements.progressHandle.style.left = `${percent * 100}%`;
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (!isSeeking) return;
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
             
-            if (isFinite(newTime)) {
-                activePlayer.currentTime(newTime);
-                console.log('[Video] Seek ended at:', newTime);
-            }
-            
-            if (wasPlaying) {
-                activePlayer.play().catch(err => console.error('[Video] Resume play error:', err));
-            }
-            
+            const percent = parseFloat(controlsManager.elements.progressPlayed.style.width) / 100;
+            activePlayer.currentTime(percent * activePlayer.duration());
             isSeeking = false;
             stateManager.isSeeking = false;
             controlsManager.elements.progressBar.classList.remove('seeking');
-        };
-        
-        // ✅ FIX 4: Add event listeners with proper capture
-        if (controlsManager.elements.progressBar) {
-            // Click to seek
-            controlsManager.elements.progressBar.addEventListener('click', handleProgressClick);
-            
-            // Drag to seek - mousedown
-            controlsManager.elements.progressBar.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                startSeeking(e);
-            });
-            
-            // Drag to seek - touchstart
-            controlsManager.elements.progressBar.addEventListener('touchstart', (e) => {
-                if (e.touches.length === 1) {
-                    const touch = e.touches[0];
-                    startSeeking({ clientX: touch.clientX, clientY: touch.clientY });
-                }
-            }, { passive: true });
-        }
-        
-        // Global mouse/touch move and up handlers
-        document.addEventListener('mousemove', updateSeeking);
-        document.addEventListener('touchmove', (e) => {
-            if (isSeeking && e.touches.length === 1) {
-                const touch = e.touches[0];
-                updateSeeking({ clientX: touch.clientX, clientY: touch.clientY });
-            }
-        }, { passive: true });
-        
-        document.addEventListener('mouseup', endSeeking);
-        document.addEventListener('touchend', (e) => {
-            if (isSeeking) {
-                const touch = e.changedTouches[0];
-                endSeeking({ clientX: touch.clientX, clientY: touch.clientY });
-            }
         });
         
         // Progress bar hover - show thumbnail preview
@@ -3026,6 +2650,13 @@ if (document.getElementById('appContainer')) {
         
         controlsManager.elements.progressBar.addEventListener('mouseleave', () => {
             controlsManager.elements.progressThumbnail.style.display = 'none';
+        });
+        
+        // Settings menu
+        controlsManager.elements.settingsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
+            controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
         });
         
         // Close settings menu when clicking outside
@@ -3151,63 +2782,21 @@ if (document.getElementById('appContainer')) {
             }
         }
         
-        // ✅ FIX 1: Setup close handlers with proper event prevention
-        const setupCloseHandler = (element) => {
-            if (!element) return;
-            
-            const handleClose = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('[Video] Close button clicked');
-                closePlayer(e);
-            };
-            
-            // Remove any existing listeners first
-            element.replaceWith(element.cloneNode(true));
-            const newElement = element.parentNode.querySelector(element.className.split(' ').map(c => '.' + c).join(''));
-            
-            if (newElement) {
-                newElement.addEventListener('click', handleClose, { capture: true });
-                newElement.addEventListener('touchend', handleClose, { capture: true });
-                
-                // Update reference
-                if (element === controlsManager.elements.closeBtn) {
-                    controlsManager.elements.closeBtn = newElement;
-                } else if (element === controlsManager.elements.closeErrorBtn) {
-                    controlsManager.elements.closeErrorBtn = newElement;
-                }
-            }
-        };
-        
-        setupCloseHandler(controlsManager.elements.closeBtn);
-        setupCloseHandler(controlsManager.elements.closeErrorBtn);
-        
         // Close button and ESC key
-        // ✅ FIX: Enhanced close player function (Fix 1 combined with Fix 4 cleanup)
-        const closePlayer = (e) => {
-            if (e) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-            
-            console.log('[Video] Closing player:', playerId);
-            
-            // ✅ Clear session tracking
+        const closePlayer = () => {
+            // ✅ NEW: Clear session tracking
             analyticsTracker.clearSession(videoId);
             
             // Stop token refresh
             tokenRefreshManager.stopRefresh(videoId);
             
+            // Remove from global registry
+            activePlayers.delete(playerId);
+            
             // Remove event listeners
             document.removeEventListener('fullscreenchange', handleFullscreenChange);
             document.removeEventListener('click', closeSettingsMenu);
             document.removeEventListener('keydown', handleKeyDown);
-            
-            // ✅ FIX: Remove progress bar listeners (Fix 4)
-            document.removeEventListener('mousemove', updateSeeking);
-            document.removeEventListener('mouseup', endSeeking);
-            document.removeEventListener('touchmove', updateSeeking);
-            document.removeEventListener('touchend', endSeeking);
             
             // Exit fullscreen if active
             if (document.fullscreenElement) {
@@ -3215,28 +2804,25 @@ if (document.getElementById('appContainer')) {
             }
             
             // Dispose player safely
-            try {
-                if (player && !player.isDisposed()) {
-                    player.pause();
+            if (player && !player.isDisposed()) {
+                try {
                     player.dispose();
+                } catch (e) {
+                    // Player already disposed
                 }
-            } catch (e) {
-                console.warn('[Video] Player disposal error:', e);
             }
             
-            // Remove from global registry
-            activePlayers.delete(playerId);
-            
-            // Remove modal from DOM
+            // Remove modal
             if (modal && modal.parentNode) {
                 modal.remove();
             }
             
             // Restore body overflow
             document.body.style.overflow = '';
-            
-            console.log('[Video] Player closed successfully');
         };
+        
+        controlsManager.elements.closeBtn.addEventListener('click', closePlayer);
+        controlsManager.elements.closeErrorBtn.addEventListener('click', closePlayer);
         
         // Keyboard handler
         const handleKeyDown = (e) => {
@@ -3460,6 +3046,29 @@ if (document.getElementById('appContainer')) {
             analyticsTracker.trackEvent(videoId, 'error', player, tierId);
         });
         
+        // --- Controls Visibility Logic ---
+        
+        // Show controls on mouse movement (non-mobile)
+        if (!isMobile) {
+            modal.addEventListener('mousemove', () => {
+                controlsManager.showControls();
+            });
+        }
+        
+        // Click on video area to toggle play/pause
+        const videoArea = controlsManager.elements.progressBar.parentElement.parentElement;
+        if (videoArea) {
+            videoArea.addEventListener('click', (e) => {
+                // Only toggle if clicking on video area, not on controls
+                if (e.target.closest('.premium-controls-row') || 
+                    e.target.closest('.premium-progress-container') ||
+                    e.target.closest('.premium-settings-menu')) {
+                    return;
+                }
+                togglePlayPause();
+            });
+        }
+        
         // --- Mobile Touch Gestures ---
         
         let touchStartX = 0;
@@ -3534,7 +3143,7 @@ if (document.getElementById('appContainer')) {
         
         // --- Initialize Controls Visibility ---
         
-        // (Logic moved to Issue 4 section above)
+        controlsManager.showControls();
         
         // Start auto-hide timer (desktop only, mobile handled by touchstart above)
         let hideControlsInterval;
@@ -3595,46 +3204,6 @@ if (document.getElementById('appContainer')) {
 
     // --- Main Application Router ---
     async function router() {
-        // ✅ FIXED: Smart redirect protection that doesn't affect normal navigation
-        const redirectKey = 'router_redirect_count';
-        const redirectTimestampKey = 'router_redirect_timestamp';
-        const redirectPathKey = 'router_last_path';
-        
-        try {
-            const currentPath = window.location.pathname + window.location.search;
-            const lastPath = sessionStorage.getItem(redirectPathKey) || '';
-            const redirectCount = parseInt(sessionStorage.getItem(redirectKey) || '0', 10);
-            const lastRedirect = parseInt(sessionStorage.getItem(redirectTimestampKey) || '0', 10);
-            const now = Date.now();
-            
-            // Only count as a redirect loop if we're hitting the SAME path repeatedly
-            if (currentPath === lastPath && now - lastRedirect < 2000) {
-                // Same path within 2 seconds = potential loop
-                const newCount = redirectCount + 1;
-                
-                if (newCount >= 3) {
-                    // Genuine redirect loop detected
-                    console.error('[iOS Debug] Redirect loop detected on:', currentPath);
-                    sessionStorage.clear();
-                    localStorage.clear();
-                    window.location.replace('login.html');
-                    return;
-                }
-                
-                sessionStorage.setItem(redirectKey, newCount.toString());
-                sessionStorage.setItem(redirectTimestampKey, now.toString());
-            } else {
-                // Different path or enough time passed = normal navigation, reset counter
-                sessionStorage.setItem(redirectKey, '1');
-                sessionStorage.setItem(redirectTimestampKey, now.toString());
-                sessionStorage.setItem(redirectPathKey, currentPath);
-            }
-            
-        } catch (e) {
-            // SessionStorage not available - continue anyway
-            console.warn('[iOS Debug] SessionStorage check failed:', e);
-        }
-        
         // Clean up any existing video players before loading new content
         cleanupAllVideoPlayers();
         
@@ -3646,19 +3215,11 @@ if (document.getElementById('appContainer')) {
         const appContainer = document.getElementById('appContainer');
         
         function hideAppLoader() {
-            // ✅ iOS FIX: Force reflow before hiding loader
             if (appLoader && appContainer) {
-                // Force browser repaint (iOS Safari fix)
-                void appLoader.offsetHeight;
-                
                 appLoader.style.opacity = '0';
                 appContainer.style.display = 'block';
-                
-                // ✅ iOS FIX: Ensure container is actually visible
                 setTimeout(() => {
-                    if (appLoader && appLoader.parentNode) {
-                        appLoader.remove();
-                    }
+                    appLoader.remove();
                 }, 400);
             }
         }
@@ -3670,59 +3231,14 @@ if (document.getElementById('appContainer')) {
         
         // NEW (V2): Load and display multiple announcements
         const announcementsData = JSON.parse(localStorage.getItem('global_announcements') || '[]');
-        
-        // ✅ FIX: Check if announcementSlider exists (Issue 1)
-        if (announcementSlider) {
-            announcementSlider.showAnnouncements(announcementsData);
-        }
+        announcementSlider.showAnnouncements(announcementsData);
         
         // Render renewal banner and header actions
         renderRenewalBanner();
         await renderHeaderActions();
 
-        // ✅ iOS FIX: Enhanced token validation with explicit checks
-        function isTokenValidSafe() {
-            try {
-                const token = localStorage.getItem('lustroom_jwt');
-                const obtainedAt = localStorage.getItem('lustroom_jwt_obtained_at');
-                const expiresIn = localStorage.getItem('lustroom_jwt_expires_in');
-                
-                // Explicit null checks
-                if (!token || token === 'null' || token === 'undefined') {
-                    console.log('[iOS Debug] No valid token found');
-                    return false;
-                }
-                
-                if (!obtainedAt || obtainedAt === 'null' || !expiresIn || expiresIn === 'null') {
-                    console.log('[iOS Debug] Missing token metadata');
-                    return false;
-                }
-                
-                const obtainedAtInt = parseInt(obtainedAt, 10);
-                const expiresInInt = parseInt(expiresIn, 10);
-                
-                if (isNaN(obtainedAtInt) || isNaN(expiresInInt)) {
-                    console.log('[iOS Debug] Invalid token metadata');
-                    return false;
-                }
-                
-                const nowInSeconds = Math.floor(Date.now() / 1000);
-                const isValid = (obtainedAtInt + expiresInInt - 60) > nowInSeconds;
-                
-                console.log('[iOS Debug] Token valid:', isValid);
-                return isValid;
-                
-            } catch (error) {
-                console.error('[iOS Debug] Token validation error:', error);
-                return false;
-            }
-        }
-
-        // Use the safe validator
-        if (!isTokenValidSafe()) {
-            console.log('[iOS Debug] Redirecting to login...');
-            // ✅ iOS FIX: Use location.replace instead of location.href
-            window.location.replace('login.html');
+        if (!isTokenValid()) {
+            window.location.href = 'login.html';
             return;
         }
 
