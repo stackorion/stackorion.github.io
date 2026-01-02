@@ -2177,9 +2177,12 @@ if (document.getElementById('appContainer')) {
                         preload="auto"
                         playsinline
                         webkit-playsinline
+                        x-webkit-airplay="allow"
                         x5-playsinline
                         x5-video-player-type="h5"
                         x5-video-player-fullscreen="true"
+                        controlslist="nodownload nofullscreen"
+                        disablepictureinpicture
                     ></video>
                     
                     <!-- Center Play Button Overlay -->
@@ -2329,6 +2332,18 @@ if (document.getElementById('appContainer')) {
         const requestFullscreen = () => {
             // Skip fullscreen on mobile - let native controls handle it
             if (isMobile) {
+                // ✅ NEW: On iOS, try to enter fullscreen for video element instead
+                if (isIOS) {
+                    const videoElement = player.el().querySelector('video');
+                    if (videoElement && videoElement.webkitEnterFullscreen) {
+                        try {
+                            // iOS Safari native fullscreen
+                            videoElement.webkitEnterFullscreen();
+                        } catch (err) {
+                            // Fullscreen not supported or blocked
+                        }
+                    }
+                }
                 return;
             }
             
@@ -2425,11 +2440,16 @@ if (document.getElementById('appContainer')) {
                     e.preventDefault();
                     return false;
                 });
+                
+                // ✅ NEW: Prevent iOS Safari bottom bar from appearing
+                videoElement.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                }, { passive: false });
             }
             
             // Enhanced touch controls visibility
             let touchTimer;
-            modal.addEventListener('touchstart', () => {
+            const handleTouchInteraction = () => {
                 controlsManager.showControls();
                 clearTimeout(touchTimer);
                 touchTimer = setTimeout(() => {
@@ -2437,19 +2457,82 @@ if (document.getElementById('appContainer')) {
                         controlsManager.hideControls();
                     }
                 }, 4000);
-            }, { passive: true });
+            };
+            
+            modal.addEventListener('touchstart', handleTouchInteraction, { passive: true });
+            modal.addEventListener('touchmove', handleTouchInteraction, { passive: true });
         }
         
-        // ✅ FIX 6: Handle iOS inline playback properly
+        // ✅ FIX 7: Handle iOS video fullscreen properly
         if (isIOS) {
-            // iOS needs user interaction to start playback
-            player.one('play', () => {
-                // Ensure video element has correct attributes
-                const videoEl = player.el().querySelector('video');
-                if (videoEl) {
-                    videoEl.setAttribute('playsinline', '');
-                    videoEl.setAttribute('webkit-playsinline', '');
+            const videoElement = player.el().querySelector('video');
+            if (videoElement) {
+                // Ensure all iOS-specific attributes are set
+                videoElement.setAttribute('playsinline', '');
+                videoElement.setAttribute('webkit-playsinline', '');
+                videoElement.setAttribute('x-webkit-airplay', 'allow');
+                
+                videoElement.addEventListener('webkitbeginfullscreen', () => {
+                    stateManager.isFullscreen = true;
+                });
+                
+                videoElement.addEventListener('webkitendfullscreen', () => {
+                    stateManager.isFullscreen = false;
+                    // Don't auto-close on iOS - user might want to continue watching
+                });
+                
+                // Handle iOS playback initialization
+                videoElement.addEventListener('loadedmetadata', () => {
+                    // Force load on iOS to enable playback
+                    videoElement.load();
+                });
+            }
+        }
+
+        // ✅ NEW: Android-specific video handling
+        if (!isIOS && isMobile) {
+            const videoElement = player.el().querySelector('video');
+            if (videoElement) {
+                // Prevent Android native controls from interfering
+                videoElement.setAttribute('controlslist', 'nodownload nofullscreen');
+                videoElement.setAttribute('disablepictureinpicture', '');
+                
+                // Handle Android fullscreen events
+                videoElement.addEventListener('fullscreenchange', () => {
+                    if (document.fullscreenElement === videoElement) {
+                        stateManager.isFullscreen = true;
+                    } else {
+                        stateManager.isFullscreen = false;
+                    }
+                });
+                
+                // Webview-specific handling for Android
+                if (navigator.userAgent.includes('wv')) {
+                    // Running in Android WebView
+                    videoElement.setAttribute('x5-video-player-type', 'h5');
+                    videoElement.setAttribute('x5-video-player-fullscreen', 'true');
                 }
+            }
+        }
+
+        // ✅ NEW: Handle orientation changes on mobile
+        if (isMobile) {
+            const handleOrientationChange = () => {
+                // Force layout recalculation
+                setTimeout(() => {
+                    if (player && !player.isDisposed()) {
+                        player.trigger('resize');
+                    }
+                }, 100);
+            };
+            
+            window.addEventListener('orientationchange', handleOrientationChange);
+            window.addEventListener('resize', handleOrientationChange);
+            
+            // Cleanup on modal removal
+            modal.addEventListener('remove', () => {
+                window.removeEventListener('orientationchange', handleOrientationChange);
+                window.removeEventListener('resize', handleOrientationChange);
             });
         }
         
@@ -2767,21 +2850,6 @@ if (document.getElementById('appContainer')) {
         
         document.addEventListener('fullscreenchange', handleFullscreenChange);
         
-        // ✅ FIX 8: iOS video fullscreen events
-        if (isIOS) {
-            const videoElement = player.el().querySelector('video');
-            if (videoElement) {
-                videoElement.addEventListener('webkitbeginfullscreen', () => {
-                    stateManager.isFullscreen = true;
-                });
-                
-                videoElement.addEventListener('webkitendfullscreen', () => {
-                    stateManager.isFullscreen = false;
-                    // Don't auto-close on iOS - user might want to continue watching
-                });
-            }
-        }
-        
         // Close button and ESC key
         const closePlayer = () => {
             // ✅ NEW: Clear session tracking
@@ -3070,23 +3138,76 @@ if (document.getElementById('appContainer')) {
         }
         
         // --- Mobile Touch Gestures ---
-        
+
         let touchStartX = 0;
         let touchStartY = 0;
         let touchStartTime = 0;
-        
+        let isSwiping = false;
+
         modal.addEventListener('touchstart', (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
+            // Don't interfere with controls interaction
+            if (e.target.closest('.premium-controls-wrapper') || 
+                e.target.closest('.premium-player-header')) {
+                return;
+            }
+            
             touchStartX = e.touches[0].clientX;
             touchStartY = e.touches[0].clientY;
             touchStartTime = activePlayer.currentTime();
+            isSwiping = false;
         }, { passive: true });
-        
+
+        // ✅ NEW: Enhanced touchmove for better gesture detection
+        modal.addEventListener('touchmove', (e) => {
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            // Don't interfere with controls interaction
+            if (e.target.closest('.premium-controls-wrapper') || 
+                e.target.closest('.premium-player-header')) {
+                return;
+            }
+            
+            const touchCurrentX = e.touches[0].clientX;
+            const touchCurrentY = e.touches[0].clientY;
+            
+            const deltaX = touchCurrentX - touchStartX;
+            const deltaY = touchCurrentY - touchStartY;
+            
+            // Detect horizontal swipe for seeking
+            if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 30) {
+                isSwiping = true;
+                // Show preview indicator
+                const seekAmount = (deltaX / window.innerWidth) * 30;
+                const newTime = Math.max(0, Math.min(activePlayer.duration(), touchStartTime + seekAmount));
+                
+                // Update visual feedback
+                if (controlsManager.elements.gestureIndicator) {
+                    const direction = deltaX > 0 ? '⏩' : '⏪';
+                    const seconds = Math.abs(Math.round(seekAmount));
+                    controlsManager.elements.gestureIndicator.textContent = `${direction} ${seconds}s`;
+                    controlsManager.elements.gestureIndicator.classList.add('show');
+                }
+            }
+        }, { passive: true });
+
         modal.addEventListener('touchend', (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
+            
+            // Hide gesture indicator
+            if (controlsManager.elements.gestureIndicator) {
+                controlsManager.elements.gestureIndicator.classList.remove('show');
+            }
+            
+            // Don't interfere with controls interaction
+            if (e.target.closest('.premium-controls-wrapper') || 
+                e.target.closest('.premium-player-header')) {
+                return;
+            }
             
             const touchEndX = e.changedTouches[0].clientX;
             const touchEndY = e.changedTouches[0].clientY;
@@ -3095,7 +3216,7 @@ if (document.getElementById('appContainer')) {
             const deltaY = touchEndY - touchStartY;
             
             // Only handle horizontal swipes (ignore vertical scrolls)
-            if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+            if (isSwiping && Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
                 const seekAmount = (deltaX / window.innerWidth) * 30; // Max 30 seconds per full swipe
                 const newTime = Math.max(0, Math.min(activePlayer.duration(), touchStartTime + seekAmount));
                 activePlayer.currentTime(newTime);
@@ -3106,6 +3227,8 @@ if (document.getElementById('appContainer')) {
                     controlsManager.showGestureIndicator('⏪');
                 }
             }
+            
+            isSwiping = false;
         }, { passive: true });
         
         // --- Double-tap to skip (mobile) ---

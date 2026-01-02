@@ -2529,6 +2529,32 @@ body.theme-dark .announcement-error {
     opacity: 1;
 }
 
+/* ✅ NEW: Mobile Gesture Indicator */
+.premium-gesture-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(10px);
+    color: #fff;
+    padding: 24px 32px;
+    border-radius: 12px;
+    font-size: 3rem;
+    font-weight: 600;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 45;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.premium-gesture-indicator.show {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.1);
+}
+
 /* Hide native video.js UI */
 .video-js .vjs-control-bar,
 .video-js .vjs-big-play-button,
@@ -2710,6 +2736,14 @@ body.theme-dark .announcement-error {
     .premium-player-modal.mobile-player .premium-controls-wrapper {
         padding-bottom: calc(8px + env(safe-area-inset-bottom));
     }
+    
+    .premium-player-modal.mobile-player .premium-progress-container {
+        padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    }
+    
+    .premium-player-modal.mobile-player .premium-controls-row {
+        padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    }
 }
 
 /* ✅ FIX 4: Landscape mode optimizations */
@@ -2723,13 +2757,37 @@ body.theme-dark .announcement-error {
     }
     
     .premium-controls-row {
-        padding: 4px 12px;
+        padding: 4px 12px 12px;
+    }
+    
+    .premium-progress-container {
+        padding: 0 12px 8px;
     }
     
     .premium-control-btn {
         min-width: 40px;
         min-height: 40px;
-        padding: 8px;
+        padding: 6px;
+    }
+    
+    .premium-control-btn svg {
+        width: 18px;
+        height: 18px;
+    }
+    
+    .premium-play-btn svg {
+        width: 24px;
+        height: 24px;
+    }
+    
+    .premium-gesture-indicator {
+        font-size: 2.5rem;
+        padding: 20px 28px;
+    }
+    
+    .premium-change-indicator {
+        font-size: 1rem;
+        padding: 12px 20px;
     }
 }
 
@@ -2749,6 +2807,32 @@ body.theme-dark .announcement-error {
 /* ✅ FIX 6: Prevent bounce scrolling on iOS */
 .premium-player-modal.mobile-player {
     overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+.premium-player-modal.mobile-player .premium-video-wrapper {
+    overscroll-behavior: none;
+    overflow: hidden;
+}
+
+/* ✅ NEW: Improve touch responsiveness */
+.premium-player-modal.mobile-player .premium-control-btn,
+.premium-player-modal.mobile-player .premium-close-btn,
+.premium-player-modal.mobile-player .premium-progress-bar {
+    -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
+    touch-action: manipulation;
+}
+
+/* ✅ NEW: Prevent iOS Safari address bar from covering controls */
+.premium-player-modal.mobile-player {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for iOS */
 }
 
 /* ✅ FIX 7: Android-specific fixes */
@@ -2757,6 +2841,36 @@ body.theme-dark .announcement-error {
     .premium-player-modal.mobile-player .video-js video {
         object-fit: contain; /* Prevent stretching */
     }
+    
+    /* Prevent Android from showing native controls */
+    .premium-player-modal.mobile-player video::-webkit-media-controls {
+        display: none !important;
+    }
+    
+    .premium-player-modal.mobile-player video::-webkit-media-controls-enclosure {
+        display: none !important;
+    }
+    
+    .premium-player-modal.mobile-player video::-webkit-media-controls-panel {
+        display: none !important;
+    }
+}
+
+/* ✅ NEW: Prevent video download on long-press (Android) */
+.premium-player-modal video {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* ✅ NEW: Force hardware acceleration for smooth playback */
+.premium-video-wrapper,
+.premium-video-wrapper video,
+.video-js {
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
 }
 
 /* ============================================================================
@@ -3016,13 +3130,13 @@ body.theme-dark .announcement-error {
     }
     
     .premium-gesture-indicator {
-        font-size: 64px;
-        padding: 20px;
+        font-size: 2.5rem;
+        padding: 20px 28px;
     }
     
     .premium-change-indicator {
-        font-size: 18px;
-        padding: 16px 24px;
+        font-size: 1rem;
+        padding: 14px 20px;
     }
     
     .premium-skip-btn {
