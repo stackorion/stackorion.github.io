@@ -706,7 +706,7 @@ class AndroidTouchManager {
         this.touchStart = null;
         this.touchStartTime = 0;
         this.isTouchOnControls = false;
-        this.touchMoved = false;
+        this.touchMoved = false; // ✅ ADD THIS: Define touchMoved variable
         this.preventGhostClick = false;
         
         // Configuration for Android
@@ -719,8 +719,30 @@ class AndroidTouchManager {
     }
     
     initialize() {
+        // ✅ ADD: Check if player is valid before setting up
+        if (!this.isPlayerValid()) {
+            console.warn('AndroidTouchManager: Player not valid, skipping initialization');
+            return;
+        }
         this.setupTouchZones();
         this.bindEventListeners();
+    }
+    
+    // ✅ ADD: Helper method to check player validity
+    isPlayerValid() {
+        return this.player && 
+               this.player.el && 
+               typeof this.player.el === 'function' && 
+               this.player.el() && 
+               !this.player.isDisposed();
+    }
+    
+    // ✅ ADD: Safe player access method
+    getSafePlayer() {
+        if (!this.isPlayerValid()) {
+            return null;
+        }
+        return this.player;
     }
     
     setupTouchZones() {
@@ -740,6 +762,9 @@ class AndroidTouchManager {
     }
     
     bindEventListeners() {
+        // ✅ ADD: Don't bind if player isn't valid
+        if (!this.isPlayerValid()) return;
+        
         // Use passive: false only for control areas where we need preventDefault()
         // Use passive: true for video area to ensure smooth scrolling
         this.bindControlAreaListeners();
@@ -759,7 +784,7 @@ class AndroidTouchManager {
                     this.isTouchOnControls = true;
                     this.touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
                     this.touchStartTime = Date.now();
-                    this.touchMoved = false;
+                    this.touchMoved = false; // ✅ INITIALIZE touchMoved here
                     
                     // Allow default behavior for controls (important for Android)
                     // Don't call preventDefault() here
@@ -809,6 +834,10 @@ class AndroidTouchManager {
     bindVideoAreaListeners() {
         if (!this.videoArea) return;
         
+        // ✅ ADD: Get safe player reference
+        const player = this.getSafePlayer();
+        if (!player) return;
+        
         // Video area gets gesture handlers
         const videoArea = this.videoArea;
         
@@ -817,9 +846,9 @@ class AndroidTouchManager {
             if (this.isTouchOnControls) return;
             
             this.touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            this.touchStartTime = this.player.currentTime();
+            this.touchStartTime = player.currentTime(); // ✅ USE safe player
             this.touchStartTimestamp = Date.now();
-            this.touchMoved = false;
+            this.touchMoved = false; // ✅ INITIALIZE touchMoved here
             
             // Store for double-tap detection
             const currentTime = Date.now();
@@ -855,7 +884,7 @@ class AndroidTouchManager {
                 // Calculate seek amount
                 const seekAmount = (deltaX / window.innerWidth) * 30;
                 const previewTime = Math.max(0, Math.min(
-                    this.player.duration(), 
+                    player.duration(), // ✅ USE safe player
                     this.touchStartTime + seekAmount
                 ));
                 
@@ -872,17 +901,20 @@ class AndroidTouchManager {
         videoArea.addEventListener('touchend', (e) => {
             if (this.isTouchOnControls) return;
             
+            const player = this.getSafePlayer(); // ✅ GET fresh player reference
+            if (!player) return; // ✅ CHECK if player still exists
+            
             if (this.touchMoved && this.touchStart) {
                 // This was a swipe - apply seek
                 const touchEndX = e.changedTouches[0].clientX;
                 const deltaX = touchEndX - this.touchStart.x;
                 const seekAmount = (deltaX / window.innerWidth) * 30;
                 const newTime = Math.max(0, Math.min(
-                    this.player.duration(), 
+                    player.duration(), // ✅ USE safe player
                     this.touchStartTime + seekAmount
                 ));
                 
-                this.player.currentTime(newTime);
+                player.currentTime(newTime); // ✅ USE safe player
                 
                 // Show confirmation
                 if (seekAmount > 0) {
@@ -904,10 +936,10 @@ class AndroidTouchManager {
                     
                     if (tapX >= centerZoneStart && tapX <= centerZoneEnd) {
                         // Center tap - toggle play/pause
-                        if (this.player.paused()) {
-                            this.player.play().catch(() => {});
+                        if (player.paused()) { // ✅ USE safe player
+                            player.play().catch(() => {}); // ✅ USE safe player
                         } else {
-                            this.player.pause();
+                            player.pause(); // ✅ USE safe player
                         }
                     } else {
                         // Edge tap - toggle controls
@@ -942,24 +974,27 @@ class AndroidTouchManager {
     }
     
     handleDoubleTap(tapX) {
+        const player = this.getSafePlayer(); // ✅ GET safe player
+        if (!player) return; // ✅ CHECK if player exists
+        
         const screenWidth = window.innerWidth;
         const leftZoneEnd = screenWidth * 0.3;
         const rightZoneStart = screenWidth * 0.7;
         
         if (tapX < leftZoneEnd) {
             // Left double tap - rewind 10s
-            this.player.currentTime(Math.max(0, this.player.currentTime() - 10));
+            player.currentTime(Math.max(0, player.currentTime() - 10)); // ✅ USE safe player
             this.controlsManager.showGestureIndicator('⏪ 10s');
         } else if (tapX > rightZoneStart) {
             // Right double tap - forward 10s
-            this.player.currentTime(Math.min(this.player.duration(), this.player.currentTime() + 10));
+            player.currentTime(Math.min(player.duration(), player.currentTime() + 10)); // ✅ USE safe player
             this.controlsManager.showGestureIndicator('⏩ 10s');
         } else {
             // Center double tap - toggle play/pause
-            if (this.player.paused()) {
-                this.player.play().catch(() => {});
+            if (player.paused()) { // ✅ USE safe player
+                player.play().catch(() => {}); // ✅ USE safe player
             } else {
-                this.player.pause();
+                player.pause(); // ✅ USE safe player
             }
         }
     }
@@ -968,11 +1003,32 @@ class AndroidTouchManager {
         this.touchStart = null;
         this.touchStartTime = 0;
         this.isTouchOnControls = false;
-        this.touchMoved = false;
+        this.touchMoved = false; // ✅ RESET touchMoved here
     }
     
     destroy() {
-        // Cleanup would go here
+        // Cleanup event listeners
+        if (this.videoArea) {
+            // Remove all event listeners by cloning and replacing
+            const newVideoArea = this.videoArea.cloneNode(true);
+            this.videoArea.parentNode.replaceChild(newVideoArea, this.videoArea);
+            this.videoArea = newVideoArea;
+        }
+        
+        // Remove control element listeners
+        this.controlElements.forEach(selector => {
+            const elements = this.modal.querySelectorAll(selector);
+            elements.forEach(el => {
+                el.replaceWith(el.cloneNode(true));
+            });
+        });
+        
+        // Remove modal click listener
+        if (this.modal) {
+            const newModal = this.modal.cloneNode(true);
+            this.modal.parentNode.replaceChild(newModal, this.modal);
+            this.modal = newModal;
+        }
     }
 }
 
@@ -1262,7 +1318,6 @@ async function renderHeaderActions() {
     }
 }
 
-// --- Logic for login.html ---
 // --- Logic for login.html ---
 if (document.getElementById('loginForm')) {
     const loginForm = document.getElementById('loginForm');
@@ -1821,15 +1876,11 @@ if (document.getElementById('appContainer')) {
             tierGroup.className = 'tier-group';
             links.forEach(link => {
                 const isRecentContent = isRecent(link.added_at);
-                // Removed console.log that was exposing backend details
 
                 const card = document.createElement('div');
                 card.className = 'link-card';
                 if (link.locked) card.classList.add('locked');
-                if (isRecentContent) {
-                    card.classList.add('is-new');
-                    // Removed console.log that was exposing backend details
-                }
+                if (isRecentContent) card.classList.add('is-new');
                 card.dataset.contentType = link.content_type || 'Video';
                 card.dataset.recentStatus = isRecentContent ? 'true' : 'false';
                 card.dataset.searchText = generateSearchableText(link);
@@ -1862,7 +1913,6 @@ if (document.getElementById('appContainer')) {
                         newBadge.className = 'new-badge';
                         newBadge.textContent = `New! (${getDaysAgo(link.added_at)})`;
                         thumbnailContainer.appendChild(newBadge);
-                        // Removed console.log that was exposing backend details
                     }
                     const thumbnailImage = document.createElement('img');
                     thumbnailImage.src = link.thumbnail_url;
@@ -1902,7 +1952,6 @@ if (document.getElementById('appContainer')) {
                     newBadgeText.className = 'new-badge-text';
                     newBadgeText.textContent = `New! (${getDaysAgo(link.added_at)})`;
                     title.appendChild(newBadgeText);
-                    // Removed console.log that was exposing backend details
                 }
                 cardContent.appendChild(title);
 
@@ -2061,14 +2110,11 @@ if (document.getElementById('appContainer')) {
 
             if (view === 'Recent' && isRecentContent) {
                 card.classList.add('recent-highlight');
-                const badge = card.querySelector('.new-badge') || card.querySelector('.new-badge-text');
-                // Removed console.log that was exposing backend details
             } else {
                 card.classList.remove('recent-highlight');
             }
 
             if (shouldShow) hasVisibleContent = true;
-            // Removed console.log that was exposing backend details
         });
 
         document.querySelectorAll('.tier-group').forEach(group => {
@@ -2140,8 +2186,6 @@ if (document.getElementById('appContainer')) {
             });
             const data = await response.json();
             
-            // Removed console.log that was exposing backend details
-            
             if (response.ok && data.status === 'success' && data.gallery) {
                 renderGallery(data.gallery);
             } else if (response.status === 401 || response.status === 403) {
@@ -2157,8 +2201,6 @@ if (document.getElementById('appContainer')) {
     }
 
     function renderGallery(galleryData) {
-        // Removed console.log that was exposing backend details
-        
         mainContent.innerHTML = `
             <div class="view-header">
                 <button id="backButton" class="back-button">← Back</button>
@@ -2175,11 +2217,7 @@ if (document.getElementById('appContainer')) {
         
         const galleryGrid = document.getElementById('galleryGrid');
         
-        // Removed console.log that was exposing backend details
-        
         galleryData.images.forEach((image, index) => {
-            // Removed console.log that was exposing backend details
-            
             const item = document.createElement('div');
             item.className = 'gallery-item';
             
@@ -2195,7 +2233,6 @@ if (document.getElementById('appContainer')) {
             tempImg.onload = function() {
                 linkElement.setAttribute('data-pswp-width', this.naturalWidth.toString());
                 linkElement.setAttribute('data-pswp-height', this.naturalHeight.toString());
-                // Removed console.log that was exposing backend details
             };
             tempImg.src = image.url;
             
@@ -2224,8 +2261,6 @@ if (document.getElementById('appContainer')) {
     }
 
     function initPhotoSwipe() {
-    // Removed console.log that was exposing backend details
-    
     // Check if PhotoSwipe is loaded
     if (typeof PhotoSwipeLightbox === 'undefined') {
         // Silently handle error without logging to console
@@ -2270,14 +2305,12 @@ if (document.getElementById('appContainer')) {
             if (lightbox.pswp) {
                 const currentIndex = lightbox.pswp.currIndex;
                 viewedImageIndexes.add(currentIndex);
-                // Removed console.log that was exposing backend details
             }
         });
 
         // Send tracking data when gallery is closed
         lightbox.on('close', () => {
             const totalUniqueViews = viewedImageIndexes.size;
-            // Removed console.log that was exposing backend details
 
             if (totalUniqueViews > 0 && gallerySlugForTracking) {
                 const token = localStorage.getItem('lustroom_jwt');
@@ -2298,9 +2331,9 @@ if (document.getElementById('appContainer')) {
                     })
                     .then(response => {
                         if (response.ok) {
-                            // Removed console.log that was exposing backend details
+                            // success
                         } else {
-                            // Removed console.log that was exposing backend details
+                            // fail
                         }
                     })
                     .catch(error => {
@@ -2344,8 +2377,6 @@ if (document.getElementById('appContainer')) {
         });
         
         lightbox.on('uiRegister', function() {
-            // Removed console.log that was exposing backend details
-            
             // Fullscreen button
             lightbox.pswp.ui.registerElement({
                 name: 'fullscreen-button',
@@ -2411,7 +2442,6 @@ if (document.getElementById('appContainer')) {
         });
         
         lightbox.init();
-        // Removed console.log that was exposing backend details
     } catch (error) {
         // Silently handle error without logging to console
     }
@@ -2763,52 +2793,6 @@ if (document.getElementById('appContainer')) {
                     e.preventDefault();
                 }, { passive: false });
             }
-            
-            // ✅ NEW: Enhanced touch controls visibility for mobile
-            let touchTimer;
-            let lastTouchTime = 0;
-            
-            const handleTouchInteraction = (e) => {
-                const now = Date.now();
-                const timeSinceLastTouch = now - lastTouchTime;
-                lastTouchTime = now;
-                
-                // Skip if touching controls directly
-                const controlElements = [
-                    '.premium-control-btn',
-                    '.premium-progress-bar',
-                    '.premium-settings-menu'
-                ];
-                
-                if (controlElements.some(selector => e.target.closest(selector))) {
-                    return;
-                }
-                
-                // ✅ NEW: Toggle controls visibility on quick tap (not swipe)
-                if (e.type === 'touchend' && timeSinceLastTouch < 200 && !touchMoved) {
-                    if (controlsManager.state.showingControls) {
-                        controlsManager.hideControls();
-                    } else {
-                        controlsManager.showControls();
-                    }
-                    return;
-                }
-                
-                // Show controls on any touch movement
-                controlsManager.showControls();
-                clearTimeout(touchTimer);
-                
-                // Auto-hide after delay
-                touchTimer = setTimeout(() => {
-                    if (!player.paused()) {
-                        controlsManager.hideControls();
-                    }
-                }, 3000);
-            };
-            
-            modal.addEventListener('touchstart', handleTouchInteraction, { passive: true });
-            modal.addEventListener('touchmove', handleTouchInteraction, { passive: true });
-            modal.addEventListener('touchend', handleTouchInteraction, { passive: true });
         }
         
         // ✅ FIX 7: Handle iOS video fullscreen properly
@@ -3144,9 +3128,10 @@ if (document.getElementById('appContainer')) {
                 e.stopPropagation();
                 
                 // Only trigger if touch didn't move (not a swipe)
-                if (!touchMoved) {
-                    togglePlayPause();
-                }
+                // Note: touchMoved is handled by AndroidTouchManager on Android, 
+                // but for simple iOS fallback here we assume tap if not a known drag context.
+                // Since we removed the global handleTouchInteraction, this is a clean tap handler.
+                togglePlayPause();
             }, { passive: false });
         }
         
