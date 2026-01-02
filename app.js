@@ -95,6 +95,12 @@ class VideoTokenRefreshManager {
 
     async refreshVideoToken(videoId, tierId, libraryId, player) {
         try {
+            // ✅ NEW: Check if player is still valid before refreshing
+            if (!player || !player.el() || player.isDisposed()) {
+                this.stopRefresh(videoId);
+                return;
+            }
+
             const token = localStorage.getItem('lustroom_jwt');
             if (!token) {
                 this.stopRefresh(videoId);
@@ -116,6 +122,12 @@ class VideoTokenRefreshManager {
             const data = await response.json();
 
             if (response.ok && data.status === 'success') {
+                // ✅ FIXED: Double-check player validity before updating source
+                if (!player || !player.el() || player.isDisposed()) {
+                    this.stopRefresh(videoId);
+                    return;
+                }
+
                 // Update player source with new URL
                 const currentTime = player.currentTime();
                 const wasPaused = player.paused();
@@ -127,9 +139,14 @@ class VideoTokenRefreshManager {
 
                 // Restore playback state
                 player.one('loadedmetadata', () => {
+                    // ✅ FIXED: Verify player still exists before restoring state
+                    if (!player || !player.el() || player.isDisposed()) return;
+                    
                     player.currentTime(currentTime);
                     if (!wasPaused) {
-                        player.play();
+                        player.play().catch(() => {
+                            // Autoplay might be blocked - ignore error
+                        });
                     }
                 });
 
@@ -2174,7 +2191,7 @@ if (document.getElementById('appContainer')) {
                     <video 
                         id="premiumPlayer_${videoId}" 
                         class="video-js"
-                        preload="auto"
+                        preload="${isMobile ? 'metadata' : 'auto'}"
                         playsinline
                         webkit-playsinline
                         x-webkit-airplay="allow"
@@ -2183,6 +2200,8 @@ if (document.getElementById('appContainer')) {
                         x5-video-player-fullscreen="true"
                         controlslist="nodownload nofullscreen"
                         disablepictureinpicture
+                        muted
+                        autoplay
                     ></video>
                     
                     <!-- Center Play Button Overlay -->
@@ -2363,7 +2382,7 @@ if (document.getElementById('appContainer')) {
         
         setTimeout(requestFullscreen, 50);
         
-        // ✅ FIX 4: Initialize Video.js with mobile optimizations
+        // ✅ FIX 2: Initialize Video.js with mobile optimizations (Issue 2)
         const player = videojs(playerId, {
             controls: false,
             autoplay: false,
@@ -2371,17 +2390,23 @@ if (document.getElementById('appContainer')) {
             playsinline: true,
             responsive: true,
             fluid: true,
-            // ✅ Mobile-specific config
-            nativeControlsForTouch: false, // Use custom controls on mobile
+            // ✅ FIXED: Mobile-optimized configuration
+            nativeControlsForTouch: false,
             html5: {
                 vhs: {
                     enableLowInitialPlaylist: true,
                     smoothQualityChange: true,
-                    overrideNative: !isIOS, // Let iOS use native HLS
-                    bandwidth: isMobile ? 2000000 : 5000000 // Lower initial bandwidth on mobile
+                    overrideNative: !isIOS, // iOS uses native HLS
+                    bandwidth: isMobile ? 1500000 : 5000000,
+                    // ✅ NEW: Better mobile buffering
+                    maxMaxBufferLength: isMobile ? 30 : 60,
+                    maxBufferLength: isMobile ? 20 : 30,
+                    maxBufferSize: isMobile ? 30 * 1000 * 1000 : 60 * 1000 * 1000
                 },
-                nativeVideoTracks: isIOS, // iOS handles tracks better natively
-                nativeAudioTracks: isIOS
+                nativeVideoTracks: isIOS,
+                nativeAudioTracks: isIOS,
+                // ✅ NEW: Android-specific fixes
+                nativeTextTracks: false // Prevent subtitle rendering issues
             }
         });
         
@@ -2489,41 +2514,90 @@ if (document.getElementById('appContainer')) {
             }
         }
 
-        // ✅ NEW: Android-specific video handling
+        // ✅ FIX 5: Android-specific video handling (Issue 5)
         if (!isIOS && isMobile) {
-            const videoElement = player.el().querySelector('video');
-            if (videoElement) {
-                // Prevent Android native controls from interfering
+            player.ready(() => {
+                const videoElement = player.el().querySelector('video');
+                if (!videoElement) return;
+                
+                // ✅ FIXED: Set attributes in ready callback
                 videoElement.setAttribute('controlslist', 'nodownload nofullscreen');
                 videoElement.setAttribute('disablepictureinpicture', '');
+                videoElement.setAttribute('preload', 'metadata'); // Better Android performance
                 
                 // Handle Android fullscreen events
-                videoElement.addEventListener('fullscreenchange', () => {
+                const fullscreenHandler = () => {
                     if (document.fullscreenElement === videoElement) {
                         stateManager.isFullscreen = true;
                     } else {
                         stateManager.isFullscreen = false;
                     }
-                });
+                };
                 
-                // Webview-specific handling for Android
-                if (navigator.userAgent.includes('wv')) {
-                    // Running in Android WebView
+                videoElement.addEventListener('fullscreenchange', fullscreenHandler);
+                videoElement.addEventListener('webkitfullscreenchange', fullscreenHandler);
+                
+                // ✅ NEW: Better WebView detection and handling
+                const isWebView = navigator.userAgent.includes('wv') || 
+                                 window.navigator.standalone ||
+                                 window.matchMedia('(display-mode: standalone)').matches;
+                
+                if (isWebView) {
+                    // Running in Android WebView or PWA
                     videoElement.setAttribute('x5-video-player-type', 'h5');
                     videoElement.setAttribute('x5-video-player-fullscreen', 'true');
+                    videoElement.setAttribute('x5-video-orientation', 'landscape');
+                    
+                    // ✅ NEW: Force load in WebView
+                    videoElement.load();
                 }
-            }
+                
+                // ✅ NEW: Android-specific error recovery
+                videoElement.addEventListener('error', (e) => {
+                    console.error('Android video error:', e);
+                    // Attempt recovery by reloading source
+                    if (player && !player.isDisposed()) {
+                        setTimeout(() => {
+                            player.src(player.currentSrc());
+                        }, 1000);
+                    }
+                });
+            });
         }
 
-        // ✅ NEW: Handle orientation changes on mobile
+        // ✅ FIX 6: Handle orientation changes on mobile (Issue 6)
         if (isMobile) {
+            let orientationTimeout;
+            let lastOrientation = window.orientation;
+            
             const handleOrientationChange = () => {
-                // Force layout recalculation
-                setTimeout(() => {
-                    if (player && !player.isDisposed()) {
-                        player.trigger('resize');
+                // ✅ NEW: Clear previous timeout
+                if (orientationTimeout) {
+                    clearTimeout(orientationTimeout);
+                }
+                
+                // ✅ NEW: Only trigger if orientation actually changed
+                const currentOrientation = window.orientation;
+                if (currentOrientation === lastOrientation) return;
+                lastOrientation = currentOrientation;
+                
+                // ✅ FIXED: Debounced resize with player validation
+                orientationTimeout = setTimeout(() => {
+                    if (player && !player.isDisposed() && player.el()) {
+                        try {
+                            player.trigger('resize');
+                            
+                            // ✅ NEW: Force video element dimensions update
+                            const videoElement = player.el().querySelector('video');
+                            if (videoElement) {
+                                videoElement.style.width = '100%';
+                                videoElement.style.height = '100%';
+                            }
+                        } catch (error) {
+                            // Player disposed during orientation change
+                        }
                     }
-                }, 100);
+                }, 300); // Increased delay for stability
             };
             
             window.addEventListener('orientationchange', handleOrientationChange);
@@ -2531,6 +2605,9 @@ if (document.getElementById('appContainer')) {
             
             // Cleanup on modal removal
             modal.addEventListener('remove', () => {
+                if (orientationTimeout) {
+                    clearTimeout(orientationTimeout);
+                }
                 window.removeEventListener('orientationchange', handleOrientationChange);
                 window.removeEventListener('resize', handleOrientationChange);
             });
@@ -2541,6 +2618,49 @@ if (document.getElementById('appContainer')) {
             src: link.url,
             type: 'application/x-mpegURL'
         });
+        
+        // ✅ FIX 3 Part 2: iOS-specific initialization sequence (Issue 3)
+        if (isIOS) {
+            player.ready(() => {
+                // Unmute after iOS allows playback
+                player.muted(false);
+                player.volume(1);
+                
+                // Force load on iOS
+                const videoElement = player.el().querySelector('video');
+                if (videoElement) {
+                    videoElement.load();
+                }
+            });
+        }
+
+        // ✅ OPTIMIZATION 2: Add Network State Monitoring (Opt 2)
+        if (isMobile && navigator.connection) {
+            const updateNetworkState = () => {
+                const connection = navigator.connection;
+                const effectiveType = connection.effectiveType;
+                
+                // Adjust quality based on network
+                if (effectiveType === 'slow-2g' || effectiveType === '2g') {
+                    // Force lowest quality
+                    if (qualityManager && qualityManager.getAvailableQualities().length > 0) {
+                        const qualities = qualityManager.getAvailableQualities();
+                        const lowestQuality = qualities[qualities.length - 1];
+                        if (lowestQuality !== 'auto') {
+                            qualityManager.setQuality(lowestQuality);
+                        }
+                    }
+                }
+            };
+            
+            navigator.connection.addEventListener('change', updateNetworkState);
+            updateNetworkState();
+            
+            // Cleanup
+            modal.addEventListener('remove', () => {
+                navigator.connection.removeEventListener('change', updateNetworkState);
+            });
+        }
         
         // Initialize quality manager after source is set
         player.ready(() => {
@@ -2671,20 +2791,35 @@ if (document.getElementById('appContainer')) {
             activePlayer.muted(volume === 0);
         });
         
-        // Progress bar seeking
+        // Progress bar seeking (Issue 9)
         let isSeeking = false;
         
         const handleProgressClick = (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
+            // ✅ FIXED: Handle both mouse and touch events
+            const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+            
             const rect = controlsManager.elements.progressBar.getBoundingClientRect();
-            const percent = (e.clientX - rect.left) / rect.width;
+            const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
             const newTime = percent * activePlayer.duration();
-            activePlayer.currentTime(newTime);
+            
+            // ✅ NEW: Validate seek time
+            if (isFinite(newTime) && newTime >= 0) {
+                activePlayer.currentTime(newTime);
+            }
         };
         
         controlsManager.elements.progressBar.addEventListener('click', handleProgressClick);
+
+        // ✅ NEW: Add touch handler for mobile
+        if (isMobile) {
+            controlsManager.elements.progressBar.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                handleProgressClick(e);
+            }, { passive: false });
+        }
         
         controlsManager.elements.progressBar.addEventListener('mousedown', () => {
             isSeeking = true;
@@ -2838,17 +2973,36 @@ if (document.getElementById('appContainer')) {
             }
         }
         
-        // ✅ FIX 7: Mobile fullscreen handling
+        // ✅ FIX 8: Smart fullscreen handling for mobile (Issue 8)
         const handleFullscreenChange = () => {
+            const wasFullscreen = stateManager.isFullscreen;
             stateManager.isFullscreen = !!document.fullscreenElement;
             
-            // Only close on desktop fullscreen exit
-            if (!document.fullscreenElement && !isMobile) {
-                closePlayer();
+            // ✅ NEW: Don't close on mobile fullscreen changes
+            if (!isMobile) {
+                // Desktop: close when exiting fullscreen
+                if (!document.fullscreenElement && wasFullscreen) {
+                    closePlayer();
+                }
+            } else {
+                // ✅ NEW: Mobile: handle iOS native fullscreen separately
+                if (isIOS) {
+                    const videoElement = player.el().querySelector('video');
+                    if (videoElement) {
+                        // Check iOS-specific fullscreen state
+                        const isIOSFullscreen = document.webkitFullscreenElement === videoElement;
+                        stateManager.isFullscreen = isIOSFullscreen || stateManager.isFullscreen;
+                    }
+                }
+                // Mobile devices should stay open when fullscreen changes
             }
         };
         
         document.addEventListener('fullscreenchange', handleFullscreenChange);
+        // ✅ NEW: iOS-specific fullscreen handler
+        if (isIOS) {
+            document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        }
         
         // Close button and ESC key
         const closePlayer = () => {
@@ -2858,25 +3012,43 @@ if (document.getElementById('appContainer')) {
             // Stop token refresh
             tokenRefreshManager.stopRefresh(videoId);
             
+            // ✅ NEW: Clean up player events first
+            if (modal && modal._cleanupPlayerEvents) {
+                modal._cleanupPlayerEvents();
+            }
+            
             // Remove from global registry
             activePlayers.delete(playerId);
             
             // Remove event listeners
             document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
             document.removeEventListener('click', closeSettingsMenu);
             document.removeEventListener('keydown', handleKeyDown);
+            
+            // ✅ NEW: Clear all intervals/timeouts
+            if (hideControlsInterval) {
+                clearInterval(hideControlsInterval);
+            }
             
             // Exit fullscreen if active
             if (document.fullscreenElement) {
                 document.exitFullscreen().catch(() => {});
             }
             
-            // Dispose player safely
+            // ✅ FIXED: More thorough player disposal
             if (player && !player.isDisposed()) {
                 try {
+                    // Pause first to stop any ongoing operations
+                    player.pause();
+                    
+                    // Clear source to stop any network requests
+                    player.src('');
+                    
+                    // Then dispose
                     player.dispose();
                 } catch (e) {
-                    // Player already disposed
+                    // Player already disposed or in invalid state
                 }
             }
             
@@ -3113,6 +3285,26 @@ if (document.getElementById('appContainer')) {
             controlsManager.showErrorOverlay(true, errorMessage);
             analyticsTracker.trackEvent(videoId, 'error', player, tierId);
         });
+
+        // ✅ NEW: Store event cleanup function (Issue 7)
+        modal._cleanupPlayerEvents = () => {
+            if (player && !player.isDisposed()) {
+                try {
+                    player.off('loadstart');
+                    player.off('canplay');
+                    player.off('waiting');
+                    player.off('playing');
+                    player.off('play');
+                    player.off('pause');
+                    player.off('ended');
+                    player.off('timeupdate');
+                    player.off('volumechange');
+                    player.off('error');
+                } catch (error) {
+                    // Player already disposed
+                }
+            }
+        };
         
         // --- Controls Visibility Logic ---
         
@@ -3137,7 +3329,7 @@ if (document.getElementById('appContainer')) {
             });
         }
         
-        // --- Mobile Touch Gestures ---
+        // --- Mobile Touch Gestures (Issue 4) ---
 
         let touchStartX = 0;
         let touchStartY = 0;
@@ -3148,16 +3340,28 @@ if (document.getElementById('appContainer')) {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
-            // Don't interfere with controls interaction
-            if (e.target.closest('.premium-controls-wrapper') || 
-                e.target.closest('.premium-player-header')) {
+            // ✅ FIXED: Better control detection
+            const controlElements = [
+                '.premium-controls-wrapper',
+                '.premium-player-header',
+                '.premium-progress-bar',
+                '.premium-control-btn',
+                '.premium-settings-menu',
+                '.premium-volume-slider'
+            ];
+            
+            if (controlElements.some(selector => e.target.closest(selector))) {
                 return;
             }
             
-            touchStartX = e.touches[0].clientX;
-            touchStartY = e.touches[0].clientY;
-            touchStartTime = activePlayer.currentTime();
-            isSwiping = false;
+            // ✅ NEW: Prevent default only when we'll handle the gesture
+            const touchCount = e.touches.length;
+            if (touchCount === 1) {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+                touchStartTime = activePlayer.currentTime();
+                isSwiping = false;
+            }
         }, { passive: true });
 
         // ✅ NEW: Enhanced touchmove for better gesture detection
@@ -3165,11 +3369,22 @@ if (document.getElementById('appContainer')) {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
-            // Don't interfere with controls interaction
-            if (e.target.closest('.premium-controls-wrapper') || 
-                e.target.closest('.premium-player-header')) {
+            // ✅ FIXED: Same control detection as touchstart
+            const controlElements = [
+                '.premium-controls-wrapper',
+                '.premium-player-header',
+                '.premium-progress-bar',
+                '.premium-control-btn',
+                '.premium-settings-menu',
+                '.premium-volume-slider'
+            ];
+            
+            if (controlElements.some(selector => e.target.closest(selector))) {
                 return;
             }
+            
+            // ✅ NEW: Only handle single-touch gestures
+            if (e.touches.length !== 1) return;
             
             const touchCurrentX = e.touches[0].clientX;
             const touchCurrentY = e.touches[0].clientY;
@@ -3177,9 +3392,12 @@ if (document.getElementById('appContainer')) {
             const deltaX = touchCurrentX - touchStartX;
             const deltaY = touchCurrentY - touchStartY;
             
-            // Detect horizontal swipe for seeking
-            if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 30) {
+            // ✅ FIXED: Higher threshold to avoid conflicts with scroll
+            if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
                 isSwiping = true;
+                // ✅ NEW: Prevent default ONLY when we're swiping
+                e.preventDefault();
+                
                 // Show preview indicator
                 const seekAmount = (deltaX / window.innerWidth) * 30;
                 const newTime = Math.max(0, Math.min(activePlayer.duration(), touchStartTime + seekAmount));
@@ -3192,7 +3410,7 @@ if (document.getElementById('appContainer')) {
                     controlsManager.elements.gestureIndicator.classList.add('show');
                 }
             }
-        }, { passive: true });
+        }, { passive: false });
 
         modal.addEventListener('touchend', (e) => {
             const activePlayer = getSafePlayer();
@@ -3204,8 +3422,16 @@ if (document.getElementById('appContainer')) {
             }
             
             // Don't interfere with controls interaction
-            if (e.target.closest('.premium-controls-wrapper') || 
-                e.target.closest('.premium-player-header')) {
+            const controlElements = [
+                '.premium-controls-wrapper',
+                '.premium-player-header',
+                '.premium-progress-bar',
+                '.premium-control-btn',
+                '.premium-settings-menu',
+                '.premium-volume-slider'
+            ];
+            
+            if (controlElements.some(selector => e.target.closest(selector))) {
                 return;
             }
             

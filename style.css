@@ -3089,6 +3089,12 @@ body.theme-dark .announcement-error {
     
     .premium-volume-slider-wrapper {
         display: none;
+        pointer-events: none; /* ✅ FIXED: Prevent ghost interactions */
+    }
+
+    /* ✅ NEW: Hide entire volume group on mobile */
+    .premium-volume-group {
+        display: none !important;
     }
     
     .premium-settings-menu {
