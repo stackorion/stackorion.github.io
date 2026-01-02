@@ -1,3 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Mobile Video Player Application</title>
+    
+    <!-- Video.js CSS -->
+    <link href="https://vjs.zencdn.net/8.6.1/video-js.css" rel="stylesheet" />
+    
+    <!-- Basic Application Styles -->
+    <style>
+        :root {
+            --primary-color: #e50914;
+            --bg-dark: #141414;
+            --text-light: #ffffff;
+            --overlay-bg: rgba(0, 0, 0, 0.7);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* App Structure */
+        #app-loader {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            transition: opacity 0.4s ease;
+        }
+        
+        #app-container { display: none; }
+
+        /* Video Player Specifics */
+        .premium-player-modal {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .premium-player-content {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            background: #000;
+        }
+
+        .premium-video-wrapper {
+            position: relative;
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            overflow: hidden;
+        }
+
+        .video-js {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .video-js .vjs-tech {
+            object-fit: contain;
+        }
+
+        /* Controls */
+        .premium-controls-wrapper {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0));
+            padding: 20px 20px 40px 20px; /* Safe area for mobile */
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        .premium-controls-wrapper.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .premium-progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 3px;
+            position: relative;
+            cursor: pointer;
+            touch-action: none; /* Prevent scroll while seeking */
+        }
+
+        .premium-progress-played {
+            height: 100%;
+            background: var(--primary-color);
+            border-radius: 3px;
+            width: 0%;
+        }
+
+        .premium-progress-handle {
+            position: absolute;
+            top: 50%;
+            width: 14px;
+            height: 14px;
+            background: #fff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            margin-top: -1px; /* Visual adjustment */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            left: 0%;
+            pointer-events: none;
+        }
+
+        /* Buttons */
+        .premium-control-btn {
+            background: none;
+            border: none;
+            color: white;
+            padding: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background 0.2s;
+        }
+
+        .premium-control-btn:active {
+            background: rgba(255,255,255,0.2);
+        }
+
+        /* Overlays */
+        .premium-center-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+        }
+
+        .premium-center-play-btn {
+            width: 80px;
+            height: 80px;
+            background: rgba(0,0,0,0.6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            opacity: 0;
+            transition: opacity 0.3s, transform 0.2s;
+            pointer-events: auto; /* Must be clickable */
+        }
+
+        .premium-center-play-btn.show {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* Loading/Error */
+        .player-loading-overlay, .player-error-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .player-loading-overlay.active, .player-error-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .player-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Gesture Indicator */
+        .premium-gesture-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.7);
+            padding: 20px 30px;
+            border-radius: 8px;
+            font-size: 24px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+            z-index: 15;
+        }
+
+        .premium-gesture-indicator.show { opacity: 1; }
+
+        /* Skeletons */
+        .skeleton {
+            background: linear-gradient(90deg, #1f1f1f 25%, #2a2a2a 50%, #1f1f1f 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+            border-radius: 4px;
+        }
+        @keyframes loading { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+        /* Utility */
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <!-- App Loader -->
+    <div id="app-loader">
+        <div class="player-spinner" style="width: 60px; height: 60px;"></div>
+        <div style="margin-top: 20px; font-weight: 500;">Loading Experience...</div>
+    </div>
+
+    <!-- Main App Container -->
+    <div id="appContainer">
+        <header style="padding: 15px; display: flex; justify-content: space-between; align-items: center; background: #000;">
+            <div id="logo" style="font-weight: bold; font-size: 1.2rem;">STREAMER</div>
+            <div id="headerActions">
+                <button id="logoutButton" class="premium-control-btn" style="width: 32px; height: 32px;">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <div id="announcementSliderContainer" style="margin-bottom: 20px; display: none;"></div>
+        <div id="subscriptionStatus" style="padding: 0 15px; display: none;"></div>
+        
+        <main id="mainContent" style="padding: 20px; padding-bottom: 80px;">
+            <!-- Dynamic Content Injected Here -->
+        </main>
+        
+        <div id="searchContainer" style="padding: 0 20px 20px 20px; display: none;">
+            <input type="text" id="searchInput" placeholder="Search..." style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #1a1a1a; color: #fff; box-sizing: border-box;">
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="platformModal" class="modal">
+        <div class="modal-content" style="background: #1a1a1a; padding: 20px; border-radius: 8px; max-width: 500px; margin: 50px auto; position: relative;">
+            <span class="modal-close-btn" style="position: absolute; top: 10px; right: 15px; font-size: 24px; cursor: pointer;">&times;</span>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/swiper@10/swiper-bundle.min.js"></script>
+    
+    <script type="module">
+        import PhotoSwipeLightbox from 'https://unpkg.com/photoswipe@5.4.3/dist/photoswipe-lightbox.esm.js';
+        import PhotoSwipe from 'https://unpkg.com/photoswipe@5.4.3/dist/photoswipe.esm.js';
+        
+        window.PhotoSwipe = PhotoSwipe;
+        window.PhotoSwipeLightbox = PhotoSwipeLightbox;
+    </script>
+
+    <script>
 // Configuration - IMPORTANT: This MUST match your live backend URL
 const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
 
@@ -533,8 +826,16 @@ class PremiumControlsManager {
     }
 
     hideControls() {
+        // ✅ FIXED: Better mobile detection
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
         // Allow hiding even when paused in fullscreen mode
         if (this.state.isSeeking) return;
+        
+        // ✅ NEW: On mobile, only hide if video is playing
+        if (isMobile && this.player && this.player.paused && !this.player.isDisposed()) {
+            return;
+        }
         
         this.state.showingControls = false;
         
@@ -551,11 +852,15 @@ class PremiumControlsManager {
             clearTimeout(this.state.controlsTimeout);
         }
         
+        // ✅ NEW: Mobile-specific timeout duration
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        const hideDelay = isMobile ? 3000 : 4000; // Shorter on mobile
+        
         this.state.controlsTimeout = setTimeout(() => {
             if (this.state.shouldHideControls()) {
                 this.hideControls();
             }
-        }, 4000);
+        }, hideDelay);
     }
 
     updatePlayButton(isPlaying) {
@@ -2472,20 +2777,51 @@ if (document.getElementById('appContainer')) {
                 }, { passive: false });
             }
             
-            // Enhanced touch controls visibility
+            // ✅ NEW: Enhanced touch controls visibility for mobile
             let touchTimer;
-            const handleTouchInteraction = () => {
+            let lastTouchTime = 0;
+            
+            const handleTouchInteraction = (e) => {
+                const now = Date.now();
+                const timeSinceLastTouch = now - lastTouchTime;
+                lastTouchTime = now;
+                
+                // Skip if touching controls directly
+                const controlElements = [
+                    '.premium-control-btn',
+                    '.premium-progress-bar',
+                    '.premium-settings-menu'
+                ];
+                
+                if (controlElements.some(selector => e.target.closest(selector))) {
+                    return;
+                }
+                
+                // ✅ NEW: Toggle controls visibility on quick tap (not swipe)
+                if (e.type === 'touchend' && timeSinceLastTouch < 200 && !touchMoved) {
+                    if (controlsManager.state.showingControls) {
+                        controlsManager.hideControls();
+                    } else {
+                        controlsManager.showControls();
+                    }
+                    return;
+                }
+                
+                // Show controls on any touch movement
                 controlsManager.showControls();
                 clearTimeout(touchTimer);
+                
+                // Auto-hide after delay
                 touchTimer = setTimeout(() => {
                     if (!player.paused()) {
                         controlsManager.hideControls();
                     }
-                }, 4000);
+                }, 3000);
             };
             
             modal.addEventListener('touchstart', handleTouchInteraction, { passive: true });
             modal.addEventListener('touchmove', handleTouchInteraction, { passive: true });
+            modal.addEventListener('touchend', handleTouchInteraction, { passive: true });
         }
         
         // ✅ FIX 7: Handle iOS video fullscreen properly
@@ -2569,6 +2905,7 @@ if (document.getElementById('appContainer')) {
         if (isMobile) {
             let orientationTimeout;
             let lastOrientation = window.orientation;
+            let isChangingOrientation = false;
             
             const handleOrientationChange = () => {
                 // ✅ NEW: Clear previous timeout
@@ -2580,6 +2917,15 @@ if (document.getElementById('appContainer')) {
                 const currentOrientation = window.orientation;
                 if (currentOrientation === lastOrientation) return;
                 lastOrientation = currentOrientation;
+                isChangingOrientation = true;
+                
+                // ✅ NEW: Pause interactions during rotation
+                modal.style.pointerEvents = 'none';
+                
+                // ✅ NEW: Show loading indicator
+                if (controlsManager.elements.loadingOverlay) {
+                    controlsManager.elements.loadingOverlay.classList.add('active');
+                }
                 
                 // ✅ FIXED: Debounced resize with player validation
                 orientationTimeout = setTimeout(() => {
@@ -2592,7 +2938,22 @@ if (document.getElementById('appContainer')) {
                             if (videoElement) {
                                 videoElement.style.width = '100%';
                                 videoElement.style.height = '100%';
+                                
+                                // ✅ NEW: Force repaint
+                                videoElement.offsetHeight;
                             }
+                            
+                            // ✅ NEW: Re-enable interactions
+                            modal.style.pointerEvents = '';
+                            isChangingOrientation = false;
+                            
+                            // ✅ NEW: Hide loading indicator
+                            if (controlsManager.elements.loadingOverlay) {
+                                controlsManager.elements.loadingOverlay.classList.remove('active');
+                            }
+                            
+                            // ✅ NEW: Show controls briefly
+                            controlsManager.showControls();
                         } catch (error) {
                             // Player disposed during orientation change
                         }
@@ -2602,6 +2963,14 @@ if (document.getElementById('appContainer')) {
             
             window.addEventListener('orientationchange', handleOrientationChange);
             window.addEventListener('resize', handleOrientationChange);
+            
+             // ✅ NEW: Prevent touches during orientation change
+            modal.addEventListener('touchstart', (e) => {
+                if (isChangingOrientation) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            }, { passive: false, capture: true });
             
             // Cleanup on modal removal
             modal.addEventListener('remove', () => {
@@ -2733,6 +3102,21 @@ if (document.getElementById('appContainer')) {
         
         // --- Event Handlers ---
         
+        // ✅ NEW: Haptic feedback utility for iOS
+        function triggerHapticFeedback(style = 'medium') {
+            if ('vibrate' in navigator) {
+                // Simple vibration for Android
+                navigator.vibrate(10);
+            }
+            
+            // iOS haptic feedback
+            if (window.Taptic && window.Taptic.impact) {
+                window.Taptic.impact(style);
+            } else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.haptic) {
+                window.webkit.messageHandlers.haptic.postMessage({ style: style });
+            }
+        }
+        
         // Play/Pause
         const togglePlayPause = () => {
             if (!isPlayerHealthy(playerId)) {
@@ -2744,8 +3128,10 @@ if (document.getElementById('appContainer')) {
             try {
                 if (activePlayer.paused()) {
                     activePlayer.play().catch(() => {});
+                    triggerHapticFeedback('light'); // ✅ NEW
                 } else {
                     activePlayer.pause();
+                    triggerHapticFeedback('light'); // ✅ NEW
                 }
             } catch (error) {
                 cleanupPlayer(playerId);
@@ -2753,7 +3139,29 @@ if (document.getElementById('appContainer')) {
         };
         
         controlsManager.elements.playBtn.addEventListener('click', togglePlayPause);
-        controlsManager.elements.centerPlayBtn.addEventListener('click', togglePlayPause);
+        
+        // ✅ NEW: Fixed Center Play Button Handling
+        const centerPlayBtnClickHandler = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            togglePlayPause();
+        };
+
+        // Use both click and touchend for reliability
+        controlsManager.elements.centerPlayBtn.addEventListener('click', centerPlayBtnClickHandler);
+
+        // ✅ NEW: Add touchend listener for iOS reliability
+        if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+            controlsManager.elements.centerPlayBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Only trigger if touch didn't move (not a swipe)
+                if (!touchMoved) {
+                    togglePlayPause();
+                }
+            }, { passive: false });
+        }
         
         // Skip buttons
         controlsManager.elements.skipBackward.addEventListener('click', () => {
@@ -2762,6 +3170,7 @@ if (document.getElementById('appContainer')) {
             
             activePlayer.currentTime(Math.max(0, activePlayer.currentTime() - 10));
             controlsManager.showGestureIndicator('⏪');
+            triggerHapticFeedback('medium'); // ✅ NEW
         });
         
         controlsManager.elements.skipForward.addEventListener('click', () => {
@@ -2770,6 +3179,7 @@ if (document.getElementById('appContainer')) {
             
             activePlayer.currentTime(Math.min(activePlayer.duration(), activePlayer.currentTime() + 10));
             controlsManager.showGestureIndicator('⏩');
+            triggerHapticFeedback('medium'); // ✅ NEW
         });
         
         // Volume controls
@@ -2791,15 +3201,19 @@ if (document.getElementById('appContainer')) {
             activePlayer.muted(volume === 0);
         });
         
-        // Progress bar seeking (Issue 9)
+        // ✅ FIXED: Progress bar seeking with better mobile support
+        // Progress bar seeking
         let isSeeking = false;
-        
+        let seekStartTime = 0; // ✅ NEW: Track seek start time
+
         const handleProgressClick = (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
-            // ✅ FIXED: Handle both mouse and touch events
-            const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+            // ✅ FIXED: Better touch coordinate handling
+            const clientX = e.type.includes('touch') ? 
+                (e.touches && e.touches[0] ? e.touches[0].clientX : e.changedTouches[0].clientX) : 
+                e.clientX;
             
             const rect = controlsManager.elements.progressBar.getBoundingClientRect();
             const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
@@ -2808,47 +3222,99 @@ if (document.getElementById('appContainer')) {
             // ✅ NEW: Validate seek time
             if (isFinite(newTime) && newTime >= 0) {
                 activePlayer.currentTime(newTime);
+                
+                // ✅ NEW: Visual feedback for mobile
+                if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                    controlsManager.elements.progressBar.style.setProperty('--touch-x', `${percent * 100}%`);
+                }
             }
         };
-        
-        controlsManager.elements.progressBar.addEventListener('click', handleProgressClick);
 
-        // ✅ NEW: Add touch handler for mobile
-        if (isMobile) {
-            controlsManager.elements.progressBar.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                handleProgressClick(e);
-            }, { passive: false });
-        }
-        
-        controlsManager.elements.progressBar.addEventListener('mousedown', () => {
+        // ✅ NEW: Unified touch/mouse event handling
+        const startSeeking = (e) => {
             isSeeking = true;
+            seekStartTime = Date.now();
             stateManager.isSeeking = true;
             controlsManager.elements.progressBar.classList.add('seeking');
-        });
-        
-        document.addEventListener('mousemove', (e) => {
+            
+            // ✅ NEW: Prevent text selection on mobile
+            e.preventDefault();
+            
+            // Update position immediately
+            handleProgressClick(e);
+        };
+
+        const continueSeeking = (e) => {
             if (!isSeeking) return;
+            
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
+            
+            const clientX = e.type.includes('touch') ? 
+                (e.touches && e.touches[0] ? e.touches[0].clientX : e.changedTouches[0].clientX) : 
+                e.clientX;
             
             const rect = controlsManager.elements.progressBar.getBoundingClientRect();
-            const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            
             controlsManager.elements.progressPlayed.style.width = `${percent * 100}%`;
             controlsManager.elements.progressHandle.style.left = `${percent * 100}%`;
-        });
-        
-        document.addEventListener('mouseup', () => {
+            
+            // ✅ NEW: Show time preview on mobile
+            if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                const time = percent * activePlayer.duration();
+                if (controlsManager.elements.timeDisplay) {
+                    controlsManager.elements.timeDisplay.textContent = 
+                        `${controlsManager.formatTime(time)} / ${controlsManager.formatTime(activePlayer.duration())}`;
+                }
+            }
+        };
+
+        const endSeeking = (e) => {
             if (!isSeeking) return;
+            
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
-            const percent = parseFloat(controlsManager.elements.progressPlayed.style.width) / 100;
-            activePlayer.currentTime(percent * activePlayer.duration());
+            // ✅ NEW: Only seek if it was an intentional drag (not a quick tap)
+            const seekDuration = Date.now() - seekStartTime;
+            
+            const clientX = e.type.includes('touch') ? 
+                (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : e.clientX) : 
+                e.clientX;
+            
+            const rect = controlsManager.elements.progressBar.getBoundingClientRect();
+            const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            const newTime = percent * activePlayer.duration();
+            
+            if (isFinite(newTime) && newTime >= 0) {
+                activePlayer.currentTime(newTime);
+            }
+            
             isSeeking = false;
             stateManager.isSeeking = false;
             controlsManager.elements.progressBar.classList.remove('seeking');
+        };
+
+        // ✅ NEW: Single click/tap handler for progress bar
+        controlsManager.elements.progressBar.addEventListener('click', (e) => {
+            // Only handle direct clicks, not drags
+            if (!isSeeking) {
+                handleProgressClick(e);
+            }
         });
+
+        // Mouse events (desktop)
+        controlsManager.elements.progressBar.addEventListener('mousedown', startSeeking);
+        document.addEventListener('mousemove', continueSeeking);
+        document.addEventListener('mouseup', endSeeking);
+
+        // ✅ NEW: Touch events (mobile)
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+            controlsManager.elements.progressBar.addEventListener('touchstart', startSeeking, { passive: false });
+            document.addEventListener('touchmove', continueSeeking, { passive: false });
+            document.addEventListener('touchend', endSeeking, { passive: false });
+        }
         
         // Progress bar hover - show thumbnail preview
         controlsManager.elements.progressBar.addEventListener('mousemove', (e) => {
@@ -3329,18 +3795,19 @@ if (document.getElementById('appContainer')) {
             });
         }
         
-        // --- Mobile Touch Gestures (Issue 4) ---
+        // --- Mobile Touch Gestures (Issue 1 & 2 Fixes) ---
 
         let touchStartX = 0;
         let touchStartY = 0;
         let touchStartTime = 0;
         let isSwiping = false;
+        let touchMoved = false; // ✅ NEW: Track if touch moved significantly
+        let preventNextClick = false; // ✅ NEW: Flag to prevent ghost clicks
 
         modal.addEventListener('touchstart', (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
-            // ✅ FIXED: Better control detection
             const controlElements = [
                 '.premium-controls-wrapper',
                 '.premium-player-header',
@@ -3354,22 +3821,22 @@ if (document.getElementById('appContainer')) {
                 return;
             }
             
-            // ✅ NEW: Prevent default only when we'll handle the gesture
             const touchCount = e.touches.length;
             if (touchCount === 1) {
                 touchStartX = e.touches[0].clientX;
                 touchStartY = e.touches[0].clientY;
                 touchStartTime = activePlayer.currentTime();
                 isSwiping = false;
+                touchMoved = false; // ✅ NEW: Reset movement flag
+                preventNextClick = false; // ✅ NEW: Reset click prevention flag
             }
         }, { passive: true });
-
-        // ✅ NEW: Enhanced touchmove for better gesture detection
+        
+        // Replace touchmove handler
         modal.addEventListener('touchmove', (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
-            // ✅ FIXED: Same control detection as touchstart
             const controlElements = [
                 '.premium-controls-wrapper',
                 '.premium-player-header',
@@ -3383,7 +3850,6 @@ if (document.getElementById('appContainer')) {
                 return;
             }
             
-            // ✅ NEW: Only handle single-touch gestures
             if (e.touches.length !== 1) return;
             
             const touchCurrentX = e.touches[0].clientX;
@@ -3392,17 +3858,19 @@ if (document.getElementById('appContainer')) {
             const deltaX = touchCurrentX - touchStartX;
             const deltaY = touchCurrentY - touchStartY;
             
-            // ✅ FIXED: Higher threshold to avoid conflicts with scroll
+            // ✅ NEW: Mark as moved if threshold exceeded
+            if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+                touchMoved = true;
+            }
+            
             if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
                 isSwiping = true;
-                // ✅ NEW: Prevent default ONLY when we're swiping
+                preventNextClick = true; // ✅ NEW: Prevent click after swipe
                 e.preventDefault();
                 
-                // Show preview indicator
                 const seekAmount = (deltaX / window.innerWidth) * 30;
                 const newTime = Math.max(0, Math.min(activePlayer.duration(), touchStartTime + seekAmount));
                 
-                // Update visual feedback
                 if (controlsManager.elements.gestureIndicator) {
                     const direction = deltaX > 0 ? '⏩' : '⏪';
                     const seconds = Math.abs(Math.round(seekAmount));
@@ -3411,17 +3879,16 @@ if (document.getElementById('appContainer')) {
                 }
             }
         }, { passive: false });
-
+        
+        // Replace touchend handler
         modal.addEventListener('touchend', (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
-            // Hide gesture indicator
             if (controlsManager.elements.gestureIndicator) {
                 controlsManager.elements.gestureIndicator.classList.remove('show');
             }
             
-            // Don't interfere with controls interaction
             const controlElements = [
                 '.premium-controls-wrapper',
                 '.premium-player-header',
@@ -3441,9 +3908,8 @@ if (document.getElementById('appContainer')) {
             const deltaX = touchEndX - touchStartX;
             const deltaY = touchEndY - touchStartY;
             
-            // Only handle horizontal swipes (ignore vertical scrolls)
             if (isSwiping && Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
-                const seekAmount = (deltaX / window.innerWidth) * 30; // Max 30 seconds per full swipe
+                const seekAmount = (deltaX / window.innerWidth) * 30;
                 const newTime = Math.max(0, Math.min(activePlayer.duration(), touchStartTime + seekAmount));
                 activePlayer.currentTime(newTime);
                 
@@ -3454,39 +3920,105 @@ if (document.getElementById('appContainer')) {
                 }
             }
             
+            // ✅ NEW: Prevent click events after gesture
+            if (preventNextClick) {
+                const preventClickHandler = (clickEvent) => {
+                    clickEvent.preventDefault();
+                    clickEvent.stopPropagation();
+                    modal.removeEventListener('click', preventClickHandler, true);
+                };
+                modal.addEventListener('click', preventClickHandler, true);
+                
+                // Clear flag after short delay
+                setTimeout(() => {
+                    preventNextClick = false;
+                    modal.removeEventListener('click', preventClickHandler, true);
+                }, 300);
+            }
+            
             isSwiping = false;
+            touchMoved = false; // ✅ NEW: Reset movement flag
         }, { passive: true });
         
-        // --- Double-tap to skip (mobile) ---
-        
+        // --- Enhanced Double-tap with Clear Zone Detection ---
+
         let lastTapTime = 0;
+        let lastTapX = 0;
         const doubleTapThreshold = 300;
-        
+        const centerTapZoneWidth = 0.4; // 40% of screen width in center
+
         modal.addEventListener('touchend', (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
+            // ✅ NEW: Don't process taps if user was swiping
+            if (touchMoved || isSwiping) {
+                return;
+            }
+            
+            // Skip if touching controls
+            const controlElements = [
+                '.premium-controls-wrapper',
+                '.premium-player-header',
+                '.premium-progress-bar',
+                '.premium-control-btn',
+                '.premium-settings-menu'
+            ];
+            
+            if (controlElements.some(selector => e.target.closest(selector))) {
+                return;
+            }
+            
             const currentTime = Date.now();
             const tapLength = currentTime - lastTapTime;
+            const tapX = e.changedTouches[0].clientX;
+            const screenWidth = window.innerWidth;
             
-            if (tapLength < doubleTapThreshold && tapLength > 0) {
+            // Calculate tap zones
+            const leftZoneEnd = screenWidth * 0.3;
+            const rightZoneStart = screenWidth * 0.7;
+            const centerZoneStart = screenWidth * ((1 - centerTapZoneWidth) / 2);
+            const centerZoneEnd = screenWidth * ((1 + centerTapZoneWidth) / 2);
+            
+            // ✅ NEW: Check if tap is in same general area as last tap
+            const isSameArea = Math.abs(tapX - lastTapX) < screenWidth * 0.15;
+            
+            if (tapLength < doubleTapThreshold && tapLength > 0 && isSameArea) {
                 // Double tap detected
-                const tapX = e.changedTouches[0].clientX;
-                const screenWidth = window.innerWidth;
+                e.preventDefault(); // ✅ NEW: Prevent any default behavior
                 
-                if (tapX < screenWidth / 3) {
+                if (tapX < leftZoneEnd) {
                     // Left side - rewind
                     activePlayer.currentTime(Math.max(0, activePlayer.currentTime() - 10));
                     controlsManager.showGestureIndicator('⏪ 10s');
-                } else if (tapX > (screenWidth * 2) / 3) {
+                    triggerHapticFeedback('medium');
+                } else if (tapX > rightZoneStart) {
                     // Right side - forward
                     activePlayer.currentTime(Math.min(activePlayer.duration(), activePlayer.currentTime() + 10));
                     controlsManager.showGestureIndicator('⏩ 10s');
+                    triggerHapticFeedback('medium');
+                } else if (tapX >= centerZoneStart && tapX <= centerZoneEnd) {
+                    // Center - toggle play/pause
+                    togglePlayPause();
                 }
                 
                 lastTapTime = 0; // Reset to prevent triple-tap
+                lastTapX = 0;
             } else {
+                // Potential first tap of double-tap sequence
                 lastTapTime = currentTime;
+                lastTapX = tapX;
+                
+                // ✅ NEW: Immediate single-tap feedback for center zone only
+                if (tapX >= centerZoneStart && tapX <= centerZoneEnd) {
+                    // Delay to allow for double-tap detection
+                    setTimeout(() => {
+                        // Only execute if no double-tap occurred
+                        if (Date.now() - lastTapTime >= doubleTapThreshold) {
+                            togglePlayPause();
+                        }
+                    }, doubleTapThreshold);
+                }
             }
         });
         
@@ -3674,3 +4206,6 @@ if (document.getElementById('appContainer')) {
         cleanupAllVideoPlayers();
     });
 }
+    </script>
+</body>
+</html>

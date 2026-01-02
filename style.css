@@ -1872,6 +1872,21 @@ body.theme-dark .announcement-error {
     pointer-events: auto;
 }
 
+/* ✅ NEW: Prevent touches during loading */
+.player-loading-overlay.active,
+.player-error-overlay.active {
+    pointer-events: auto;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    user-select: none;
+}
+
+/* ✅ NEW: Allow interaction with error buttons */
+.player-error-overlay.active .player-error-btn {
+    pointer-events: auto;
+    touch-action: manipulation;
+}
+
 .player-spinner {
     width: 60px;
     height: 60px;
@@ -2169,6 +2184,73 @@ body.theme-dark .announcement-error {
     font-family: 'Courier New', monospace;
 }
 
+/* ✅ NEW: Enhanced Mobile Progress Bar Touch Targets */
+@media (max-width: 768px) {
+    .premium-progress-container {
+        padding: 20px 20px 12px; /* ✅ Increased top padding for easier touch */
+    }
+    
+    .premium-progress-bar {
+        height: 8px;
+        position: relative;
+        cursor: pointer;
+    }
+    
+    /* ✅ NEW: Invisible extended touch target */
+    .premium-progress-bar::before {
+        content: '';
+        position: absolute;
+        top: -20px;
+        bottom: -20px;
+        left: 0;
+        right: 0;
+        background: transparent;
+    }
+    
+    .premium-progress-bar:hover {
+        height: 8px; /* Don't expand on mobile */
+    }
+    
+    .premium-progress-handle {
+        width: 20px;
+        height: 20px;
+        transform: translate(-50%, -50%) scale(1); /* ✅ Always visible on mobile */
+        opacity: 0.9;
+    }
+    
+    /* ✅ NEW: Active state feedback */
+    .premium-progress-bar:active .premium-progress-handle {
+        transform: translate(-50%, -50%) scale(1.4);
+        box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.2);
+    }
+    
+    /* ✅ NEW: Touch feedback ripple */
+    .premium-progress-bar:active::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: var(--touch-x, 50%);
+        width: 40px;
+        height: 40px;
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        animation: progressRipple 0.6s ease-out;
+        pointer-events: none;
+    }
+}
+
+@keyframes progressRipple {
+    from {
+        transform: translate(-50%, -50%) scale(0);
+        opacity: 1;
+    }
+    to {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0;
+    }
+}
+
 /* Bottom Controls Row */
 .premium-controls-row {
     padding: 0 40px 24px;
@@ -2388,6 +2470,64 @@ body.theme-dark .announcement-error {
     margin-left: 12px;
 }
 
+/* ✅ NEW: Mobile Settings Menu Improvements */
+@media (max-width: 768px) {
+    .premium-settings-menu {
+        min-width: 180px;
+        right: -10px; /* Better positioning */
+        bottom: calc(100% + 8px); /* Closer to button */
+        font-size: 0.9rem;
+    }
+    
+    .premium-settings-header {
+        padding: 10px 14px;
+        font-size: 0.75rem;
+    }
+    
+    .premium-settings-item {
+        padding: 14px 16px; /* ✅ Larger touch targets */
+        font-size: 0.95rem;
+        min-height: 48px; /* ✅ Meet touch target guidelines */
+        display: flex;
+        align-items: center;
+        
+        /* ✅ NEW: Touch feedback */
+        -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
+        touch-action: manipulation;
+    }
+    
+    .premium-settings-item:active {
+        background: rgba(255, 255, 255, 0.2);
+        transform: scale(0.98);
+    }
+    
+    .premium-settings-item.active {
+        background: rgba(255, 255, 255, 0.2);
+        font-weight: 600;
+        border-left: 3px solid #fff; /* ✅ Visual indicator */
+    }
+    
+    .premium-settings-item.active::after {
+        content: '✓';
+        font-size: 1.1rem;
+        margin-left: auto;
+    }
+}
+
+@media (max-width: 480px) {
+    .premium-settings-menu {
+        min-width: 160px;
+        max-height: 50vh; /* ✅ Prevent overflow on small screens */
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .premium-settings-item {
+        padding: 16px; /* ✅ Even larger on smallest screens */
+        font-size: 0.9rem;
+    }
+}
+
 /* Fullscreen Button */
 .premium-fullscreen-btn .exit-fullscreen {
     display: none;
@@ -2472,6 +2612,7 @@ body.theme-dark .announcement-error {
     z-index: 40;
 }
 
+/* ✅ FIXED: Center Play Button Mobile Improvements */
 .premium-center-play-btn {
     width: 80px;
     height: 80px;
@@ -2487,22 +2628,58 @@ body.theme-dark .announcement-error {
     opacity: 0;
     transform: scale(0.8);
     pointer-events: auto;
+    
+    /* ✅ NEW: Ensure fast tap response */
+    -webkit-tap-highlight-color: rgba(255, 255, 255, 0.3);
+    touch-action: manipulation;
 }
 
 .premium-center-play-btn.show {
     opacity: 1;
     transform: scale(1);
+    
+    /* ✅ NEW: Force repaint on iOS */
+    will-change: transform, opacity;
 }
 
-.premium-center-play-btn:hover {
-    transform: scale(1.1);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+.premium-center-play-btn:active {
+    transform: scale(0.9);
+    background: rgba(255, 255, 255, 1);
 }
 
 .premium-center-play-btn svg {
     width: 36px;
     height: 36px;
     fill: #000;
+    pointer-events: none; /* ✅ NEW: Don't let SVG block touch */
+}
+
+/* ✅ NEW: Mobile-specific adjustments */
+@media (max-width: 768px) {
+    .premium-center-play-btn {
+        width: 70px;
+        height: 70px;
+        
+        /* ✅ NEW: Extended touch target */
+        padding: 0;
+        position: relative;
+    }
+    
+    .premium-center-play-btn::before {
+        content: '';
+        position: absolute;
+        top: -15px;
+        right: -15px;
+        bottom: -15px;
+        left: -15px;
+        background: transparent;
+        border-radius: 50%;
+    }
+    
+    .premium-center-play-btn svg {
+        width: 32px;
+        height: 32px;
+    }
 }
 
 /* Quality/Speed Change Indicator */
@@ -3062,20 +3239,59 @@ body.theme-dark .announcement-error {
         padding: 0 20px 12px;
     }
     
+    /* ✅ NEW: Enhanced Mobile Control Buttons */
     .premium-control-btn {
         padding: 8px;
-        min-width: 48px;
-        min-height: 48px;
+        min-width: 48px; /* ✅ Android minimum */
+        min-height: 48px; /* ✅ Android minimum */
+        position: relative; /* ✅ NEW: For extended touch target */
+    }
+    
+    /* ✅ NEW: Extended invisible touch target */
+    .premium-control-btn::before {
+        content: '';
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        bottom: -8px;
+        left: -8px;
+        background: transparent;
+    }
+    
+    /* ✅ NEW: Visual feedback on touch */
+    .premium-control-btn:active {
+        background: rgba(255, 255, 255, 0.25);
+        transform: scale(0.95);
     }
     
     .premium-control-btn svg {
         width: 20px;
         height: 20px;
+        pointer-events: none; /* ✅ NEW: Prevent SVG from blocking touch */
+    }
+    
+    /* Larger primary controls */
+    .premium-play-btn {
+        min-width: 56px;
+        min-height: 56px;
     }
     
     .premium-play-btn svg {
         width: 28px;
         height: 28px;
+    }
+    
+    /* ✅ NEW: Enhanced skip button targets */
+    .premium-skip-btn {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 8px;
+        min-width: 52px;
+        min-height: 52px;
+    }
+    
+    .premium-skip-btn:active {
+        background: rgba(255, 255, 255, 0.3);
+        transform: scale(0.95);
     }
     
     .premium-skip-btn svg {
@@ -3145,16 +3361,6 @@ body.theme-dark .announcement-error {
         padding: 14px 20px;
     }
     
-    .premium-skip-btn {
-        background: rgba(255, 255, 255, 0.15);
-        border-radius: 8px;
-    }
-    
-    .premium-skip-btn:active {
-        background: rgba(255, 255, 255, 0.3);
-        transform: scale(0.95);
-    }
-    
     .premium-player-modal.mobile-player .player-loading-overlay {
         position: absolute;
         top: 0;
@@ -3184,7 +3390,23 @@ body.theme-dark .announcement-error {
     }
 }
 
+/* ✅ NEW: Extra small screens need even more careful sizing */
 @media (max-width: 480px) {
+    .premium-control-btn {
+        min-width: 44px; /* ✅ iOS minimum */
+        min-height: 44px; /* ✅ iOS minimum */
+    }
+    
+    .premium-controls-row {
+        gap: 8px; /* Tighter spacing to fit controls */
+    }
+    
+    /* Hide secondary controls on smallest screens */
+    .premium-skip-backward,
+    .premium-skip-forward {
+        display: none; /* Use double-tap gestures instead */
+    }
+
     /* Gallery */
     .gallery-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -3232,19 +3454,6 @@ body.theme-dark .announcement-error {
     }
     
     /* Premium Video Player */
-    .premium-controls-row {
-        gap: 8px;
-    }
-    
-    .premium-control-btn {
-        padding: 6px;
-    }
-    
-    .premium-skip-backward,
-    .premium-skip-forward {
-        display: none;
-    }
-    
     .premium-settings-menu {
         min-width: 160px;
         font-size: 0.9rem;
