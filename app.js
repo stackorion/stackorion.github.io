@@ -3204,6 +3204,37 @@ if (document.getElementById('appContainer')) {
 
     // --- Main Application Router ---
     async function router() {
+        // ✅ iOS FIX: Prevent infinite redirects
+        const maxRedirects = 3;
+        const redirectKey = 'router_redirect_count';
+        const redirectTimestampKey = 'router_redirect_timestamp';
+        
+        try {
+            const redirectCount = parseInt(sessionStorage.getItem(redirectKey) || '0', 10);
+            const lastRedirect = parseInt(sessionStorage.getItem(redirectTimestampKey) || '0', 10);
+            const now = Date.now();
+            
+            // Reset counter if more than 10 seconds passed
+            if (now - lastRedirect > 10000) {
+                sessionStorage.setItem(redirectKey, '0');
+            } else if (redirectCount >= maxRedirects) {
+                // Too many redirects - clear everything and force login
+                console.error('[iOS Debug] Redirect loop detected, clearing session');
+                sessionStorage.clear();
+                localStorage.clear();
+                window.location.replace('login.html');
+                return;
+            }
+            
+            // Increment counter
+            sessionStorage.setItem(redirectKey, (redirectCount + 1).toString());
+            sessionStorage.setItem(redirectTimestampKey, now.toString());
+            
+        } catch (e) {
+            // SessionStorage not available - continue anyway
+            console.warn('[iOS Debug] SessionStorage check failed:', e);
+        }
+
         // Clean up any existing video players before loading new content
         cleanupAllVideoPlayers();
         
@@ -3215,11 +3246,19 @@ if (document.getElementById('appContainer')) {
         const appContainer = document.getElementById('appContainer');
         
         function hideAppLoader() {
+            // ✅ iOS FIX: Force reflow before hiding loader
             if (appLoader && appContainer) {
+                // Force browser repaint (iOS Safari fix)
+                void appLoader.offsetHeight;
+                
                 appLoader.style.opacity = '0';
                 appContainer.style.display = 'block';
+                
+                // ✅ iOS FIX: Ensure container is actually visible
                 setTimeout(() => {
-                    appLoader.remove();
+                    if (appLoader && appLoader.parentNode) {
+                        appLoader.remove();
+                    }
                 }, 400);
             }
         }
@@ -3237,8 +3276,49 @@ if (document.getElementById('appContainer')) {
         renderRenewalBanner();
         await renderHeaderActions();
 
-        if (!isTokenValid()) {
-            window.location.href = 'login.html';
+        // ✅ iOS FIX: Enhanced token validation with explicit checks
+        function isTokenValidSafe() {
+            try {
+                const token = localStorage.getItem('lustroom_jwt');
+                const obtainedAt = localStorage.getItem('lustroom_jwt_obtained_at');
+                const expiresIn = localStorage.getItem('lustroom_jwt_expires_in');
+                
+                // Explicit null checks
+                if (!token || token === 'null' || token === 'undefined') {
+                    console.log('[iOS Debug] No valid token found');
+                    return false;
+                }
+                
+                if (!obtainedAt || obtainedAt === 'null' || !expiresIn || expiresIn === 'null') {
+                    console.log('[iOS Debug] Missing token metadata');
+                    return false;
+                }
+                
+                const obtainedAtInt = parseInt(obtainedAt, 10);
+                const expiresInInt = parseInt(expiresIn, 10);
+                
+                if (isNaN(obtainedAtInt) || isNaN(expiresInInt)) {
+                    console.log('[iOS Debug] Invalid token metadata');
+                    return false;
+                }
+                
+                const nowInSeconds = Math.floor(Date.now() / 1000);
+                const isValid = (obtainedAtInt + expiresInInt - 60) > nowInSeconds;
+                
+                console.log('[iOS Debug] Token valid:', isValid);
+                return isValid;
+                
+            } catch (error) {
+                console.error('[iOS Debug] Token validation error:', error);
+                return false;
+            }
+        }
+
+        // Use the safe validator
+        if (!isTokenValidSafe()) {
+            console.log('[iOS Debug] Redirecting to login...');
+            // ✅ iOS FIX: Use location.replace instead of location.href
+            window.location.replace('login.html');
             return;
         }
 
