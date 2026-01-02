@@ -557,6 +557,7 @@ class PremiumControlsManager {
 
     updatePlayButton(isPlaying) {
         try {
+            // Update bottom control play button
             if (this.elements.playBtn) {
                 if (isPlaying) {
                     this.elements.playBtn.classList.add('playing');
@@ -567,21 +568,27 @@ class PremiumControlsManager {
                 }
             }
             
+            // ✅ FIX: Update center play button visibility
             if (this.elements.centerPlayBtn) {
-                if (!isPlaying) {
-                    this.elements.centerPlayBtn.classList.add('show');
-                } else {
+                if (isPlaying) {
+                    // Hide center button when playing
                     this.elements.centerPlayBtn.classList.remove('show');
+                    this.elements.centerPlayBtn.style.display = 'none';
+                } else {
+                    // Show center button when paused
+                    this.elements.centerPlayBtn.classList.add('show');
+                    this.elements.centerPlayBtn.style.display = 'flex';
                 }
             }
         } catch (error) {
-            // Silently handle errors
+            console.error('[Video] Update play button error:', error);
         }
     }
 
     updateVolumeButton(volume, muted) {
         if (!this.elements.volumeBtn) return;
         
+        // ✅ FIX: Clear all classes first
         this.elements.volumeBtn.classList.remove('low', 'mute');
         
         if (muted || volume === 0) {
@@ -593,6 +600,9 @@ class PremiumControlsManager {
         } else {
             this.elements.volumeBtn.setAttribute('aria-label', 'Mute');
         }
+        
+        // ✅ FIX: Force visual update by toggling a data attribute
+        this.elements.volumeBtn.setAttribute('data-muted', muted ? 'true' : 'false');
     }
 
     updateTimeDisplay(current, duration) {
@@ -2759,23 +2769,6 @@ if (document.getElementById('appContainer')) {
             controlsManager.elements.settingsBtn.addEventListener('touchend', handleSettingsToggle);
         }
 
-        // ✅ FIX: Enhanced close button handlers (Issue 3)
-        const setupCloseHandler = (element) => {
-            if (!element) return;
-            
-            const handleClose = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                closePlayer();
-            };
-            
-            element.addEventListener('click', handleClose);
-            element.addEventListener('touchend', handleClose);
-        };
-        
-        setupCloseHandler(controlsManager.elements.closeBtn);
-        setupCloseHandler(controlsManager.elements.closeErrorBtn);
-
         // ✅ FIX: Universal button handler for mouse + touch (Issue 6)
         const setupButton = (element, handler) => {
             if (!element) return;
@@ -2849,13 +2842,46 @@ if (document.getElementById('appContainer')) {
             });
         }
         
-        // Volume controls
-        const toggleMute = () => {
+        // ✅ FIX 3: Enhanced mute toggle
+        const toggleMute = (e) => {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
-            activePlayer.muted(!activePlayer.muted());
+            try {
+                const currentMuted = activePlayer.muted();
+                const newMuted = !currentMuted;
+                
+                console.log('[Video] Toggle mute:', currentMuted, '->', newMuted);
+                
+                activePlayer.muted(newMuted);
+                
+                // Force UI update
+                const volume = activePlayer.volume();
+                controlsManager.updateVolumeButton(volume, newMuted);
+                
+                // Update volume slider
+                if (controlsManager.elements.volumeSlider) {
+                    controlsManager.elements.volumeSlider.value = newMuted ? 0 : volume;
+                }
+                
+            } catch (error) {
+                console.error('[Video] Mute toggle error:', error);
+            }
         };
+        
+        // ✅ FIX 3: Volume button with proper event handling
+        if (controlsManager.elements.volumeBtn) {
+            controlsManager.elements.volumeBtn.addEventListener('click', toggleMute, { capture: false });
+            controlsManager.elements.volumeBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                toggleMute(e);
+            }, { capture: false });
+        }
         
         controlsManager.elements.volumeSlider.addEventListener('input', (e) => {
             const activePlayer = getSafePlayer();
@@ -2866,48 +2892,120 @@ if (document.getElementById('appContainer')) {
             activePlayer.muted(volume === 0);
         });
         
-        // Progress bar seeking
+        // ✅ FIX 4: Enhanced progress bar seeking with proper event handling
         let isSeeking = false;
+        let wasPlaying = false;
         
         const handleProgressClick = (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
             const rect = controlsManager.elements.progressBar.getBoundingClientRect();
-            const percent = (e.clientX - rect.left) / rect.width;
+            const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
             const newTime = percent * activePlayer.duration();
-            activePlayer.currentTime(newTime);
+            
+            if (isFinite(newTime)) {
+                activePlayer.currentTime(newTime);
+                console.log('[Video] Seeked to:', newTime);
+            }
         };
         
-        controlsManager.elements.progressBar.addEventListener('click', handleProgressClick);
-        
-        controlsManager.elements.progressBar.addEventListener('mousedown', () => {
+        const startSeeking = (e) => {
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
             isSeeking = true;
+            wasPlaying = !activePlayer.paused();
+            
+            if (wasPlaying) {
+                activePlayer.pause();
+            }
+            
             stateManager.isSeeking = true;
             controlsManager.elements.progressBar.classList.add('seeking');
-        });
+            controlsManager.showControls();
+            
+            console.log('[Video] Started seeking');
+        };
         
-        document.addEventListener('mousemove', (e) => {
+        const updateSeeking = (e) => {
             if (!isSeeking) return;
+            
+            const rect = controlsManager.elements.progressBar.getBoundingClientRect();
+            const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            
+            controlsManager.elements.progressPlayed.style.width = `${percent * 100}%`;
+            controlsManager.elements.progressHandle.style.left = `${percent * 100}%`;
+            
+            // Show time preview
+            const activePlayer = getSafePlayer();
+            if (activePlayer && isFinite(activePlayer.duration())) {
+                const previewTime = percent * activePlayer.duration();
+                if (controlsManager.elements.thumbnailTime) {
+                    controlsManager.elements.thumbnailTime.textContent = controlsManager.formatTime(previewTime);
+                }
+            }
+        };
+        
+        const endSeeking = (e) => {
+            if (!isSeeking) return;
+            
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
             const rect = controlsManager.elements.progressBar.getBoundingClientRect();
             const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-            controlsManager.elements.progressPlayed.style.width = `${percent * 100}%`;
-            controlsManager.elements.progressHandle.style.left = `${percent * 100}%`;
-        });
-        
-        document.addEventListener('mouseup', () => {
-            if (!isSeeking) return;
-            const activePlayer = getSafePlayer();
-            if (!activePlayer) return;
+            const newTime = percent * activePlayer.duration();
             
-            const percent = parseFloat(controlsManager.elements.progressPlayed.style.width) / 100;
-            activePlayer.currentTime(percent * activePlayer.duration());
+            if (isFinite(newTime)) {
+                activePlayer.currentTime(newTime);
+                console.log('[Video] Seek ended at:', newTime);
+            }
+            
+            if (wasPlaying) {
+                activePlayer.play().catch(err => console.error('[Video] Resume play error:', err));
+            }
+            
             isSeeking = false;
             stateManager.isSeeking = false;
             controlsManager.elements.progressBar.classList.remove('seeking');
+        };
+        
+        // ✅ FIX 4: Add event listeners with proper capture
+        if (controlsManager.elements.progressBar) {
+            // Click to seek
+            controlsManager.elements.progressBar.addEventListener('click', handleProgressClick);
+            
+            // Drag to seek - mousedown
+            controlsManager.elements.progressBar.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                startSeeking(e);
+            });
+            
+            // Drag to seek - touchstart
+            controlsManager.elements.progressBar.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    const touch = e.touches[0];
+                    startSeeking({ clientX: touch.clientX, clientY: touch.clientY });
+                }
+            }, { passive: true });
+        }
+        
+        // Global mouse/touch move and up handlers
+        document.addEventListener('mousemove', updateSeeking);
+        document.addEventListener('touchmove', (e) => {
+            if (isSeeking && e.touches.length === 1) {
+                const touch = e.touches[0];
+                updateSeeking({ clientX: touch.clientX, clientY: touch.clientY });
+            }
+        }, { passive: true });
+        
+        document.addEventListener('mouseup', endSeeking);
+        document.addEventListener('touchend', (e) => {
+            if (isSeeking) {
+                const touch = e.changedTouches[0];
+                endSeeking({ clientX: touch.clientX, clientY: touch.clientY });
+            }
         });
         
         // Progress bar hover - show thumbnail preview
@@ -3053,21 +3151,63 @@ if (document.getElementById('appContainer')) {
             }
         }
         
+        // ✅ FIX 1: Setup close handlers with proper event prevention
+        const setupCloseHandler = (element) => {
+            if (!element) return;
+            
+            const handleClose = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[Video] Close button clicked');
+                closePlayer(e);
+            };
+            
+            // Remove any existing listeners first
+            element.replaceWith(element.cloneNode(true));
+            const newElement = element.parentNode.querySelector(element.className.split(' ').map(c => '.' + c).join(''));
+            
+            if (newElement) {
+                newElement.addEventListener('click', handleClose, { capture: true });
+                newElement.addEventListener('touchend', handleClose, { capture: true });
+                
+                // Update reference
+                if (element === controlsManager.elements.closeBtn) {
+                    controlsManager.elements.closeBtn = newElement;
+                } else if (element === controlsManager.elements.closeErrorBtn) {
+                    controlsManager.elements.closeErrorBtn = newElement;
+                }
+            }
+        };
+        
+        setupCloseHandler(controlsManager.elements.closeBtn);
+        setupCloseHandler(controlsManager.elements.closeErrorBtn);
+        
         // Close button and ESC key
-        const closePlayer = () => {
-            // ✅ NEW: Clear session tracking
+        // ✅ FIX: Enhanced close player function (Fix 1 combined with Fix 4 cleanup)
+        const closePlayer = (e) => {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            
+            console.log('[Video] Closing player:', playerId);
+            
+            // ✅ Clear session tracking
             analyticsTracker.clearSession(videoId);
             
             // Stop token refresh
             tokenRefreshManager.stopRefresh(videoId);
             
-            // Remove from global registry
-            activePlayers.delete(playerId);
-            
             // Remove event listeners
             document.removeEventListener('fullscreenchange', handleFullscreenChange);
             document.removeEventListener('click', closeSettingsMenu);
             document.removeEventListener('keydown', handleKeyDown);
+            
+            // ✅ FIX: Remove progress bar listeners (Fix 4)
+            document.removeEventListener('mousemove', updateSeeking);
+            document.removeEventListener('mouseup', endSeeking);
+            document.removeEventListener('touchmove', updateSeeking);
+            document.removeEventListener('touchend', endSeeking);
             
             // Exit fullscreen if active
             if (document.fullscreenElement) {
@@ -3075,21 +3215,27 @@ if (document.getElementById('appContainer')) {
             }
             
             // Dispose player safely
-            if (player && !player.isDisposed()) {
-                try {
+            try {
+                if (player && !player.isDisposed()) {
+                    player.pause();
                     player.dispose();
-                } catch (e) {
-                    // Player already disposed
                 }
+            } catch (e) {
+                console.warn('[Video] Player disposal error:', e);
             }
             
-            // Remove modal
+            // Remove from global registry
+            activePlayers.delete(playerId);
+            
+            // Remove modal from DOM
             if (modal && modal.parentNode) {
                 modal.remove();
             }
             
             // Restore body overflow
             document.body.style.overflow = '';
+            
+            console.log('[Video] Player closed successfully');
         };
         
         // Keyboard handler
