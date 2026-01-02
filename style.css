@@ -3327,3 +3327,61 @@ body.theme-dark .announcement-error {
         opacity: 0.8;
     }
 }
+
+/* ============================================================================
+   ✅ FIX 14: ENSURE VIDEO CONTROLS ARE ALWAYS CLICKABLE
+   Critical fix for iOS/mobile where controls become unresponsive
+   ============================================================================ */
+
+/* Force controls wrapper to be interactive */
+.premium-controls-wrapper {
+    pointer-events: auto !important;
+    z-index: 100;
+}
+
+/* Force header to be interactive */
+.premium-player-header {
+    pointer-events: auto !important;
+    z-index: 101;
+}
+
+/* Ensure all control buttons respond to interaction */
+.premium-control-btn {
+    pointer-events: auto !important;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+/* Prevent video element from blocking control clicks */
+.premium-video-wrapper video {
+    pointer-events: none;
+}
+
+.premium-video-wrapper {
+    pointer-events: auto;
+}
+
+/* Ensure settings menu is clickable when active */
+.premium-settings-menu {
+    pointer-events: auto !important;
+    z-index: 200;
+}
+
+/* Ensure settings items are interactive */
+.premium-settings-item {
+    pointer-events: auto !important;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+/* Ensure progress bar is always clickable */
+.premium-progress-container {
+    pointer-events: auto !important;
+    z-index: 99;
+}
+
+.premium-progress-bar {
+    cursor: pointer;
+    touch-action: manipulation;
+}

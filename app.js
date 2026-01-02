@@ -967,7 +967,6 @@ async function renderHeaderActions() {
 }
 
 // --- Logic for login.html ---
-// --- Logic for login.html ---
 if (document.getElementById('loginForm')) {
     const loginForm = document.getElementById('loginForm');
     const emailInput = document.getElementById('email');
@@ -1078,6 +1077,9 @@ if (document.getElementById('loginForm')) {
 }
 
 // --- Logic for links.html (The main application view) ---
+// ✅ FIX: Declare announcementSlider globally
+let announcementSlider = null;
+
 if (document.getElementById('appContainer')) {
     const mainContent = document.getElementById('mainContent');
     const logoutButton = document.getElementById('logoutButton');
@@ -1085,7 +1087,7 @@ if (document.getElementById('appContainer')) {
     const searchInput = document.getElementById('searchInput');
 
     const themeManager = new ThemeManager();
-    const announcementSlider = new AnnouncementSlider('#announcementSliderContainer');
+    announcementSlider = new AnnouncementSlider('#announcementSliderContainer');
 
     // --- Utility Functions ---
     // ✅ UPDATED: Debugging logs added to isTokenValid
@@ -2656,36 +2658,196 @@ if (document.getElementById('appContainer')) {
                 cleanupPlayer(playerId);
             }
         };
+
+        // --- Controls Visibility Logic (Issue 4) ---
         
-        controlsManager.elements.playBtn.addEventListener('click', togglePlayPause);
-        controlsManager.elements.centerPlayBtn.addEventListener('click', togglePlayPause);
+        // Always show controls initially
+        controlsManager.showControls();
         
-        // ✅ FIX 3: Add touchend listener for mobile
-        controlsManager.elements.playBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            togglePlayPause();
-        });
-        controlsManager.elements.centerPlayBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            togglePlayPause();
-        });
+        // Mouse movement shows controls (desktop)
+        if (!isMobile) {
+            modal.addEventListener('mousemove', (e) => {
+                // Don't hide controls if hovering over them
+                if (e.target.closest('.premium-controls-wrapper') || 
+                    e.target.closest('.premium-player-header')) {
+                    controlsManager.showControls();
+                }
+                controlsManager.showControls();
+            });
+        }
         
-        // Skip buttons
-        controlsManager.elements.skipBackward.addEventListener('click', () => {
+        // ✅ FIX: Touch interaction shows controls (mobile)
+        if (isMobile || isIOS) {
+            let lastTouchTime = 0;
+            
+            modal.addEventListener('touchstart', (e) => {
+                const now = Date.now();
+                
+                // If touching controls area, keep them visible
+                if (e.target.closest('.premium-controls-wrapper') || 
+                    e.target.closest('.premium-player-header')) {
+                    e.stopPropagation();
+                    controlsManager.showControls();
+                    return;
+                }
+                
+                // Single tap on video area toggles controls visibility
+                if (now - lastTouchTime < 300) {
+                    // Double tap - let other handlers deal with it
+                    lastTouchTime = 0;
+                } else {
+                    // Single tap - toggle controls
+                    if (stateManager.showingControls) {
+                        controlsManager.hideControls();
+                    } else {
+                        controlsManager.showControls();
+                    }
+                    lastTouchTime = now;
+                }
+            }, { passive: true });
+        }
+        
+        // ✅ FIX: Keep controls visible when hovering over them
+        const controlsWrapper = modal.querySelector('.premium-controls-wrapper');
+        if (controlsWrapper) {
+            controlsWrapper.addEventListener('mouseenter', () => {
+                controlsManager.showControls();
+                // Prevent auto-hide while hovering controls
+                if (stateManager.controlsTimeout) {
+                    clearTimeout(stateManager.controlsTimeout);
+                }
+            });
+            
+            controlsWrapper.addEventListener('mouseleave', () => {
+                controlsManager.resetControlsTimeout();
+            });
+        }
+        
+        const headerEl = modal.querySelector('.premium-player-header');
+        if (headerEl) {
+            headerEl.addEventListener('mouseenter', () => {
+                controlsManager.showControls();
+                if (stateManager.controlsTimeout) {
+                    clearTimeout(stateManager.controlsTimeout);
+                }
+            });
+            
+            headerEl.addEventListener('mouseleave', () => {
+                controlsManager.resetControlsTimeout();
+            });
+        }
+        
+        // ✅ FIX: Enhanced settings menu handler (Issue 5)
+        if (controlsManager.elements.settingsBtn) {
+            const handleSettingsToggle = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
+                controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
+                
+                // Keep controls visible when settings menu is open
+                if (isActive) {
+                    controlsManager.showControls();
+                    if (stateManager.controlsTimeout) {
+                        clearTimeout(stateManager.controlsTimeout);
+                    }
+                }
+            };
+            
+            controlsManager.elements.settingsBtn.addEventListener('click', handleSettingsToggle);
+            controlsManager.elements.settingsBtn.addEventListener('touchend', handleSettingsToggle);
+        }
+
+        // ✅ FIX: Enhanced close button handlers (Issue 3)
+        const setupCloseHandler = (element) => {
+            if (!element) return;
+            
+            const handleClose = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                closePlayer();
+            };
+            
+            element.addEventListener('click', handleClose);
+            element.addEventListener('touchend', handleClose);
+        };
+        
+        setupCloseHandler(controlsManager.elements.closeBtn);
+        setupCloseHandler(controlsManager.elements.closeErrorBtn);
+
+        // ✅ FIX: Universal button handler for mouse + touch (Issue 6)
+        const setupButton = (element, handler) => {
+            if (!element) return;
+            
+            const wrappedHandler = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handler(e);
+            };
+            
+            element.addEventListener('click', wrappedHandler);
+            element.addEventListener('touchend', wrappedHandler);
+        };
+        
+        // ✅ FIX: Use setupButton for all controls (Issue 6)
+        setupButton(controlsManager.elements.playBtn, togglePlayPause);
+        setupButton(controlsManager.elements.centerPlayBtn, togglePlayPause);
+        
+        setupButton(controlsManager.elements.skipBackward, () => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
-            
             activePlayer.currentTime(Math.max(0, activePlayer.currentTime() - 10));
             controlsManager.showGestureIndicator('⏪');
         });
         
-        controlsManager.elements.skipForward.addEventListener('click', () => {
+        setupButton(controlsManager.elements.skipForward, () => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
-            
             activePlayer.currentTime(Math.min(activePlayer.duration(), activePlayer.currentTime() + 10));
             controlsManager.showGestureIndicator('⏩');
         });
+        
+        setupButton(controlsManager.elements.volumeBtn, toggleMute);
+        
+        // ✅ FIX: Improved video area click handler with proper event delegation (Issue 2)
+        const videoWrapper = modal.querySelector('.premium-video-wrapper');
+        if (videoWrapper) {
+            const handleVideoAreaClick = (e) => {
+                // Don't intercept if clicking on:
+                // 1. Any control button
+                // 2. Progress bar
+                // 3. Settings menu
+                // 4. Header
+                if (e.target.closest('.premium-control-btn') ||
+                    e.target.closest('.premium-controls-row') || 
+                    e.target.closest('.premium-progress-container') ||
+                    e.target.closest('.premium-settings-menu') ||
+                    e.target.closest('.premium-player-header') ||
+                    e.target.closest('.premium-center-play-btn') ||
+                    e.target.closest('button') ||
+                    e.target.closest('input')) {
+                    return;
+                }
+                
+                // Only toggle play/pause if clicking on the video itself
+                if (e.target.closest('.premium-video-wrapper')) {
+                    e.stopPropagation();
+                    togglePlayPause();
+                }
+            };
+            
+            videoWrapper.addEventListener('click', handleVideoAreaClick);
+            videoWrapper.addEventListener('touchend', (e) => {
+                // For touch devices, we need to prevent default to avoid double-firing
+                if (!e.target.closest('.premium-control-btn') &&
+                    !e.target.closest('.premium-controls-row') &&
+                    !e.target.closest('button')) {
+                    e.preventDefault();
+                    handleVideoAreaClick(e);
+                }
+            });
+        }
         
         // Volume controls
         const toggleMute = () => {
@@ -2694,8 +2856,6 @@ if (document.getElementById('appContainer')) {
             
             activePlayer.muted(!activePlayer.muted());
         };
-        
-        controlsManager.elements.volumeBtn.addEventListener('click', toggleMute);
         
         controlsManager.elements.volumeSlider.addEventListener('input', (e) => {
             const activePlayer = getSafePlayer();
@@ -2768,13 +2928,6 @@ if (document.getElementById('appContainer')) {
         
         controlsManager.elements.progressBar.addEventListener('mouseleave', () => {
             controlsManager.elements.progressThumbnail.style.display = 'none';
-        });
-        
-        // Settings menu
-        controlsManager.elements.settingsBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
-            controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
         });
         
         // Close settings menu when clicking outside
@@ -2938,9 +3091,6 @@ if (document.getElementById('appContainer')) {
             // Restore body overflow
             document.body.style.overflow = '';
         };
-        
-        controlsManager.elements.closeBtn.addEventListener('click', closePlayer);
-        controlsManager.elements.closeErrorBtn.addEventListener('click', closePlayer);
         
         // Keyboard handler
         const handleKeyDown = (e) => {
@@ -3164,29 +3314,6 @@ if (document.getElementById('appContainer')) {
             analyticsTracker.trackEvent(videoId, 'error', player, tierId);
         });
         
-        // --- Controls Visibility Logic ---
-        
-        // Show controls on mouse movement (non-mobile)
-        if (!isMobile) {
-            modal.addEventListener('mousemove', () => {
-                controlsManager.showControls();
-            });
-        }
-        
-        // Click on video area to toggle play/pause
-        const videoArea = controlsManager.elements.progressBar.parentElement.parentElement;
-        if (videoArea) {
-            videoArea.addEventListener('click', (e) => {
-                // Only toggle if clicking on video area, not on controls
-                if (e.target.closest('.premium-controls-row') || 
-                    e.target.closest('.premium-progress-container') ||
-                    e.target.closest('.premium-settings-menu')) {
-                    return;
-                }
-                togglePlayPause();
-            });
-        }
-        
         // --- Mobile Touch Gestures ---
         
         let touchStartX = 0;
@@ -3261,7 +3388,7 @@ if (document.getElementById('appContainer')) {
         
         // --- Initialize Controls Visibility ---
         
-        controlsManager.showControls();
+        // (Logic moved to Issue 4 section above)
         
         // Start auto-hide timer (desktop only, mobile handled by touchstart above)
         let hideControlsInterval;
@@ -3397,7 +3524,11 @@ if (document.getElementById('appContainer')) {
         
         // NEW (V2): Load and display multiple announcements
         const announcementsData = JSON.parse(localStorage.getItem('global_announcements') || '[]');
-        announcementSlider.showAnnouncements(announcementsData);
+        
+        // ✅ FIX: Check if announcementSlider exists (Issue 1)
+        if (announcementSlider) {
+            announcementSlider.showAnnouncements(announcementsData);
+        }
         
         // Render renewal banner and header actions
         renderRenewalBanner();
