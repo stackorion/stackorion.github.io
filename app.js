@@ -183,6 +183,7 @@ class SessionRefreshManager {
         }, this.checkInterval);
     }
 
+    // ✅ UPDATED: Safer version with explicit expiry handling
     async checkAndRefresh() {
         const token = localStorage.getItem('lustroom_jwt');
         const obtainedAt = parseInt(localStorage.getItem('lustroom_jwt_obtained_at'), 10);
@@ -197,12 +198,19 @@ class SessionRefreshManager {
         const expiryTime = obtainedAt + expiresIn;
         const timeUntilExpiry = expiryTime - nowInSeconds;
 
-        // Refresh if less than 10 minutes remaining
+        // ✅ FIX: Only refresh if less than 10 minutes remaining AND still valid
         if (timeUntilExpiry < 600 && timeUntilExpiry > 0) {
             await this.refreshSession();
+        } else if (timeUntilExpiry <= 0) {
+            // ✅ FIX: Token actually expired - redirect to login
+            console.log('[Session] Token expired, redirecting to login');
+            this.stop();
+            localStorage.clear();
+            window.location.replace('login.html');
         }
     }
 
+    // ✅ UPDATED: Better error handling (don't logout on network errors)
     async refreshSession() {
         try {
             const token = localStorage.getItem('lustroom_jwt');
@@ -218,18 +226,24 @@ class SessionRefreshManager {
             const data = await response.json();
 
             if (response.ok && data.status === 'success') {
-                // Update stored token
+                // ✅ Update stored token
                 localStorage.setItem('lustroom_jwt', data.access_token);
                 localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
                 localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
-            } else if (response.status === 403) {
-                // Subscription expired - redirect to login
+                console.log('[Session] Token refreshed successfully');
+            } else if (response.status === 403 || response.status === 401) {
+                // ✅ FIX: Only clear and redirect on auth failure
+                console.log('[Session] Refresh failed - auth error');
                 this.stop();
                 localStorage.clear();
-                window.location.href = 'login.html';
+                window.location.replace('login.html');
+            } else {
+                // ✅ FIX: Other errors (500, network, etc.) - don't log out, just retry later
+                console.warn('[Session] Refresh failed, will retry:', response.status);
             }
         } catch (error) {
-            // Silently handle errors
+            // ✅ FIX: Network errors shouldn't log you out
+            console.warn('[Session] Refresh network error, will retry:', error);
         }
     }
 
@@ -1074,13 +1088,34 @@ if (document.getElementById('appContainer')) {
     const announcementSlider = new AnnouncementSlider('#announcementSliderContainer');
 
     // --- Utility Functions ---
+    // ✅ UPDATED: Debugging logs added to isTokenValid
     function isTokenValid() {
         const token = localStorage.getItem('lustroom_jwt');
         const obtainedAt = parseInt(localStorage.getItem('lustroom_jwt_obtained_at'), 10);
         const expiresIn = parseInt(localStorage.getItem('lustroom_jwt_expires_in'), 10);
-        if (!token || isNaN(obtainedAt) || isNaN(expiresIn)) return false;
+        
+        if (!token || isNaN(obtainedAt) || isNaN(expiresIn)) {
+            console.log('[Auth] Token invalid - missing data:', {
+                hasToken: !!token,
+                obtainedAt: obtainedAt,
+                expiresIn: expiresIn
+            });
+            return false;
+        }
+        
         const nowInSeconds = Math.floor(Date.now() / 1000);
-        return (obtainedAt + expiresIn - 60) > nowInSeconds;
+        const expiryTime = obtainedAt + expiresIn;
+        const timeUntilExpiry = expiryTime - nowInSeconds;
+        const isValid = timeUntilExpiry > 60;
+        
+        console.log('[Auth] Token check:', {
+            expiresIn: expiresIn,
+            timeUntilExpiry: timeUntilExpiry,
+            isValid: isValid,
+            willExpireAt: new Date(expiryTime * 1000).toLocaleString()
+        });
+        
+        return isValid;
     }
 
     function displayError(message, container = mainContent) {
@@ -3204,37 +3239,46 @@ if (document.getElementById('appContainer')) {
 
     // --- Main Application Router ---
     async function router() {
-        // ✅ iOS FIX: Prevent infinite redirects
-        const maxRedirects = 3;
+        // ✅ FIXED: Smart redirect protection that doesn't affect normal navigation
         const redirectKey = 'router_redirect_count';
         const redirectTimestampKey = 'router_redirect_timestamp';
+        const redirectPathKey = 'router_last_path';
         
         try {
+            const currentPath = window.location.pathname + window.location.search;
+            const lastPath = sessionStorage.getItem(redirectPathKey) || '';
             const redirectCount = parseInt(sessionStorage.getItem(redirectKey) || '0', 10);
             const lastRedirect = parseInt(sessionStorage.getItem(redirectTimestampKey) || '0', 10);
             const now = Date.now();
             
-            // Reset counter if more than 10 seconds passed
-            if (now - lastRedirect > 10000) {
-                sessionStorage.setItem(redirectKey, '0');
-            } else if (redirectCount >= maxRedirects) {
-                // Too many redirects - clear everything and force login
-                console.error('[iOS Debug] Redirect loop detected, clearing session');
-                sessionStorage.clear();
-                localStorage.clear();
-                window.location.replace('login.html');
-                return;
+            // Only count as a redirect loop if we're hitting the SAME path repeatedly
+            if (currentPath === lastPath && now - lastRedirect < 2000) {
+                // Same path within 2 seconds = potential loop
+                const newCount = redirectCount + 1;
+                
+                if (newCount >= 3) {
+                    // Genuine redirect loop detected
+                    console.error('[iOS Debug] Redirect loop detected on:', currentPath);
+                    sessionStorage.clear();
+                    localStorage.clear();
+                    window.location.replace('login.html');
+                    return;
+                }
+                
+                sessionStorage.setItem(redirectKey, newCount.toString());
+                sessionStorage.setItem(redirectTimestampKey, now.toString());
+            } else {
+                // Different path or enough time passed = normal navigation, reset counter
+                sessionStorage.setItem(redirectKey, '1');
+                sessionStorage.setItem(redirectTimestampKey, now.toString());
+                sessionStorage.setItem(redirectPathKey, currentPath);
             }
-            
-            // Increment counter
-            sessionStorage.setItem(redirectKey, (redirectCount + 1).toString());
-            sessionStorage.setItem(redirectTimestampKey, now.toString());
             
         } catch (e) {
             // SessionStorage not available - continue anyway
             console.warn('[iOS Debug] SessionStorage check failed:', e);
         }
-
+        
         // Clean up any existing video players before loading new content
         cleanupAllVideoPlayers();
         
