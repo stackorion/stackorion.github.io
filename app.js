@@ -695,343 +695,6 @@ class PremiumControlsManager {
     }
 }
 
-// --- NEW: Android Touch Zone Manager ---
-class AndroidTouchManager {
-    constructor(modal, player, controlsManager) {
-        this.modal = modal;
-        this.player = player;
-        this.controlsManager = controlsManager;
-        
-        // Touch tracking
-        this.touchStart = null;
-        this.touchStartTime = 0;
-        this.isTouchOnControls = false;
-        this.touchMoved = false; // ✅ ADD THIS: Define touchMoved variable
-        this.preventGhostClick = false;
-        
-        // Configuration for Android
-        this.touchMoveThreshold = 8; // Pixels before considering it a swipe
-        this.doubleTapThreshold = 300; // ms for double-tap detection
-        this.lastTapTime = 0;
-        this.lastTapX = 0;
-        
-        this.initialize();
-    }
-    
-    initialize() {
-        // ✅ ADD: Check if player is valid before setting up
-        if (!this.isPlayerValid()) {
-            console.warn('AndroidTouchManager: Player not valid, skipping initialization');
-            return;
-        }
-        this.setupTouchZones();
-        this.bindEventListeners();
-    }
-    
-    // ✅ ADD: Helper method to check player validity
-    isPlayerValid() {
-        return this.player && 
-               this.player.el && 
-               typeof this.player.el === 'function' && 
-               this.player.el() && 
-               !this.player.isDisposed();
-    }
-    
-    // ✅ ADD: Safe player access method
-    getSafePlayer() {
-        if (!this.isPlayerValid()) {
-            return null;
-        }
-        return this.player;
-    }
-    
-    setupTouchZones() {
-        // Define touch-sensitive areas
-        this.controlElements = [
-            '.premium-control-btn',
-            '.premium-progress-bar',
-            '.premium-volume-slider',
-            '.premium-settings-menu',
-            '.premium-settings-item',
-            '.premium-close-btn',
-            '.player-error-btn'
-        ];
-        
-        // Define video gesture area (everything not covered by controls)
-        this.videoArea = this.modal.querySelector('.premium-video-wrapper');
-    }
-    
-    bindEventListeners() {
-        // ✅ ADD: Don't bind if player isn't valid
-        if (!this.isPlayerValid()) return;
-        
-        // Use passive: false only for control areas where we need preventDefault()
-        // Use passive: true for video area to ensure smooth scrolling
-        this.bindControlAreaListeners();
-        this.bindVideoAreaListeners();
-        
-        // Special handler for Android ghost clicks
-        this.bindAndroidClickFix();
-    }
-    
-    bindControlAreaListeners() {
-        // Find all control elements
-        this.controlElements.forEach(selector => {
-            const elements = this.modal.querySelectorAll(selector);
-            elements.forEach(el => {
-                // Touch start - mark as control touch
-                el.addEventListener('touchstart', (e) => {
-                    this.isTouchOnControls = true;
-                    this.touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-                    this.touchStartTime = Date.now();
-                    this.touchMoved = false; // ✅ INITIALIZE touchMoved here
-                    
-                    // Allow default behavior for controls (important for Android)
-                    // Don't call preventDefault() here
-                }, { passive: true });
-                
-                // Touch move - minimal handling for controls
-                el.addEventListener('touchmove', (e) => {
-                    if (!this.touchStart) return;
-                    
-                    const currentTouch = e.touches[0];
-                    const deltaX = Math.abs(currentTouch.clientX - this.touchStart.x);
-                    const deltaY = Math.abs(currentTouch.clientY - this.touchStart.y);
-                    
-                    // If touch moved significantly, it's not a tap anymore
-                    if (deltaX > this.touchMoveThreshold || deltaY > this.touchMoveThreshold) {
-                        this.touchMoved = true;
-                    }
-                }, { passive: true });
-                
-                // Touch end - handle control-specific logic
-                el.addEventListener('touchend', (e) => {
-                    if (!this.touchMoved) {
-                        // This was a tap on a control
-                        // Android will generate a click event - let it through
-                        this.preventGhostClick = true;
-                        
-                        // Briefly prevent additional touches to avoid double-trigger
-                        setTimeout(() => {
-                            this.preventGhostClick = false;
-                        }, 300);
-                    }
-                    
-                    this.cleanupTouch();
-                }, { passive: true });
-                
-                // Also bind click events as fallback (Android sometimes sends clicks)
-                el.addEventListener('click', (e) => {
-                    if (this.preventGhostClick) {
-                        e.stopPropagation();
-                        this.preventGhostClick = false;
-                    }
-                });
-            });
-        });
-    }
-    
-    bindVideoAreaListeners() {
-        if (!this.videoArea) return;
-        
-        // ✅ ADD: Get safe player reference
-        const player = this.getSafePlayer();
-        if (!player) return;
-        
-        // Video area gets gesture handlers
-        const videoArea = this.videoArea;
-        
-        videoArea.addEventListener('touchstart', (e) => {
-            // Only handle if NOT touching controls
-            if (this.isTouchOnControls) return;
-            
-            this.touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            this.touchStartTime = player.currentTime(); // ✅ USE safe player
-            this.touchStartTimestamp = Date.now();
-            this.touchMoved = false; // ✅ INITIALIZE touchMoved here
-            
-            // Store for double-tap detection
-            const currentTime = Date.now();
-            const tapX = e.touches[0].clientX;
-            
-            // Check for double tap
-            if (currentTime - this.lastTapTime < this.doubleTapThreshold && 
-                Math.abs(tapX - this.lastTapX) < 50) {
-                // Double tap detected - prevent default to avoid zoom
-                e.preventDefault();
-                this.handleDoubleTap(tapX);
-                this.lastTapTime = 0;
-                this.lastTapX = 0;
-            } else {
-                // First tap - store for potential double tap
-                this.lastTapTime = currentTime;
-                this.lastTapX = tapX;
-            }
-        }, { passive: false }); // Non-passive to allow preventDefault()
-        
-        videoArea.addEventListener('touchmove', (e) => {
-            if (this.isTouchOnControls || !this.touchStart) return;
-            
-            const currentTouch = e.touches[0];
-            const deltaX = currentTouch.clientX - this.touchStart.x;
-            const deltaY = currentTouch.clientY - this.touchStart.y;
-            
-            // Check if this is a horizontal swipe (video seek)
-            if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 30) {
-                this.touchMoved = true;
-                e.preventDefault(); // Prevent scroll during horizontal swipe
-                
-                // Calculate seek amount
-                const seekAmount = (deltaX / window.innerWidth) * 30;
-                const previewTime = Math.max(0, Math.min(
-                    player.duration(), // ✅ USE safe player
-                    this.touchStartTime + seekAmount
-                ));
-                
-                // Show gesture indicator
-                if (this.controlsManager.elements.gestureIndicator) {
-                    const direction = deltaX > 0 ? '⏩' : '⏪';
-                    const seconds = Math.abs(Math.round(seekAmount));
-                    this.controlsManager.elements.gestureIndicator.textContent = `${direction} ${seconds}s`;
-                    this.controlsManager.elements.gestureIndicator.classList.add('show');
-                }
-            }
-        }, { passive: false });
-        
-        videoArea.addEventListener('touchend', (e) => {
-            if (this.isTouchOnControls) return;
-            
-            const player = this.getSafePlayer(); // ✅ GET fresh player reference
-            if (!player) return; // ✅ CHECK if player still exists
-            
-            if (this.touchMoved && this.touchStart) {
-                // This was a swipe - apply seek
-                const touchEndX = e.changedTouches[0].clientX;
-                const deltaX = touchEndX - this.touchStart.x;
-                const seekAmount = (deltaX / window.innerWidth) * 30;
-                const newTime = Math.max(0, Math.min(
-                    player.duration(), // ✅ USE safe player
-                    this.touchStartTime + seekAmount
-                ));
-                
-                player.currentTime(newTime); // ✅ USE safe player
-                
-                // Show confirmation
-                if (seekAmount > 0) {
-                    this.controlsManager.showGestureIndicator('⏩');
-                } else {
-                    this.controlsManager.showGestureIndicator('⏪');
-                }
-            } else if (!this.touchMoved) {
-                // This was a single tap - toggle controls visibility
-                const now = Date.now();
-                if (now - this.touchStartTimestamp > 100) {
-                    // Not a quick tap - ignore
-                } else {
-                    // Quick tap - toggle play/pause if center area
-                    const tapX = e.changedTouches[0].clientX;
-                    const screenWidth = window.innerWidth;
-                    const centerZoneStart = screenWidth * 0.3;
-                    const centerZoneEnd = screenWidth * 0.7;
-                    
-                    if (tapX >= centerZoneStart && tapX <= centerZoneEnd) {
-                        // Center tap - toggle play/pause
-                        if (player.paused()) { // ✅ USE safe player
-                            player.play().catch(() => {}); // ✅ USE safe player
-                        } else {
-                            player.pause(); // ✅ USE safe player
-                        }
-                    } else {
-                        // Edge tap - toggle controls
-                        if (this.controlsManager.state.showingControls) {
-                            this.controlsManager.hideControls();
-                        } else {
-                            this.controlsManager.showControls();
-                        }
-                    }
-                }
-            }
-            
-            // Hide gesture indicator
-            if (this.controlsManager.elements.gestureIndicator) {
-                this.controlsManager.elements.gestureIndicator.classList.remove('show');
-            }
-            
-            this.cleanupTouch();
-        }, { passive: true });
-    }
-    
-    bindAndroidClickFix() {
-        // Android-specific: prevent ghost clicks after touch events
-        this.modal.addEventListener('click', (e) => {
-            if (this.preventGhostClick && 
-                this.controlElements.some(sel => e.target.closest(sel))) {
-                e.stopPropagation();
-                e.preventDefault();
-                this.preventGhostClick = false;
-            }
-        }, true); // Capture phase to intercept early
-    }
-    
-    handleDoubleTap(tapX) {
-        const player = this.getSafePlayer(); // ✅ GET safe player
-        if (!player) return; // ✅ CHECK if player exists
-        
-        const screenWidth = window.innerWidth;
-        const leftZoneEnd = screenWidth * 0.3;
-        const rightZoneStart = screenWidth * 0.7;
-        
-        if (tapX < leftZoneEnd) {
-            // Left double tap - rewind 10s
-            player.currentTime(Math.max(0, player.currentTime() - 10)); // ✅ USE safe player
-            this.controlsManager.showGestureIndicator('⏪ 10s');
-        } else if (tapX > rightZoneStart) {
-            // Right double tap - forward 10s
-            player.currentTime(Math.min(player.duration(), player.currentTime() + 10)); // ✅ USE safe player
-            this.controlsManager.showGestureIndicator('⏩ 10s');
-        } else {
-            // Center double tap - toggle play/pause
-            if (player.paused()) { // ✅ USE safe player
-                player.play().catch(() => {}); // ✅ USE safe player
-            } else {
-                player.pause(); // ✅ USE safe player
-            }
-        }
-    }
-    
-    cleanupTouch() {
-        this.touchStart = null;
-        this.touchStartTime = 0;
-        this.isTouchOnControls = false;
-        this.touchMoved = false; // ✅ RESET touchMoved here
-    }
-    
-    destroy() {
-        // Cleanup event listeners
-        if (this.videoArea) {
-            // Remove all event listeners by cloning and replacing
-            const newVideoArea = this.videoArea.cloneNode(true);
-            this.videoArea.parentNode.replaceChild(newVideoArea, this.videoArea);
-            this.videoArea = newVideoArea;
-        }
-        
-        // Remove control element listeners
-        this.controlElements.forEach(selector => {
-            const elements = this.modal.querySelectorAll(selector);
-            elements.forEach(el => {
-                el.replaceWith(el.cloneNode(true));
-            });
-        });
-        
-        // Remove modal click listener
-        if (this.modal) {
-            const newModal = this.modal.cloneNode(true);
-            this.modal.parentNode.replaceChild(newModal, this.modal);
-            this.modal = newModal;
-        }
-    }
-}
-
 // --- NEW: Announcement Slider for Multiple Announcements ---
 class AnnouncementSlider {
     constructor(containerSelector) {
@@ -1318,6 +981,7 @@ async function renderHeaderActions() {
     }
 }
 
+// --- Logic for login.html ---
 // --- Logic for login.html ---
 if (document.getElementById('loginForm')) {
     const loginForm = document.getElementById('loginForm');
@@ -1876,11 +1540,15 @@ if (document.getElementById('appContainer')) {
             tierGroup.className = 'tier-group';
             links.forEach(link => {
                 const isRecentContent = isRecent(link.added_at);
+                // Removed console.log that was exposing backend details
 
                 const card = document.createElement('div');
                 card.className = 'link-card';
                 if (link.locked) card.classList.add('locked');
-                if (isRecentContent) card.classList.add('is-new');
+                if (isRecentContent) {
+                    card.classList.add('is-new');
+                    // Removed console.log that was exposing backend details
+                }
                 card.dataset.contentType = link.content_type || 'Video';
                 card.dataset.recentStatus = isRecentContent ? 'true' : 'false';
                 card.dataset.searchText = generateSearchableText(link);
@@ -1913,6 +1581,7 @@ if (document.getElementById('appContainer')) {
                         newBadge.className = 'new-badge';
                         newBadge.textContent = `New! (${getDaysAgo(link.added_at)})`;
                         thumbnailContainer.appendChild(newBadge);
+                        // Removed console.log that was exposing backend details
                     }
                     const thumbnailImage = document.createElement('img');
                     thumbnailImage.src = link.thumbnail_url;
@@ -1952,6 +1621,7 @@ if (document.getElementById('appContainer')) {
                     newBadgeText.className = 'new-badge-text';
                     newBadgeText.textContent = `New! (${getDaysAgo(link.added_at)})`;
                     title.appendChild(newBadgeText);
+                    // Removed console.log that was exposing backend details
                 }
                 cardContent.appendChild(title);
 
@@ -2110,11 +1780,14 @@ if (document.getElementById('appContainer')) {
 
             if (view === 'Recent' && isRecentContent) {
                 card.classList.add('recent-highlight');
+                const badge = card.querySelector('.new-badge') || card.querySelector('.new-badge-text');
+                // Removed console.log that was exposing backend details
             } else {
                 card.classList.remove('recent-highlight');
             }
 
             if (shouldShow) hasVisibleContent = true;
+            // Removed console.log that was exposing backend details
         });
 
         document.querySelectorAll('.tier-group').forEach(group => {
@@ -2186,6 +1859,8 @@ if (document.getElementById('appContainer')) {
             });
             const data = await response.json();
             
+            // Removed console.log that was exposing backend details
+            
             if (response.ok && data.status === 'success' && data.gallery) {
                 renderGallery(data.gallery);
             } else if (response.status === 401 || response.status === 403) {
@@ -2201,6 +1876,8 @@ if (document.getElementById('appContainer')) {
     }
 
     function renderGallery(galleryData) {
+        // Removed console.log that was exposing backend details
+        
         mainContent.innerHTML = `
             <div class="view-header">
                 <button id="backButton" class="back-button">← Back</button>
@@ -2217,7 +1894,11 @@ if (document.getElementById('appContainer')) {
         
         const galleryGrid = document.getElementById('galleryGrid');
         
+        // Removed console.log that was exposing backend details
+        
         galleryData.images.forEach((image, index) => {
+            // Removed console.log that was exposing backend details
+            
             const item = document.createElement('div');
             item.className = 'gallery-item';
             
@@ -2233,6 +1914,7 @@ if (document.getElementById('appContainer')) {
             tempImg.onload = function() {
                 linkElement.setAttribute('data-pswp-width', this.naturalWidth.toString());
                 linkElement.setAttribute('data-pswp-height', this.naturalHeight.toString());
+                // Removed console.log that was exposing backend details
             };
             tempImg.src = image.url;
             
@@ -2261,6 +1943,8 @@ if (document.getElementById('appContainer')) {
     }
 
     function initPhotoSwipe() {
+    // Removed console.log that was exposing backend details
+    
     // Check if PhotoSwipe is loaded
     if (typeof PhotoSwipeLightbox === 'undefined') {
         // Silently handle error without logging to console
@@ -2305,12 +1989,14 @@ if (document.getElementById('appContainer')) {
             if (lightbox.pswp) {
                 const currentIndex = lightbox.pswp.currIndex;
                 viewedImageIndexes.add(currentIndex);
+                // Removed console.log that was exposing backend details
             }
         });
 
         // Send tracking data when gallery is closed
         lightbox.on('close', () => {
             const totalUniqueViews = viewedImageIndexes.size;
+            // Removed console.log that was exposing backend details
 
             if (totalUniqueViews > 0 && gallerySlugForTracking) {
                 const token = localStorage.getItem('lustroom_jwt');
@@ -2331,9 +2017,9 @@ if (document.getElementById('appContainer')) {
                     })
                     .then(response => {
                         if (response.ok) {
-                            // success
+                            // Removed console.log that was exposing backend details
                         } else {
-                            // fail
+                            // Removed console.log that was exposing backend details
                         }
                     })
                     .catch(error => {
@@ -2377,6 +2063,8 @@ if (document.getElementById('appContainer')) {
         });
         
         lightbox.on('uiRegister', function() {
+            // Removed console.log that was exposing backend details
+            
             // Fullscreen button
             lightbox.pswp.ui.registerElement({
                 name: 'fullscreen-button',
@@ -2442,6 +2130,7 @@ if (document.getElementById('appContainer')) {
         });
         
         lightbox.init();
+        // Removed console.log that was exposing backend details
     } catch (error) {
         // Silently handle error without logging to console
     }
@@ -2793,6 +2482,52 @@ if (document.getElementById('appContainer')) {
                     e.preventDefault();
                 }, { passive: false });
             }
+            
+            // ✅ NEW: Enhanced touch controls visibility for mobile
+            let touchTimer;
+            let lastTouchTime = 0;
+            
+            const handleTouchInteraction = (e) => {
+                const now = Date.now();
+                const timeSinceLastTouch = now - lastTouchTime;
+                lastTouchTime = now;
+                
+                // Skip if touching controls directly
+                const controlElements = [
+                    '.premium-control-btn',
+                    '.premium-progress-bar',
+                    '.premium-settings-menu'
+                ];
+                
+                if (controlElements.some(selector => e.target.closest(selector))) {
+                    return;
+                }
+                
+                // ✅ NEW: Toggle controls visibility on quick tap (not swipe)
+                if (e.type === 'touchend' && timeSinceLastTouch < 200 && !touchMoved) {
+                    if (controlsManager.state.showingControls) {
+                        controlsManager.hideControls();
+                    } else {
+                        controlsManager.showControls();
+                    }
+                    return;
+                }
+                
+                // Show controls on any touch movement
+                controlsManager.showControls();
+                clearTimeout(touchTimer);
+                
+                // Auto-hide after delay
+                touchTimer = setTimeout(() => {
+                    if (!player.paused()) {
+                        controlsManager.hideControls();
+                    }
+                }, 3000);
+            };
+            
+            modal.addEventListener('touchstart', handleTouchInteraction, { passive: true });
+            modal.addEventListener('touchmove', handleTouchInteraction, { passive: true });
+            modal.addEventListener('touchend', handleTouchInteraction, { passive: true });
         }
         
         // ✅ FIX 7: Handle iOS video fullscreen properly
@@ -3128,10 +2863,9 @@ if (document.getElementById('appContainer')) {
                 e.stopPropagation();
                 
                 // Only trigger if touch didn't move (not a swipe)
-                // Note: touchMoved is handled by AndroidTouchManager on Android, 
-                // but for simple iOS fallback here we assume tap if not a known drag context.
-                // Since we removed the global handleTouchInteraction, this is a clean tap handler.
-                togglePlayPause();
+                if (!touchMoved) {
+                    togglePlayPause();
+                }
             }, { passive: false });
         }
         
@@ -3474,12 +3208,6 @@ if (document.getElementById('appContainer')) {
                 modal._cleanupPlayerEvents();
             }
             
-            // ✅ NEW: Clean up Android Touch Manager
-            if (modal._androidTouchManager) {
-                modal._androidTouchManager.destroy();
-                delete modal._androidTouchManager;
-            }
-            
             // Remove from global registry
             activePlayers.delete(playerId);
             
@@ -3816,12 +3544,232 @@ if (document.getElementById('appContainer')) {
             });
         }
         
-        // ✅ NEW: Initialize Android Touch Manager (only for Android)
-        const isAndroid = /Android/i.test(navigator.userAgent);
-        if (isAndroid) {
-            const androidTouchManager = new AndroidTouchManager(modal, player, controlsManager);
-            modal._androidTouchManager = androidTouchManager; // Store for cleanup
-        }
+        // --- Mobile Touch Gestures (Issue 1 & 2 Fixes) ---
+
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchStartTime = 0;
+        let isSwiping = false;
+        let touchMoved = false; // ✅ NEW: Track if touch moved significantly
+        let preventNextClick = false; // ✅ NEW: Flag to prevent ghost clicks
+
+        modal.addEventListener('touchstart', (e) => {
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            const controlElements = [
+                '.premium-controls-wrapper',
+                '.premium-player-header',
+                '.premium-progress-bar',
+                '.premium-control-btn',
+                '.premium-settings-menu',
+                '.premium-volume-slider'
+            ];
+            
+            if (controlElements.some(selector => e.target.closest(selector))) {
+                return;
+            }
+            
+            const touchCount = e.touches.length;
+            if (touchCount === 1) {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+                touchStartTime = activePlayer.currentTime();
+                isSwiping = false;
+                touchMoved = false; // ✅ NEW: Reset movement flag
+                preventNextClick = false; // ✅ NEW: Reset click prevention flag
+            }
+        }, { passive: true });
+        
+        // Replace touchmove handler
+        modal.addEventListener('touchmove', (e) => {
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            const controlElements = [
+                '.premium-controls-wrapper',
+                '.premium-player-header',
+                '.premium-progress-bar',
+                '.premium-control-btn',
+                '.premium-settings-menu',
+                '.premium-volume-slider'
+            ];
+            
+            if (controlElements.some(selector => e.target.closest(selector))) {
+                return;
+            }
+            
+            if (e.touches.length !== 1) return;
+            
+            const touchCurrentX = e.touches[0].clientX;
+            const touchCurrentY = e.touches[0].clientY;
+            
+            const deltaX = touchCurrentX - touchStartX;
+            const deltaY = touchCurrentY - touchStartY;
+            
+            // ✅ NEW: Mark as moved if threshold exceeded
+            if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+                touchMoved = true;
+            }
+            
+            if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+                isSwiping = true;
+                preventNextClick = true; // ✅ NEW: Prevent click after swipe
+                e.preventDefault();
+                
+                const seekAmount = (deltaX / window.innerWidth) * 30;
+                const newTime = Math.max(0, Math.min(activePlayer.duration(), touchStartTime + seekAmount));
+                
+                if (controlsManager.elements.gestureIndicator) {
+                    const direction = deltaX > 0 ? '⏩' : '⏪';
+                    const seconds = Math.abs(Math.round(seekAmount));
+                    controlsManager.elements.gestureIndicator.textContent = `${direction} ${seconds}s`;
+                    controlsManager.elements.gestureIndicator.classList.add('show');
+                }
+            }
+        }, { passive: false });
+        
+        // Replace touchend handler
+        modal.addEventListener('touchend', (e) => {
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            if (controlsManager.elements.gestureIndicator) {
+                controlsManager.elements.gestureIndicator.classList.remove('show');
+            }
+            
+            const controlElements = [
+                '.premium-controls-wrapper',
+                '.premium-player-header',
+                '.premium-progress-bar',
+                '.premium-control-btn',
+                '.premium-settings-menu',
+                '.premium-volume-slider'
+            ];
+            
+            if (controlElements.some(selector => e.target.closest(selector))) {
+                return;
+            }
+            
+            const touchEndX = e.changedTouches[0].clientX;
+            const touchEndY = e.changedTouches[0].clientY;
+            
+            const deltaX = touchEndX - touchStartX;
+            const deltaY = touchEndY - touchStartY;
+            
+            if (isSwiping && Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+                const seekAmount = (deltaX / window.innerWidth) * 30;
+                const newTime = Math.max(0, Math.min(activePlayer.duration(), touchStartTime + seekAmount));
+                activePlayer.currentTime(newTime);
+                
+                if (seekAmount > 0) {
+                    controlsManager.showGestureIndicator('⏩');
+                } else {
+                    controlsManager.showGestureIndicator('⏪');
+                }
+            }
+            
+            // ✅ NEW: Prevent click events after gesture
+            if (preventNextClick) {
+                const preventClickHandler = (clickEvent) => {
+                    clickEvent.preventDefault();
+                    clickEvent.stopPropagation();
+                    modal.removeEventListener('click', preventClickHandler, true);
+                };
+                modal.addEventListener('click', preventClickHandler, true);
+                
+                // Clear flag after short delay
+                setTimeout(() => {
+                    preventNextClick = false;
+                    modal.removeEventListener('click', preventClickHandler, true);
+                }, 300);
+            }
+            
+            isSwiping = false;
+            touchMoved = false; // ✅ NEW: Reset movement flag
+        }, { passive: true });
+        
+        // --- Enhanced Double-tap with Clear Zone Detection ---
+
+        let lastTapTime = 0;
+        let lastTapX = 0;
+        const doubleTapThreshold = 300;
+        const centerTapZoneWidth = 0.4; // 40% of screen width in center
+
+        modal.addEventListener('touchend', (e) => {
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            // ✅ NEW: Don't process taps if user was swiping
+            if (touchMoved || isSwiping) {
+                return;
+            }
+            
+            // Skip if touching controls
+            const controlElements = [
+                '.premium-controls-wrapper',
+                '.premium-player-header',
+                '.premium-progress-bar',
+                '.premium-control-btn',
+                '.premium-settings-menu'
+            ];
+            
+            if (controlElements.some(selector => e.target.closest(selector))) {
+                return;
+            }
+            
+            const currentTime = Date.now();
+            const tapLength = currentTime - lastTapTime;
+            const tapX = e.changedTouches[0].clientX;
+            const screenWidth = window.innerWidth;
+            
+            // Calculate tap zones
+            const leftZoneEnd = screenWidth * 0.3;
+            const rightZoneStart = screenWidth * 0.7;
+            const centerZoneStart = screenWidth * ((1 - centerTapZoneWidth) / 2);
+            const centerZoneEnd = screenWidth * ((1 + centerTapZoneWidth) / 2);
+            
+            // ✅ NEW: Check if tap is in same general area as last tap
+            const isSameArea = Math.abs(tapX - lastTapX) < screenWidth * 0.15;
+            
+            if (tapLength < doubleTapThreshold && tapLength > 0 && isSameArea) {
+                // Double tap detected
+                e.preventDefault(); // ✅ NEW: Prevent any default behavior
+                
+                if (tapX < leftZoneEnd) {
+                    // Left side - rewind
+                    activePlayer.currentTime(Math.max(0, activePlayer.currentTime() - 10));
+                    controlsManager.showGestureIndicator('⏪ 10s');
+                    triggerHapticFeedback('medium');
+                } else if (tapX > rightZoneStart) {
+                    // Right side - forward
+                    activePlayer.currentTime(Math.min(activePlayer.duration(), activePlayer.currentTime() + 10));
+                    controlsManager.showGestureIndicator('⏩ 10s');
+                    triggerHapticFeedback('medium');
+                } else if (tapX >= centerZoneStart && tapX <= centerZoneEnd) {
+                    // Center - toggle play/pause
+                    togglePlayPause();
+                }
+                
+                lastTapTime = 0; // Reset to prevent triple-tap
+                lastTapX = 0;
+            } else {
+                // Potential first tap of double-tap sequence
+                lastTapTime = currentTime;
+                lastTapX = tapX;
+                
+                // ✅ NEW: Immediate single-tap feedback for center zone only
+                if (tapX >= centerZoneStart && tapX <= centerZoneEnd) {
+                    // Delay to allow for double-tap detection
+                    setTimeout(() => {
+                        // Only execute if no double-tap occurred
+                        if (Date.now() - lastTapTime >= doubleTapThreshold) {
+                            togglePlayPause();
+                        }
+                    }, doubleTapThreshold);
+                }
+            }
+        });
         
         // --- Initialize Controls Visibility ---
         
