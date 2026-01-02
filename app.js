@@ -2359,26 +2359,11 @@ if (document.getElementById('appContainer')) {
         
         const playerId = `premiumPlayer_${videoId}`;
         
-        // ✅ FIX 3: Smart Fullscreen Request (Desktop only)
+        // ✅ FIXED: Always request fullscreen on modal open
         const requestFullscreen = () => {
-            // Skip fullscreen on mobile - let native controls handle it
-            if (isMobile) {
-                // ✅ NEW: On iOS, try to enter fullscreen for video element instead
-                if (isIOS) {
-                    const videoElement = player.el().querySelector('video');
-                    if (videoElement && videoElement.webkitEnterFullscreen) {
-                        try {
-                            // iOS Safari native fullscreen
-                            videoElement.webkitEnterFullscreen();
-                        } catch (err) {
-                            // Fullscreen not supported or blocked
-                        }
-                    }
-                }
-                return;
-            }
-            
             const elem = modal;
+            
+            // Try standard fullscreen API first
             if (elem.requestFullscreen) {
                 elem.requestFullscreen().catch(() => {
                     // Fullscreen failed - continue anyway
@@ -2389,6 +2374,20 @@ if (document.getElementById('appContainer')) {
                 elem.mozRequestFullScreen();
             } else if (elem.msRequestFullscreen) {
                 elem.msRequestFullscreen();
+            }
+            
+            // For iOS, also try video element fullscreen as fallback
+            if (isIOS) {
+                setTimeout(() => {
+                    const videoElement = player.el().querySelector('video');
+                    if (videoElement && videoElement.webkitEnterFullscreen && !document.fullscreenElement) {
+                        try {
+                            videoElement.webkitEnterFullscreen();
+                        } catch (err) {
+                            // Fullscreen not supported or blocked
+                        }
+                    }
+                }, 100);
             }
         };
         
@@ -3016,11 +3015,26 @@ if (document.getElementById('appContainer')) {
         document.addEventListener('mousemove', continueSeeking);
         document.addEventListener('mouseup', endSeeking);
 
-        // ✅ NEW: Touch events (mobile)
+        // ✅ FIXED: Touch events (mobile) - attach to modal to capture all touches
         if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-            controlsManager.elements.progressBar.addEventListener('touchstart', startSeeking, { passive: false });
-            document.addEventListener('touchmove', continueSeeking, { passive: false });
-            document.addEventListener('touchend', endSeeking, { passive: false });
+            controlsManager.elements.progressBar.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startSeeking(e);
+            }, { passive: false });
+            
+            modal.addEventListener('touchmove', (e) => {
+                if (isSeeking) {
+                    e.preventDefault();
+                    continueSeeking(e);
+                }
+            }, { passive: false });
+            
+            modal.addEventListener('touchend', (e) => {
+                if (isSeeking) {
+                    e.preventDefault();
+                    endSeeking(e);
+                }
+            }, { passive: false });
         }
         
         // Progress bar hover - show thumbnail preview
@@ -3045,10 +3059,21 @@ if (document.getElementById('appContainer')) {
         
         // Settings menu
         controlsManager.elements.settingsBtn.addEventListener('click', (e) => {
+            e.preventDefault();
             e.stopPropagation();
             const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
             controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
         });
+
+        // ✅ NEW: Mobile-specific touch handler
+        if (isMobile) {
+            controlsManager.elements.settingsBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
+                controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
+            }, { passive: false });
+        }
         
         // Close settings menu when clicking outside
         const closeSettingsMenu = (e) => {
@@ -3146,28 +3171,21 @@ if (document.getElementById('appContainer')) {
             }
         }
         
-        // ✅ FIX 8: Smart fullscreen handling for mobile (Issue 8)
+        // ✅ FIXED: Better fullscreen handling
         const handleFullscreenChange = () => {
             const wasFullscreen = stateManager.isFullscreen;
             stateManager.isFullscreen = !!document.fullscreenElement;
             
-            // ✅ NEW: Don't close on mobile fullscreen changes
-            if (!isMobile) {
-                // Desktop: close when exiting fullscreen
-                if (!document.fullscreenElement && wasFullscreen) {
-                    closePlayer();
+            // Update fullscreen state but don't auto-close
+            // Let user explicitly close with close button
+            
+            // Handle iOS-specific fullscreen
+            if (isIOS) {
+                const videoElement = player.el().querySelector('video');
+                if (videoElement) {
+                    const isIOSFullscreen = document.webkitFullscreenElement === videoElement;
+                    stateManager.isFullscreen = isIOSFullscreen || stateManager.isFullscreen;
                 }
-            } else {
-                // ✅ NEW: Mobile: handle iOS native fullscreen separately
-                if (isIOS) {
-                    const videoElement = player.el().querySelector('video');
-                    if (videoElement) {
-                        // Check iOS-specific fullscreen state
-                        const isIOSFullscreen = document.webkitFullscreenElement === videoElement;
-                        stateManager.isFullscreen = isIOSFullscreen || stateManager.isFullscreen;
-                    }
-                }
-                // Mobile devices should stay open when fullscreen changes
             }
         };
         
@@ -3233,9 +3251,33 @@ if (document.getElementById('appContainer')) {
             // Restore body overflow
             document.body.style.overflow = '';
         };
-        
-        controlsManager.elements.closeBtn.addEventListener('click', closePlayer);
-        controlsManager.elements.closeErrorBtn.addEventListener('click', closePlayer);
+
+        controlsManager.elements.closeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closePlayer();
+        });
+
+        controlsManager.elements.closeErrorBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closePlayer();
+        });
+
+        // ✅ NEW: Mobile-specific touch handlers
+        if (isMobile) {
+            controlsManager.elements.closeBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                closePlayer();
+            }, { passive: false });
+            
+            controlsManager.elements.closeErrorBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                closePlayer();
+            }, { passive: false });
+        }
         
         // Keyboard handler
         const handleKeyDown = (e) => {
