@@ -2822,8 +2822,8 @@ if (document.getElementById('appContainer')) {
                 window.webkit.messageHandlers.haptic.postMessage({ style: style });
             }
         }
-
-        // FIX 5: Play/Pause Button
+        
+        // Play/Pause
         const togglePlayPause = () => {
             if (!isPlayerHealthy(playerId)) {
                 cleanupPlayer(playerId);
@@ -2834,28 +2834,17 @@ if (document.getElementById('appContainer')) {
             try {
                 if (activePlayer.paused()) {
                     activePlayer.play().catch(() => {});
-                    triggerHapticFeedback('light');
+                    triggerHapticFeedback('light'); // ✅ NEW
                 } else {
                     activePlayer.pause();
-                    triggerHapticFeedback('light');
+                    triggerHapticFeedback('light'); // ✅ NEW
                 }
             } catch (error) {
                 cleanupPlayer(playerId);
             }
         };
-
-        const handlePlayPauseClick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            togglePlayPause();
-        };
-
-        controlsManager.elements.playBtn.addEventListener('click', handlePlayPauseClick, { capture: true });
-
-        if (isMobile) {
-            controlsManager.elements.playBtn.addEventListener('touchstart', handlePlayPauseClick, { capture: true, passive: false });
-        }
+        
+        controlsManager.elements.playBtn.addEventListener('click', togglePlayPause);
         
         // ✅ NEW: Fixed Center Play Button Handling
         const centerPlayBtnClickHandler = (e) => {
@@ -2917,19 +2906,17 @@ if (document.getElementById('appContainer')) {
             activePlayer.volume(volume);
             activePlayer.muted(volume === 0);
         });
-
-        // FIX 4: Progress Bar
+        
         // ✅ FIXED: Progress bar seeking with better mobile support
+        // Progress bar seeking
         let isSeeking = false;
-        let seekStartTime = 0;
+        let seekStartTime = 0; // ✅ NEW: Track seek start time
 
         const handleProgressClick = (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
-            e.preventDefault();
-            e.stopPropagation();
-            
+            // ✅ FIXED: Better touch coordinate handling
             const clientX = e.type.includes('touch') ? 
                 (e.touches && e.touches[0] ? e.touches[0].clientX : e.changedTouches[0].clientX) : 
                 e.clientX;
@@ -2938,33 +2925,33 @@ if (document.getElementById('appContainer')) {
             const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
             const newTime = percent * activePlayer.duration();
             
+            // ✅ NEW: Validate seek time
             if (isFinite(newTime) && newTime >= 0) {
                 activePlayer.currentTime(newTime);
                 
-                if (isMobile) {
+                // ✅ NEW: Visual feedback for mobile
+                if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
                     controlsManager.elements.progressBar.style.setProperty('--touch-x', `${percent * 100}%`);
                 }
             }
         };
 
+        // ✅ NEW: Unified touch/mouse event handling
         const startSeeking = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            
             isSeeking = true;
             seekStartTime = Date.now();
             stateManager.isSeeking = true;
             controlsManager.elements.progressBar.classList.add('seeking');
             
+            // ✅ NEW: Prevent text selection on mobile
+            e.preventDefault();
+            
+            // Update position immediately
             handleProgressClick(e);
         };
 
         const continueSeeking = (e) => {
             if (!isSeeking) return;
-            
-            e.preventDefault();
-            e.stopPropagation();
             
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
@@ -2979,7 +2966,8 @@ if (document.getElementById('appContainer')) {
             controlsManager.elements.progressPlayed.style.width = `${percent * 100}%`;
             controlsManager.elements.progressHandle.style.left = `${percent * 100}%`;
             
-            if (isMobile) {
+            // ✅ NEW: Show time preview on mobile
+            if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
                 const time = percent * activePlayer.duration();
                 if (controlsManager.elements.timeDisplay) {
                     controlsManager.elements.timeDisplay.textContent = 
@@ -2991,11 +2979,11 @@ if (document.getElementById('appContainer')) {
         const endSeeking = (e) => {
             if (!isSeeking) return;
             
-            e.preventDefault();
-            e.stopPropagation();
-            
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
+            
+            // ✅ NEW: Only seek if it was an intentional drag (not a quick tap)
+            const seekDuration = Date.now() - seekStartTime;
             
             const clientX = e.type.includes('touch') ? 
                 (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : e.clientX) : 
@@ -3014,23 +3002,39 @@ if (document.getElementById('appContainer')) {
             controlsManager.elements.progressBar.classList.remove('seeking');
         };
 
-        // Single click/tap handler for progress bar
+        // ✅ NEW: Single click/tap handler for progress bar
         controlsManager.elements.progressBar.addEventListener('click', (e) => {
+            // Only handle direct clicks, not drags
             if (!isSeeking) {
                 handleProgressClick(e);
             }
-        }, { capture: true });
+        });
 
         // Mouse events (desktop)
-        controlsManager.elements.progressBar.addEventListener('mousedown', startSeeking, { capture: true });
+        controlsManager.elements.progressBar.addEventListener('mousedown', startSeeking);
         document.addEventListener('mousemove', continueSeeking);
         document.addEventListener('mouseup', endSeeking);
 
-        // Touch events (mobile)
-        if (isMobile) {
-            controlsManager.elements.progressBar.addEventListener('touchstart', startSeeking, { capture: true, passive: false });
-            document.addEventListener('touchmove', continueSeeking, { passive: false });
-            document.addEventListener('touchend', endSeeking, { passive: false });
+        // ✅ FIXED: Touch events (mobile) - attach to modal to capture all touches
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+            controlsManager.elements.progressBar.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startSeeking(e);
+            }, { passive: false });
+            
+            modal.addEventListener('touchmove', (e) => {
+                if (isSeeking) {
+                    e.preventDefault();
+                    continueSeeking(e);
+                }
+            }, { passive: false });
+            
+            modal.addEventListener('touchend', (e) => {
+                if (isSeeking) {
+                    e.preventDefault();
+                    endSeeking(e);
+                }
+            }, { passive: false });
         }
         
         // Progress bar hover - show thumbnail preview
@@ -3053,19 +3057,22 @@ if (document.getElementById('appContainer')) {
             controlsManager.elements.progressThumbnail.style.display = 'none';
         });
         
-        // FIX 3: Settings menu
-        const handleSettingsClick = (e) => {
+        // Settings menu
+        controlsManager.elements.settingsBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            e.stopImmediatePropagation();
             const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
             controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
-        };
+        });
 
-        controlsManager.elements.settingsBtn.addEventListener('click', handleSettingsClick, { capture: true });
-
+        // ✅ NEW: Mobile-specific touch handler
         if (isMobile) {
-            controlsManager.elements.settingsBtn.addEventListener('touchstart', handleSettingsClick, { capture: true, passive: false });
+            controlsManager.elements.settingsBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
+                controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
+            }, { passive: false });
         }
         
         // Close settings menu when clicking outside
@@ -3209,10 +3216,6 @@ if (document.getElementById('appContainer')) {
             document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
             document.removeEventListener('click', closeSettingsMenu);
             document.removeEventListener('keydown', handleKeyDown);
-            document.removeEventListener('mousemove', continueSeeking);
-            document.removeEventListener('mouseup', endSeeking);
-            document.removeEventListener('touchmove', continueSeeking);
-            document.removeEventListener('touchend', endSeeking);
             
             // ✅ NEW: Clear all intervals/timeouts
             if (hideControlsInterval) {
@@ -3249,20 +3252,31 @@ if (document.getElementById('appContainer')) {
             document.body.style.overflow = '';
         };
 
-        // FIX 2: Close Button
-        const handleCloseClick = (e) => {
+        controlsManager.elements.closeBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            e.stopImmediatePropagation();
             closePlayer();
-        };
+        });
 
-        controlsManager.elements.closeBtn.addEventListener('click', handleCloseClick, { capture: true });
-        controlsManager.elements.closeErrorBtn.addEventListener('click', handleCloseClick, { capture: true });
+        controlsManager.elements.closeErrorBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closePlayer();
+        });
 
+        // ✅ NEW: Mobile-specific touch handlers
         if (isMobile) {
-            controlsManager.elements.closeBtn.addEventListener('touchstart', handleCloseClick, { capture: true, passive: false });
-            controlsManager.elements.closeErrorBtn.addEventListener('touchstart', handleCloseClick, { capture: true, passive: false });
+            controlsManager.elements.closeBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                closePlayer();
+            }, { passive: false });
+            
+            controlsManager.elements.closeErrorBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                closePlayer();
+            }, { passive: false });
         }
         
         // Keyboard handler
@@ -3530,31 +3544,26 @@ if (document.getElementById('appContainer')) {
             });
         }
         
-        // FIX 1: Mobile Touch Gestures (Issue 1 & 2 Fixes)
-        // ✅ FIXED: Only handle touches on video area, not on controls
-        const videoAreaGestures = modal.querySelector('.premium-video-wrapper');
+        // --- Mobile Touch Gestures (Issue 1 & 2 Fixes) ---
 
         let touchStartX = 0;
         let touchStartY = 0;
         let touchStartTime = 0;
         let isSwiping = false;
-        let touchMoved = false;
-        let preventNextClick = false;
+        let touchMoved = false; // ✅ NEW: Track if touch moved significantly
+        let preventNextClick = false; // ✅ NEW: Flag to prevent ghost clicks
 
-        videoAreaGestures.addEventListener('touchstart', (e) => {
+        modal.addEventListener('touchstart', (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
-            // Skip if touching controls
             const controlElements = [
                 '.premium-controls-wrapper',
                 '.premium-player-header',
                 '.premium-progress-bar',
                 '.premium-control-btn',
                 '.premium-settings-menu',
-                '.premium-volume-slider',
-                '.premium-close-btn',
-                '.premium-settings-btn'
+                '.premium-volume-slider'
             ];
             
             if (controlElements.some(selector => e.target.closest(selector))) {
@@ -3567,25 +3576,23 @@ if (document.getElementById('appContainer')) {
                 touchStartY = e.touches[0].clientY;
                 touchStartTime = activePlayer.currentTime();
                 isSwiping = false;
-                touchMoved = false;
-                preventNextClick = false;
+                touchMoved = false; // ✅ NEW: Reset movement flag
+                preventNextClick = false; // ✅ NEW: Reset click prevention flag
             }
         }, { passive: true });
-
-        videoAreaGestures.addEventListener('touchmove', (e) => {
+        
+        // Replace touchmove handler
+        modal.addEventListener('touchmove', (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
-            // Skip if touching controls
             const controlElements = [
                 '.premium-controls-wrapper',
                 '.premium-player-header',
                 '.premium-progress-bar',
                 '.premium-control-btn',
                 '.premium-settings-menu',
-                '.premium-volume-slider',
-                '.premium-close-btn',
-                '.premium-settings-btn'
+                '.premium-volume-slider'
             ];
             
             if (controlElements.some(selector => e.target.closest(selector))) {
@@ -3600,13 +3607,14 @@ if (document.getElementById('appContainer')) {
             const deltaX = touchCurrentX - touchStartX;
             const deltaY = touchCurrentY - touchStartY;
             
+            // ✅ NEW: Mark as moved if threshold exceeded
             if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
                 touchMoved = true;
             }
             
             if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
                 isSwiping = true;
-                preventNextClick = true;
+                preventNextClick = true; // ✅ NEW: Prevent click after swipe
                 e.preventDefault();
                 
                 const seekAmount = (deltaX / window.innerWidth) * 30;
@@ -3620,8 +3628,9 @@ if (document.getElementById('appContainer')) {
                 }
             }
         }, { passive: false });
-
-        videoAreaGestures.addEventListener('touchend', (e) => {
+        
+        // Replace touchend handler
+        modal.addEventListener('touchend', (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
@@ -3629,16 +3638,13 @@ if (document.getElementById('appContainer')) {
                 controlsManager.elements.gestureIndicator.classList.remove('show');
             }
             
-            // Skip if touching controls
             const controlElements = [
                 '.premium-controls-wrapper',
                 '.premium-player-header',
                 '.premium-progress-bar',
                 '.premium-control-btn',
                 '.premium-settings-menu',
-                '.premium-volume-slider',
-                '.premium-close-btn',
-                '.premium-settings-btn'
+                '.premium-volume-slider'
             ];
             
             if (controlElements.some(selector => e.target.closest(selector))) {
@@ -3663,6 +3669,7 @@ if (document.getElementById('appContainer')) {
                 }
             }
             
+            // ✅ NEW: Prevent click events after gesture
             if (preventNextClick) {
                 const preventClickHandler = (clickEvent) => {
                     clickEvent.preventDefault();
@@ -3671,6 +3678,7 @@ if (document.getElementById('appContainer')) {
                 };
                 modal.addEventListener('click', preventClickHandler, true);
                 
+                // Clear flag after short delay
                 setTimeout(() => {
                     preventNextClick = false;
                     modal.removeEventListener('click', preventClickHandler, true);
@@ -3678,9 +3686,9 @@ if (document.getElementById('appContainer')) {
             }
             
             isSwiping = false;
-            touchMoved = false;
+            touchMoved = false; // ✅ NEW: Reset movement flag
         }, { passive: true });
-
+        
         // --- Enhanced Double-tap with Clear Zone Detection ---
 
         let lastTapTime = 0;
