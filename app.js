@@ -2694,21 +2694,21 @@ if (document.getElementById('appContainer')) {
             src: link.url,
             type: 'application/x-mpegURL'
         });
-        
-        // ✅ FIX 3 Part 2: iOS-specific initialization sequence (Issue 3)
-        if (isIOS) {
-            player.ready(() => {
-                // Unmute after iOS allows playback
-                player.muted(false);
-                player.volume(1);
-                
-                // Force load on iOS
+
+        // ✅ FIXED: Unmute video on all devices
+        player.ready(() => {
+            // Unmute and set full volume
+            player.muted(false);
+            player.volume(1);
+            
+            // Force load on iOS
+            if (isIOS) {
                 const videoElement = player.el().querySelector('video');
                 if (videoElement) {
                     videoElement.load();
                 }
-            });
-        }
+            }
+        });
 
         // ✅ OPTIMIZATION 2: Add Network State Monitoring (Opt 2)
         if (isMobile && navigator.connection) {
