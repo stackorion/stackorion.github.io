@@ -1595,12 +1595,19 @@ if (document.getElementById('appContainer')) {
                     thumbnailImage.loading = 'lazy';
                     thumbnailContainer.appendChild(thumbnailImage);
                     
-                    // NEW: Add click handler for video playback
+                    // ✅ FIX 2: Enhanced click handler
                     if (!isGallery && !link.locked) {
                         thumbnailContainer.style.cursor = 'pointer';
-                        thumbnailContainer.addEventListener('click', () => {
+                        
+                        // ✅ iOS: Use touchend for better mobile response
+                        const handlePlayRequest = (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
                             openVideoPlayer(link, tierName);
-                        });
+                        };
+                        
+                        thumbnailContainer.addEventListener('click', handlePlayRequest);
+                        thumbnailContainer.addEventListener('touchend', handlePlayRequest);
                     }
                     
                     card.appendChild(thumbnailContainer);
@@ -2209,13 +2216,25 @@ if (document.getElementById('appContainer')) {
                     <video 
                         id="premiumPlayer_${videoId}" 
                         class="video-js"
-                        preload="auto"
+                        preload="metadata"
                         playsinline
                         webkit-playsinline
                         x5-playsinline
                         x5-video-player-type="h5"
                         x5-video-player-fullscreen="true"
                     ></video>
+                    
+                    <!-- ✅ iOS FIX: Add tap-to-play overlay -->
+                    ${isIOS ? `
+                    <div class="ios-tap-to-play-overlay" id="iosTapOverlay_${videoId}">
+                        <div class="ios-tap-icon">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                        </div>
+                        <div class="ios-tap-text">Tap to Play Video</div>
+                    </div>
+                    ` : ''}
                     
                     <!-- Center Play Button Overlay -->
                     <div class="premium-center-overlay">
@@ -2360,17 +2379,18 @@ if (document.getElementById('appContainer')) {
         
         const playerId = `premiumPlayer_${videoId}`;
         
-        // ✅ FIX 3: Smart Fullscreen Request (Desktop only)
+        // ✅ FIX 4: Don't auto-request fullscreen, it blocks video playback
         const requestFullscreen = () => {
-            // Skip fullscreen on mobile - let native controls handle it
-            if (isMobile) {
+            // Skip on all mobile devices
+            if (isMobile || isIOS) {
+                console.log('[iOS Video] Skipping auto-fullscreen on mobile');
                 return;
             }
             
             const elem = modal;
             if (elem.requestFullscreen) {
-                elem.requestFullscreen().catch(() => {
-                    // Fullscreen failed - continue anyway
+                elem.requestFullscreen().catch((err) => {
+                    console.log('[iOS Video] Fullscreen not available:', err);
                 });
             } else if (elem.webkitRequestFullscreen) {
                 elem.webkitRequestFullscreen();
@@ -2381,34 +2401,70 @@ if (document.getElementById('appContainer')) {
             }
         };
         
-        setTimeout(requestFullscreen, 50);
+        // ✅ iOS FIX: Don't auto-request fullscreen on mobile
+        if (!isMobile && !isIOS) {
+            setTimeout(requestFullscreen, 50);
+        }
         
-        // ✅ FIX 4: Initialize Video.js with mobile optimizations
+        // ✅ FIX 5: Enhanced Video.js config for iOS
         const player = videojs(playerId, {
             controls: false,
             autoplay: false,
-            preload: 'auto',
+            preload: 'metadata', // ✅ iOS: Use metadata instead of auto
             playsinline: true,
             responsive: true,
             fluid: true,
-            // ✅ Mobile-specific config
-            nativeControlsForTouch: false, // Use custom controls on mobile
+            // ✅ iOS-specific config
+            nativeControlsForTouch: false, // Keep custom controls
+            muted: false, // ✅ iOS: Start unmuted (muted autoplay is allowed, but we want user-initiated)
             html5: {
                 vhs: {
                     enableLowInitialPlaylist: true,
                     smoothQualityChange: true,
-                    overrideNative: !isIOS, // Let iOS use native HLS
-                    bandwidth: isMobile ? 2000000 : 5000000 // Lower initial bandwidth on mobile
+                    overrideNative: !isIOS, // ✅ iOS: Let Safari handle HLS natively
+                    bandwidth: isMobile ? 2000000 : 5000000
                 },
-                nativeVideoTracks: isIOS, // iOS handles tracks better natively
-                nativeAudioTracks: isIOS
-            }
+                nativeVideoTracks: isIOS, // ✅ iOS handles tracks better natively
+                nativeAudioTracks: isIOS,
+                nativeTextTracks: isIOS
+            },
+            // ✅ iOS FIX: Add these tech options
+            techOrder: ['html5'],
+            sources: [{
+                src: link.url,
+                type: 'application/x-mpegURL'
+            }]
         });
         
         modal._player = player;
         modal._playerId = playerId;
         
         activePlayers.set(playerId, { player, modal });
+        
+        // ✅ iOS FIX: Handle tap-to-play overlay
+        if (isIOS) {
+            const iosOverlay = document.getElementById(`iosTapOverlay_${videoId}`);
+            if (iosOverlay) {
+                const handleIOSTap = async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    try {
+                        const playPromise = player.play();
+                        if (playPromise !== undefined) {
+                            await playPromise;
+                            iosOverlay.classList.add('hidden');
+                        }
+                    } catch (error) {
+                        console.error('[iOS Video] Tap-to-play failed:', error);
+                        alert('Unable to play video. Please try again.');
+                    }
+                };
+                
+                iosOverlay.addEventListener('click', handleIOSTap);
+                iosOverlay.addEventListener('touchend', handleIOSTap);
+            }
+        }
         
         // Initialize managers (same as before)
         const stateManager = new PremiumPlayerStateManager();
@@ -2566,6 +2622,7 @@ if (document.getElementById('appContainer')) {
         // --- Event Handlers ---
         
         // Play/Pause
+        // ✅ FIX 1: Direct play with promise handling
         const togglePlayPause = () => {
             if (!isPlayerHealthy(playerId)) {
                 cleanupPlayer(playerId);
@@ -2575,17 +2632,43 @@ if (document.getElementById('appContainer')) {
             const activePlayer = activePlayers.get(playerId).player;
             try {
                 if (activePlayer.paused()) {
-                    activePlayer.play().catch(() => {});
+                    // ✅ iOS CRITICAL: Use promise-based play with explicit user interaction
+                    const playPromise = activePlayer.play();
+                    
+                    if (playPromise !== undefined) {
+                        playPromise
+                            .then(() => {
+                                console.log('[iOS Video] Playback started successfully');
+                            })
+                            .catch(error => {
+                                console.error('[iOS Video] Playback failed:', error);
+                                // Show user-friendly error
+                                if (error.name === 'NotAllowedError') {
+                                    alert('Please tap the play button to start the video.');
+                                }
+                            });
+                    }
                 } else {
                     activePlayer.pause();
                 }
             } catch (error) {
+                console.error('[iOS Video] Toggle error:', error);
                 cleanupPlayer(playerId);
             }
         };
         
         controlsManager.elements.playBtn.addEventListener('click', togglePlayPause);
         controlsManager.elements.centerPlayBtn.addEventListener('click', togglePlayPause);
+        
+        // ✅ FIX 3: Add touchend listener for mobile
+        controlsManager.elements.playBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            togglePlayPause();
+        });
+        controlsManager.elements.centerPlayBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            togglePlayPause();
+        });
         
         // Skip buttons
         controlsManager.elements.skipBackward.addEventListener('click', () => {

@@ -3270,3 +3270,60 @@ body.theme-dark .announcement-error {
         font-size: 16px;
     }
 }
+
+/* ✅ iOS Video Player Fix - Tap to Play Overlay */
+.ios-tap-to-play-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.ios-tap-to-play-overlay.hidden {
+    display: none;
+}
+
+.ios-tap-icon {
+    width: 80px;
+    height: 80px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+    animation: ios-pulse 2s infinite;
+}
+
+.ios-tap-icon svg {
+    width: 40px;
+    height: 40px;
+    fill: #000;
+}
+
+.ios-tap-text {
+    color: white;
+    font-size: 18px;
+    font-weight: 600;
+    text-align: center;
+}
+
+@keyframes ios-pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.1);
+        opacity: 0.8;
+    }
+}
