@@ -1,6 +1,10 @@
 /* Define CSS custom properties for theming */
 :root {
     --transition-duration: 0.3s;
+    --transition-timing: cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-all: all var(--transition-duration) var(--transition-timing);
+    --transition-transform: transform 0.2s ease-in-out;
+    --transition-shadow: box-shadow 0.2s ease-in-out;
 }
 
 .theme-dark {
@@ -411,7 +415,7 @@ button:disabled {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all var(--transition-duration);
+    transition: var(--transition-all);
 }
 
 .modal-close-btn:hover {
@@ -486,7 +490,7 @@ button:disabled {
     font-weight: 500;
     font-size: 0.95em;
     border: 1px solid var(--color-border-primary);
-    transition: all var(--transition-duration);
+    transition: var(--transition-all);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
@@ -504,7 +508,7 @@ button:disabled {
     border-radius: 12px;
     font-size: 1em;
     border: 1px solid var(--color-border-secondary);
-    transition: all var(--transition-duration);
+    transition: var(--transition-all);
 }
 
 .modal-contact a {
@@ -533,39 +537,6 @@ button:disabled {
     } 
 }
 
-/* Mobile responsiveness for modal */
-@media (max-width: 768px) {
-    .modal-content {
-        margin: 10% auto;
-        width: 95%;
-        border-radius: 12px;
-    }
-    
-    .modal-text-content {
-        padding: 20px;
-    }
-    
-    .modal-image {
-        height: 200px;
-    }
-    
-    .modal-text-content h2 {
-        font-size: 1.6em;
-    }
-    
-    .modal-close-btn {
-        top: 10px;
-        right: 15px;
-        width: 35px;
-        height: 35px;
-        font-size: 28px;
-    }
-    
-    .social-link {
-        padding: 10px 16px;
-        font-size: 0.9em;
-    }
-}
 .tier-group {
     margin-bottom: 30px;
     border-left: 3px solid var(--color-accent-primary);
@@ -806,7 +777,7 @@ button:disabled {
     cursor: pointer;
     width: auto;
     font-size: 0.9em;
-    transition: all var(--transition-duration) ease-in-out;
+    transition: var(--transition-all) ease-in-out;
     position: relative;
     overflow: hidden;
 }
@@ -891,11 +862,6 @@ button:disabled {
 
 .search-container.has-query {
     margin-bottom: 25px;
-}
-
-.search-container.has-query #searchInput {
-    border-color: var(--color-accent-primary);
-    box-shadow: 0 0 0 2px rgba(var(--color-accent-primary-rgb, 0, 123, 255), 0.25);
 }
 
 #searchEmptyMessage {
@@ -1135,86 +1101,6 @@ button:disabled {
     50% { transform: scale(1.05); opacity: 0.9; }
 }
 
-@media (max-width: 768px) {
-    .container {
-        width: 98%;
-        padding: 15px 20px;
-    }
-    
-    .platforms-grid, .tiers-grid {
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 20px;
-    }
-    
-    .filter-btn {
-        padding: 8px 14px;
-        margin: 0 3px 6px 3px;
-        font-size: 0.85em;
-    }
-    
-    .new-badge, .new-badge-text {
-        top: 8px;
-        right: 8px;
-        padding: 4px 8px;
-        font-size: 0.7em;
-    }
-    
-    .view-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 10px;
-    }
-    
-    .welcome-message {
-        padding: 15px;
-        font-size: 1em;
-    }
-    
-    .search-container {
-        margin-bottom: 15px;
-    }
-    
-    .search-container.has-query #searchInput {
-        border-color: var(--color-accent-primary);
-        box-shadow: 0 0 0 2px rgba(var(--color-accent-primary-rgb, 0, 123, 255), 0.25);
-    }
-    
-    .theme-toggle-container {
-        margin-right: 5px;
-    }
-    
-    .theme-toggle {
-        width: 44px;
-        height: 22px;
-    }
-    
-    .theme-toggle .slider {
-        width: 18px;
-        height: 18px;
-    }
-    
-    .theme-toggle input:checked + .slider {
-        transform: translateX(22px);
-    }
-    
-    .theme-toggle .slider::before {
-        top: 1px;
-        left: 1px;
-        font-size: 12px;
-    }
-    
-    .subscription-status {
-        padding: 0;
-        font-size: 0.8em;
-        margin-right: 5px;
-    }
-    .tier-name-display {
-        padding: 6px 10px;
-    }
-    .status-text {
-        padding: 6px 10px 6px 0;
-    }
-}
 /* --- RENEWAL AND SUPPORT STYLES --- */
 .renewal-banner {
     background: linear-gradient(90deg, #ffc107, #ff9800);
@@ -1266,7 +1152,6 @@ button:disabled {
 .header-support-link:hover {
     background-color: var(--color-accent-hover);
 }
-/* Add this at the end of style.css */
 
 .header-download-link {
     color: #fff;
@@ -1285,6 +1170,7 @@ button:disabled {
     filter: brightness(110%);
     transform: scale(1.05);
 }
+
 /* ===== GALLERY STYLES ===== */
 
 /* Gallery Grid - Modern Card Layout */
@@ -1301,7 +1187,7 @@ button:disabled {
     border-radius: 12px;
     background: var(--card-background);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: var(--transition-all);
     cursor: pointer;
 }
 
@@ -1416,64 +1302,22 @@ button:disabled {
     line-height: 1.6;
 }
 
-/* Responsive Gallery Grid */
-@media (max-width: 1200px) {
-    .gallery-grid {
-        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-        gap: 20px;
-    }
+.view-gallery-btn {
+    display: inline-block;
+    background-color: var(--color-accent-primary);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 5px;
+    text-decoration: none;
+    font-size: 0.85em;
+    font-weight: 500;
+    transition: background-color var(--transition-duration);
 }
 
-@media (max-width: 768px) {
-    .gallery-grid {
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-        gap: 16px;
-    }
-    
-    .gallery-item img {
-        height: 180px;
-    }
-    
-    .gallery-info {
-        padding: 24px;
-    }
-    
-    .gallery-info h3 {
-        font-size: 22px;
-    }
-}
-
-@media (max-width: 480px) {
-    .gallery-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-    }
-    
-    .gallery-item {
-        border-radius: 8px;
-    }
-    
-    .gallery-item img {
-        height: 140px;
-    }
-    
-    .gallery-caption {
-        font-size: 13px;
-        padding: 12px;
-    }
-    
-    .gallery-info {
-        padding: 20px;
-        margin-bottom: 20px;
-    }
-    
-    .gallery-info h3 {
-        font-size: 20px;
-    }
-    
-    .gallery-info p {
-        font-size: 14px;
-    }
+.view-gallery-btn:hover {
+    background-color: var(--color-accent-hover);
+    text-decoration: none;
+    color: #fff;
 }
 
 /* ===== PREMIUM THEATRE MODE PHOTOSWIPE STYLING ===== */
@@ -1654,7 +1498,7 @@ button:disabled {
     display: none !important;
 }
 
-/* Mobile Optimizations */
+/* Mobile Optimizations for PhotoSwipe - Preserved as they are library specific */
 @media (max-width: 768px) {
     .pswp__button {
         width: 42px !important;
@@ -1720,34 +1564,6 @@ button:disabled {
     box-sizing: border-box;
 }
 
-/* Responsive Gallery Grid */
-@media (max-width: 768px) {
-    .gallery-grid {
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-        gap: 10px;
-    }
-    
-    .gallery-item img {
-        height: 150px;
-    }
-}
-
-@media (max-width: 480px) {
-    .gallery-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 8px;
-    }
-    
-    .gallery-item img {
-        height: 120px;
-    }
-    
-    .gallery-caption {
-        font-size: 12px;
-        padding: 8px;
-    }
-}
-
 /* Multi-subscription badge styles */
 .subscription-status-badge {
     display: inline-flex;
@@ -1791,6 +1607,7 @@ button:disabled {
 .badge-status-text {
     font-weight: 400;
 }
+
 /* ==============================================================================
    ANNOUNCEMENT SLIDER STYLES (V2 - MULTI-ANNOUNCEMENT SYSTEM)
    ============================================================================== */
@@ -1995,65 +1812,6 @@ body.theme-dark .announcement-error {
     background: linear-gradient(135deg, #3a1e23 0%, #5a2d35 100%);
     color: #ffb3ba;
     border-left-color: #f44336;
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-    .announcement-slide {
-        padding: 15px 20px;
-        min-height: 60px;
-    }
-    
-    .announcement-title {
-        font-size: 1em;
-    }
-    
-    .announcement-content p {
-        font-size: 0.9em;
-    }
-    
-    .announcement-swiper .swiper-button-next,
-    .announcement-swiper .swiper-button-prev {
-        width: 30px;
-        height: 30px;
-    }
-    
-    .announcement-swiper .swiper-button-next:after,
-    .announcement-swiper .swiper-button-prev:after {
-        font-size: 14px;
-    }
-}
-
-@media (max-width: 480px) {
-    #announcementSliderContainer {
-        padding: 0 10px;
-    }
-    
-    .announcement-slide {
-        padding: 12px 15px;
-    }
-    
-    .announcement-swiper .swiper-button-next,
-    .announcement-swiper .swiper-button-prev {
-        display: none;
-    }
-}
-.view-gallery-btn {
-    display: inline-block;
-    background-color: var(--color-accent-primary);
-    color: #fff;
-    padding: 6px 12px;
-    border-radius: 5px;
-    text-decoration: none;
-    font-size: 0.85em;
-    font-weight: 500;
-    transition: background-color var(--transition-duration);
-}
-
-.view-gallery-btn:hover {
-    background-color: var(--color-accent-hover);
-    text-decoration: none;
-    color: #fff;
 }
 
 /* ========================================
@@ -2794,156 +2552,6 @@ body.theme-dark .announcement-error {
 }
 
 /* ============================================
-   MOBILE OPTIMIZATIONS (iPhone/Android)
-   ============================================ */
-
-@media (max-width: 768px) {
-    .premium-player-header {
-        padding: 16px 20px;
-    }
-    
-    .premium-video-title {
-        font-size: 1.1rem;
-        padding: 0 12px;
-    }
-    
-    .premium-close-btn {
-        width: 40px;
-        height: 40px;
-    }
-    
-    .premium-controls-row {
-        padding: 0 20px 20px;
-        gap: 12px;
-    }
-    
-    .premium-progress-container {
-        padding: 0 20px 12px;
-    }
-    
-    .premium-control-btn {
-        padding: 8px;
-    }
-    
-    .premium-control-btn svg {
-        width: 20px;
-        height: 20px;
-    }
-    
-    .premium-play-btn svg {
-        width: 28px;
-        height: 28px;
-    }
-    
-    .premium-skip-btn svg {
-        width: 24px;
-        height: 24px;
-    }
-    
-    .premium-time-display {
-        font-size: 0.85rem;
-    }
-    
-    /* Hide volume slider on mobile (iOS doesn't allow volume control via JS) */
-    .premium-volume-slider-wrapper {
-        display: none;
-    }
-    
-    /* Settings menu positioning */
-    .premium-settings-menu {
-        right: -10px;
-        min-width: 180px;
-    }
-    
-    /* Larger touch targets */
-    .premium-progress-bar {
-        height: 8px;
-    }
-    
-    .premium-progress-bar:hover {
-        height: 8px;
-    }
-    
-    .premium-progress-handle {
-        width: 20px;
-        height: 20px;
-    }
-    
-    /* Center play button */
-    .premium-center-play-btn {
-        width: 70px;
-        height: 70px;
-    }
-    
-    .premium-center-play-btn svg {
-        width: 32px;
-        height: 32px;
-    }
-    
-    /* Loading overlay */
-    .player-spinner {
-        width: 50px;
-        height: 50px;
-    }
-    
-    /* Thumbnail preview - smaller */
-    .premium-progress-thumbnail {
-        width: 120px;
-        height: 68px;
-    }
-}
-
-@media (max-width: 480px) {
-    .premium-controls-row {
-        gap: 8px;
-    }
-    
-    .premium-control-btn {
-        padding: 6px;
-    }
-    
-    /* Hide less critical buttons on very small screens */
-    .premium-skip-backward,
-    .premium-skip-forward {
-        display: none;
-    }
-    
-    .premium-settings-menu {
-        min-width: 160px;
-        font-size: 0.9rem;
-    }
-    
-    .premium-video-title {
-        font-size: 1rem;
-    }
-}
-
-/* ============================================
-   TOUCH GESTURE FEEDBACK
-   ============================================ */
-
-.premium-gesture-indicator {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(0, 0, 0, 0.8);
-    backdrop-filter: blur(10px);
-    color: #fff;
-    padding: 20px 28px;
-    border-radius: 50%;
-    font-size: 2rem;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.2s ease;
-    z-index: 45;
-}
-
-.premium-gesture-indicator.show {
-    opacity: 1;
-}
-
-/* ============================================
    ACCESSIBILITY ENHANCEMENTS
    ============================================ */
 
@@ -3088,20 +2696,10 @@ body.theme-dark .announcement-error {
 }
 
 /* ============================================================================
-   MOBILE VIDEO PLAYER FIXES - Add to styles.css
+   MOBILE SAFE AREA FIXES (Specific for Notch/Island support)
+   These are kept separate as they apply to specific classes not always covered
+   in the main consolidated media query.
    ============================================================================ */
-
-/* ✅ FIX 1: Mobile-specific modal adjustments */
-.premium-player-modal.mobile-player {
-    /* Allow native scrolling if needed */
-    -webkit-overflow-scrolling: touch;
-}
-
-.premium-player-modal.mobile-player .premium-player-content {
-    /* Ensure video fills screen on mobile */
-    height: 100vh;
-    height: 100dvh; /* Dynamic viewport height for mobile browsers */
-}
 
 /* ✅ FIX 2: iOS safe areas (notch support) */
 @supports (padding: env(safe-area-inset-top)) {
@@ -3111,47 +2709,6 @@ body.theme-dark .announcement-error {
     
     .premium-player-modal.mobile-player .premium-controls-wrapper {
         padding-bottom: calc(8px + env(safe-area-inset-bottom));
-    }
-}
-
-/* ✅ FIX 3: Larger touch targets on mobile */
-@media (max-width: 768px) {
-    .premium-control-btn {
-        min-width: 48px; /* Apple/Android minimum touch target */
-        min-height: 48px;
-        padding: 12px;
-    }
-    
-    .premium-close-btn {
-        min-width: 48px;
-        min-height: 48px;
-        padding: 12px;
-    }
-    
-    .premium-center-play-btn {
-        width: 80px !important;
-        height: 80px !important;
-    }
-    
-    /* Larger progress bar for easier touch */
-    .premium-progress-bar {
-        height: 6px;
-        cursor: pointer;
-    }
-    
-    .premium-progress-handle {
-        width: 16px;
-        height: 16px;
-    }
-    
-    /* Make settings menu full-width on mobile */
-    .premium-settings-menu {
-        right: auto;
-        left: 50%;
-        transform: translateX(-50%);
-        min-width: 90%;
-        max-width: 320px;
-        bottom: 70px;
     }
 }
 
@@ -3202,8 +2759,262 @@ body.theme-dark .announcement-error {
     }
 }
 
-/* ✅ FIX 8: Gesture indicators - larger on mobile */
+/* ============================================================================
+   CONSOLIDATED MOBILE MEDIA QUERIES
+   Replaces all scattered media queries in the file
+   ============================================================================ */
+
 @media (max-width: 768px) {
+    /* Container & Layout */
+    .container {
+        width: 98%;
+        padding: 15px 20px;
+    }
+    
+    /* Grids */
+    .platforms-grid, .tiers-grid {
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 20px;
+    }
+    
+    .gallery-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 10px;
+    }
+    
+    .gallery-item img {
+        height: 150px;
+    }
+    
+    /* Filters & Buttons */
+    .filter-btn {
+        padding: 8px 14px;
+        margin: 0 3px 6px 3px;
+        font-size: 0.85em;
+    }
+    
+    /* Badges */
+    .new-badge, .new-badge-text {
+        top: 8px;
+        right: 8px;
+        padding: 4px 8px;
+        font-size: 0.7em;
+    }
+    
+    /* Headers */
+    .view-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    .welcome-message {
+        padding: 15px;
+        font-size: 1em;
+    }
+    
+    /* Search */
+    .search-container {
+        margin-bottom: 15px;
+    }
+    
+    /* Theme Toggle */
+    .theme-toggle-container {
+        margin-right: 5px;
+    }
+    
+    .theme-toggle {
+        width: 44px;
+        height: 22px;
+    }
+    
+    .theme-toggle .slider {
+        width: 18px;
+        height: 18px;
+    }
+    
+    .theme-toggle input:checked + .slider {
+        transform: translateX(22px);
+    }
+    
+    .theme-toggle .slider::before {
+        top: 1px;
+        left: 1px;
+        font-size: 12px;
+    }
+    
+    /* Subscription Status */
+    .subscription-status {
+        padding: 0;
+        font-size: 0.8em;
+        margin-right: 5px;
+    }
+    
+    .tier-name-display {
+        padding: 6px 10px;
+    }
+    
+    .status-text {
+        padding: 6px 10px 6px 0;
+    }
+    
+    /* Modal */
+    .modal-content {
+        margin: 10% auto;
+        width: 95%;
+        border-radius: 12px;
+    }
+    
+    .modal-text-content {
+        padding: 20px;
+    }
+    
+    .modal-image {
+        height: 200px;
+    }
+    
+    .modal-text-content h2 {
+        font-size: 1.6em;
+    }
+    
+    .modal-close-btn {
+        top: 10px;
+        right: 15px;
+        width: 35px;
+        height: 35px;
+        font-size: 28px;
+    }
+    
+    .social-link {
+        padding: 10px 16px;
+        font-size: 0.9em;
+    }
+    
+    /* Gallery Info */
+    .gallery-info {
+        padding: 24px;
+    }
+    
+    .gallery-info h3 {
+        font-size: 22px;
+    }
+    
+    /* Announcement Slider */
+    .announcement-slide {
+        padding: 15px 20px;
+        min-height: 60px;
+    }
+    
+    .announcement-title {
+        font-size: 1em;
+    }
+    
+    .announcement-content p {
+        font-size: 0.9em;
+    }
+    
+    .announcement-swiper .swiper-button-next,
+    .announcement-swiper .swiper-button-prev {
+        width: 30px;
+        height: 30px;
+    }
+    
+    .announcement-swiper .swiper-button-next:after,
+    .announcement-swiper .swiper-button-prev:after {
+        font-size: 14px;
+    }
+    
+    /* Premium Video Player */
+    .premium-player-header {
+        padding: 16px 20px;
+    }
+    
+    .premium-video-title {
+        font-size: 1.1rem;
+        padding: 0 12px;
+    }
+    
+    .premium-close-btn {
+        width: 40px;
+        height: 40px;
+    }
+    
+    .premium-controls-row {
+        padding: 0 20px 20px;
+        gap: 12px;
+    }
+    
+    .premium-progress-container {
+        padding: 0 20px 12px;
+    }
+    
+    .premium-control-btn {
+        padding: 8px;
+        min-width: 48px;
+        min-height: 48px;
+    }
+    
+    .premium-control-btn svg {
+        width: 20px;
+        height: 20px;
+    }
+    
+    .premium-play-btn svg {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .premium-skip-btn svg {
+        width: 24px;
+        height: 24px;
+    }
+    
+    .premium-time-display {
+        font-size: 0.85rem;
+    }
+    
+    .premium-volume-slider-wrapper {
+        display: none;
+    }
+    
+    .premium-settings-menu {
+        right: -10px;
+        min-width: 180px;
+    }
+    
+    .premium-progress-bar {
+        height: 8px;
+    }
+    
+    .premium-progress-bar:hover {
+        height: 8px;
+    }
+    
+    .premium-progress-handle {
+        width: 20px;
+        height: 20px;
+    }
+    
+    .premium-center-play-btn {
+        width: 70px;
+        height: 70px;
+    }
+    
+    .premium-center-play-btn svg {
+        width: 32px;
+        height: 32px;
+    }
+    
+    .player-spinner {
+        width: 50px;
+        height: 50px;
+    }
+    
+    .premium-progress-thumbnail {
+        width: 120px;
+        height: 68px;
+    }
+    
     .premium-gesture-indicator {
         font-size: 64px;
         padding: 20px;
@@ -3213,21 +3024,7 @@ body.theme-dark .announcement-error {
         font-size: 18px;
         padding: 16px 24px;
     }
-}
-
-/* ✅ FIX 9: Volume controls - hide slider on mobile (use system volume) */
-@media (max-width: 768px) {
-    .premium-volume-slider-wrapper {
-        display: none; /* Mobile devices use hardware volume buttons */
-    }
     
-    .premium-volume-group {
-        /* Just show mute button */
-    }
-}
-
-/* ✅ FIX 10: Skip buttons - more prominent on mobile */
-@media (max-width: 768px) {
     .premium-skip-btn {
         background: rgba(255, 255, 255, 0.15);
         border-radius: 8px;
@@ -3237,21 +3034,17 @@ body.theme-dark .announcement-error {
         background: rgba(255, 255, 255, 0.3);
         transform: scale(0.95);
     }
-}
-
-/* ✅ FIX 11: Loading overlay - ensure it covers video on mobile */
-.premium-player-modal.mobile-player .player-loading-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 100;
-    pointer-events: auto; /* Block interaction while loading */
-}
-
-/* ✅ FIX 12: Error overlay - better mobile formatting */
-@media (max-width: 768px) {
+    
+    .premium-player-modal.mobile-player .player-loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 100;
+        pointer-events: auto;
+    }
+    
     .player-error-content {
         padding: 24px;
         max-width: 90%;
@@ -3268,5 +3061,76 @@ body.theme-dark .announcement-error {
     .player-error-btn {
         padding: 12px 24px;
         font-size: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    /* Gallery */
+    .gallery-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+    
+    .gallery-item {
+        border-radius: 8px;
+    }
+    
+    .gallery-item img {
+        height: 120px;
+    }
+    
+    .gallery-caption {
+        font-size: 12px;
+        padding: 8px;
+    }
+    
+    .gallery-info {
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .gallery-info h3 {
+        font-size: 20px;
+    }
+    
+    .gallery-info p {
+        font-size: 14px;
+    }
+    
+    /* Announcement Slider */
+    #announcementSliderContainer {
+        padding: 0 10px;
+    }
+    
+    .announcement-slide {
+        padding: 12px 15px;
+    }
+    
+    .announcement-swiper .swiper-button-next,
+    .announcement-swiper .swiper-button-prev {
+        display: none;
+    }
+    
+    /* Premium Video Player */
+    .premium-controls-row {
+        gap: 8px;
+    }
+    
+    .premium-control-btn {
+        padding: 6px;
+    }
+    
+    .premium-skip-backward,
+    .premium-skip-forward {
+        display: none;
+    }
+    
+    .premium-settings-menu {
+        min-width: 160px;
+        font-size: 0.9rem;
+    }
+    
+    .premium-video-title {
+        font-size: 1rem;
     }
 }
