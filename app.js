@@ -840,7 +840,11 @@ class PremiumTouchCoordinator {
         // Check if touching any control area
         const isInControlArea = controlSelectors.some(selector => target.closest(selector));
         
-        return isInControlArea;
+        // ANDROID FIX: Also check for specific button elements
+        const isButton = target.matches('button, .premium-control-btn, .premium-close-btn');
+        const isInButton = target.closest('button, .premium-control-btn, .premium-close-btn');
+        
+        return isInControlArea || isButton || isInButton;
     }
     
     isVideoArea(target) {
@@ -3092,48 +3096,83 @@ if (document.getElementById('appContainer')) {
             }
         });
 
-        // === MOBILE: Touch Events in CAPTURE phase ===
-        controlsManager.elements.progressBar.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            e.stopImmediatePropagation();
+        // ==============================================================================
+        // FIXED: Progress Bar - Android Compatible (Fix 4)
+        // ==============================================================================
+        if (isMobile) {
+            let progressTouchIdentifier = null;
+            let progressTouchActive = false;
             
-            if (e.touches.length > 1) return;
+            const handleProgressTouchStart = (e) => {
+                // Don't use preventDefault here - let it bubble naturally
+                
+                if (e.touches.length > 1) return;
+                
+                const touch = e.touches[0];
+                progressTouchIdentifier = touch.identifier;
+                progressTouchActive = true;
+                
+                startSeeking();
+                updateSeekPosition(touch.clientX);
+                
+                // Show controls during seek
+                controlsManager.showControls();
+            };
             
-            const touch = e.touches[0];
-            seekState.touchIdentifier = touch.identifier;
-            startSeeking();
-            updateSeekPosition(touch.clientX);
-        }, { passive: false, capture: true });
-
-        // Attach touchmove to DOCUMENT so it tracks outside progress bar
-        document.addEventListener('touchmove', (e) => {
-            if (!seekState.active || seekState.touchIdentifier === null) return;
+            const handleProgressTouchMove = (e) => {
+                if (!progressTouchActive || progressTouchIdentifier === null) return;
+                
+                const touch = Array.from(e.touches).find(t => t.identifier === progressTouchIdentifier);
+                if (!touch) return;
+                
+                // Prevent scrolling during seek
+                if (seekState.active) {
+                    e.preventDefault();
+                }
+                
+                updateSeekPosition(touch.clientX);
+            };
             
-            const touch = Array.from(e.touches).find(t => t.identifier === seekState.touchIdentifier);
-            if (!touch) return;
-            
-            updateSeekPosition(touch.clientX);
-        }, { passive: true });
-
-        // Attach touchend to DOCUMENT
-        document.addEventListener('touchend', (e) => {
-            if (!seekState.active || seekState.touchIdentifier === null) return;
-            
-            const touch = Array.from(e.changedTouches).find(t => t.identifier === seekState.touchIdentifier);
-            if (!touch) {
+            const handleProgressTouchEnd = (e) => {
+                if (!progressTouchActive || progressTouchIdentifier === null) return;
+                
+                const touch = Array.from(e.changedTouches).find(t => t.identifier === progressTouchIdentifier);
+                if (!touch) {
+                    progressTouchActive = false;
+                    progressTouchIdentifier = null;
+                    stopSeeking();
+                    return;
+                }
+                
+                updateSeekPosition(touch.clientX, true);
+                
+                progressTouchActive = false;
+                progressTouchIdentifier = null;
                 stopSeeking();
-                return;
-            }
+            };
             
-            updateSeekPosition(touch.clientX, true);
-            stopSeeking();
-        }, { passive: true });
-
-        document.addEventListener('touchcancel', () => {
-            if (seekState.active) {
-                stopSeeking();
-            }
-        }, { passive: true });
+            const handleProgressTouchCancel = () => {
+                if (progressTouchActive) {
+                    progressTouchActive = false;
+                    progressTouchIdentifier = null;
+                    stopSeeking();
+                }
+            };
+            
+            // Attach directly to progress bar (NOT document)
+            controlsManager.elements.progressBar.addEventListener('touchstart', handleProgressTouchStart, { passive: true });
+            controlsManager.elements.progressBar.addEventListener('touchmove', handleProgressTouchMove, { passive: false });
+            controlsManager.elements.progressBar.addEventListener('touchend', handleProgressTouchEnd, { passive: true });
+            controlsManager.elements.progressBar.addEventListener('touchcancel', handleProgressTouchCancel, { passive: true });
+            
+            // Cleanup function
+            modal.addEventListener('remove', () => {
+                controlsManager.elements.progressBar.removeEventListener('touchstart', handleProgressTouchStart);
+                controlsManager.elements.progressBar.removeEventListener('touchmove', handleProgressTouchMove);
+                controlsManager.elements.progressBar.removeEventListener('touchend', handleProgressTouchEnd);
+                controlsManager.elements.progressBar.removeEventListener('touchcancel', handleProgressTouchCancel);
+            });
+        }
 
         // === Progress bar hover preview (desktop only) ===
         if (!isMobile) {
@@ -3159,7 +3198,7 @@ if (document.getElementById('appContainer')) {
         // ==============================================================================
         
         // ==============================================================================
-        // FIXED: Settings Button Handler - Capture Phase
+        // FIXED: Settings Button Handler - Android Compatible (Fix 2)
         // ==============================================================================
         const toggleSettingsMenu = (e) => {
             e.preventDefault();
@@ -3167,17 +3206,38 @@ if (document.getElementById('appContainer')) {
             
             const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
             controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
+            
+            // Visual feedback
+            if (isActive) {
+                controlsManager.elements.settingsBtn.style.background = 'rgba(255, 255, 255, 0.2)';
+            } else {
+                controlsManager.elements.settingsBtn.style.background = '';
+            }
         };
 
-        // Use CAPTURE phase
-        controlsManager.elements.settingsBtn.addEventListener('click', toggleSettingsMenu, { capture: true });
+        // Desktop: Standard click
+        controlsManager.elements.settingsBtn.addEventListener('click', toggleSettingsMenu);
 
-        // Mobile: touchend in capture phase
+        // Mobile: Use touchstart for instant response
         if (isMobile) {
-            controlsManager.elements.settingsBtn.addEventListener('touchend', toggleSettingsMenu, { 
-                passive: false, 
-                capture: true 
-            });
+            const handleTouchSettings = (e) => {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                
+                // Block subsequent events
+                const blockEvent = (evt) => {
+                    evt.preventDefault();
+                    evt.stopImmediatePropagation();
+                };
+                
+                e.currentTarget.addEventListener('touchmove', blockEvent, { once: true, passive: false });
+                e.currentTarget.addEventListener('touchend', blockEvent, { once: true, passive: false });
+                e.currentTarget.addEventListener('touchcancel', blockEvent, { once: true, passive: false });
+                
+                toggleSettingsMenu(e);
+            };
+            
+            controlsManager.elements.settingsBtn.addEventListener('touchstart', handleTouchSettings, { passive: false });
         }
         // ==============================================================================
         
@@ -3187,6 +3247,7 @@ if (document.getElementById('appContainer')) {
                 !controlsManager.elements.settingsBtn.contains(e.target)) {
                 controlsManager.elements.settingsMenu.classList.remove('active');
                 controlsManager.elements.settingsBtn.setAttribute('aria-expanded', 'false');
+                controlsManager.elements.settingsBtn.style.background = '';
             }
         };
         
@@ -3211,7 +3272,9 @@ if (document.getElementById('appContainer')) {
                         option.classList.add('active');
                     }
                     
-                    // === FIXED: Quality Select - Capture Phase ===
+                    // ==============================================================================
+                    // FIXED: Quality Select - Android Compatible (Fix 3)
+                    // ==============================================================================
                     const handleQualitySelect = (e) => {
                         e.preventDefault();
                         e.stopImmediatePropagation();
@@ -3232,17 +3295,39 @@ if (document.getElementById('appContainer')) {
                         
                         // Close menu
                         controlsManager.elements.settingsMenu.classList.remove('active');
+                        controlsManager.elements.settingsBtn.style.background = '';
                     };
 
-                    // Use CAPTURE phase
-                    option.addEventListener('click', handleQualitySelect, { capture: true });
+                    // Desktop: Standard click
+                    option.addEventListener('click', handleQualitySelect);
 
-                    // Mobile: touchend in capture phase
+                    // Mobile: Use touchstart for instant response
                     if (isMobile) {
-                        option.addEventListener('touchend', handleQualitySelect, { 
-                            passive: false, 
-                            capture: true 
-                        });
+                        const handleTouchQuality = (e) => {
+                            e.preventDefault();
+                            e.stopImmediatePropagation();
+                            
+                            // Visual feedback
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+                            setTimeout(() => {
+                                if (e.currentTarget && e.currentTarget.style) {
+                                    e.currentTarget.style.background = '';
+                                }
+                            }, 200);
+                            
+                            // Block subsequent events
+                            const blockEvent = (evt) => {
+                                evt.preventDefault();
+                                evt.stopImmediatePropagation();
+                            };
+                            
+                            e.currentTarget.addEventListener('touchmove', blockEvent, { once: true, passive: false });
+                            e.currentTarget.addEventListener('touchend', blockEvent, { once: true, passive: false });
+                            
+                            handleQualitySelect(e);
+                        };
+                        
+                        option.addEventListener('touchstart', handleTouchQuality, { passive: false });
                     }
                     
                     controlsManager.elements.qualityOptions.appendChild(option);
@@ -3264,7 +3349,9 @@ if (document.getElementById('appContainer')) {
                         option.classList.add('active');
                     }
                     
-                    // === FIXED: Speed Select - Capture Phase ===
+                    // ==============================================================================
+                    // FIXED: Speed Select - Android Compatible (Fix 3)
+                    // ==============================================================================
                     const handleSpeedSelect = (e) => {
                         e.preventDefault();
                         e.stopImmediatePropagation();
@@ -3285,17 +3372,39 @@ if (document.getElementById('appContainer')) {
 
                         // Close menu
                         controlsManager.elements.settingsMenu.classList.remove('active');
+                        controlsManager.elements.settingsBtn.style.background = '';
                     };
 
-                    // Use CAPTURE phase
-                    option.addEventListener('click', handleSpeedSelect, { capture: true });
+                    // Desktop: Standard click
+                    option.addEventListener('click', handleSpeedSelect);
 
-                    // Mobile: touchend in capture phase
+                    // Mobile: Use touchstart for instant response
                     if (isMobile) {
-                        option.addEventListener('touchend', handleSpeedSelect, { 
-                            passive: false, 
-                            capture: true 
-                        });
+                        const handleTouchSpeed = (e) => {
+                            e.preventDefault();
+                            e.stopImmediatePropagation();
+                            
+                            // Visual feedback
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+                            setTimeout(() => {
+                                if (e.currentTarget && e.currentTarget.style) {
+                                    e.currentTarget.style.background = '';
+                                }
+                            }, 200);
+                            
+                            // Block subsequent events
+                            const blockEvent = (evt) => {
+                                evt.preventDefault();
+                                evt.stopImmediatePropagation();
+                            };
+                            
+                            e.currentTarget.addEventListener('touchmove', blockEvent, { once: true, passive: false });
+                            e.currentTarget.addEventListener('touchend', blockEvent, { once: true, passive: false });
+                            
+                            handleSpeedSelect(e);
+                        };
+                        
+                        option.addEventListener('touchstart', handleTouchSpeed, { passive: false });
                     }
                     
                     controlsManager.elements.speedOptions.appendChild(option);
@@ -3365,31 +3474,54 @@ if (document.getElementById('appContainer')) {
         };
 
         // ==============================================================================
-        // FIXED: Close Button Handler - Capture Phase
+        // FIXED: Close Button Handler - Android Compatible (Fix 1)
         // ==============================================================================
         const handleClose = (e) => {
             e.preventDefault();
-            e.stopImmediatePropagation(); // Stop ALL propagation
+            e.stopImmediatePropagation();
+            
+            // Immediate visual feedback
+            e.currentTarget.style.transform = 'scale(0.9)';
+            setTimeout(() => {
+                if (e.currentTarget && e.currentTarget.style) {
+                    e.currentTarget.style.transform = '';
+                }
+            }, 100);
+            
             closePlayer();
         };
 
-        // Use CAPTURE phase to intercept before touch coordinator
-        controlsManager.elements.closeBtn.addEventListener('click', handleClose, { capture: true });
-        controlsManager.elements.closeErrorBtn.addEventListener('click', handleClose, { capture: true });
+        // Desktop: Standard click
+        controlsManager.elements.closeBtn.addEventListener('click', handleClose);
+        controlsManager.elements.closeErrorBtn.addEventListener('click', handleClose);
 
-        // Mobile: Add touchend in capture phase
+        // Mobile: Use touchstart for instant response (Android-friendly)
         if (isMobile) {
-            controlsManager.elements.closeBtn.addEventListener('touchend', (e) => {
+            const handleTouchClose = (e) => {
                 e.preventDefault();
                 e.stopImmediatePropagation();
-                closePlayer();
-            }, { passive: false, capture: true }); // NOT passive - we need preventDefault
+                
+                // Block all subsequent events for this touch
+                const blockEvent = (evt) => {
+                    evt.preventDefault();
+                    evt.stopImmediatePropagation();
+                };
+                
+                e.currentTarget.addEventListener('touchmove', blockEvent, { once: true, passive: false });
+                e.currentTarget.addEventListener('touchend', blockEvent, { once: true, passive: false });
+                e.currentTarget.addEventListener('touchcancel', blockEvent, { once: true, passive: false });
+                
+                // Visual feedback
+                e.currentTarget.style.transform = 'scale(0.9)';
+                
+                // Close after brief delay for visual feedback
+                setTimeout(() => {
+                    closePlayer();
+                }, 50);
+            };
             
-            controlsManager.elements.closeErrorBtn.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                closePlayer();
-            }, { passive: false, capture: true });
+            controlsManager.elements.closeBtn.addEventListener('touchstart', handleTouchClose, { passive: false });
+            controlsManager.elements.closeErrorBtn.addEventListener('touchstart', handleTouchClose, { passive: false });
         }
         // ==============================================================================
         
