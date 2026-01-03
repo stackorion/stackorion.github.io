@@ -495,9 +495,6 @@ class PremiumSpeedManager {
     }
 }
 
-// ==============================================================================
-// REPLACEMENT 1: Enhanced Touch Coordinator (Complete Replacement)
-// ==============================================================================
 // --- Premium Video Touch Coordinator V2 (Production-Ready) ---
 class PremiumTouchCoordinator {
     constructor(modal, player, controlsManager) {
@@ -830,29 +827,25 @@ class PremiumTouchCoordinator {
     }
     
     isInteractiveControl(target) {
-        // Elements that should handle their own touches completely
+        // CRITICAL: Check if target is inside ANY control area
+        // These elements handle their own touches and should not be processed by coordinator
         const controlSelectors = [
-            '.premium-control-btn',
-            '.premium-close-btn',
-            '.premium-progress-bar',
-            '.premium-settings-menu',
-            '.premium-settings-item',
-            '.premium-volume-slider',
-            'button',
-            'input'
+            '.premium-controls-wrapper',  // Entire bottom control bar
+            '.premium-player-header',     // Entire top header
+            '.premium-settings-menu',     // Settings dropdown
+            '.premium-error-overlay',     // Error overlay buttons
+            '.premium-loading-overlay'    // Loading overlay
         ];
         
-        return controlSelectors.some(selector => target.closest(selector));
+        // Check if touching any control area
+        const isInControlArea = controlSelectors.some(selector => target.closest(selector));
+        
+        return isInControlArea;
     }
     
     isVideoArea(target) {
-        // Check if touching the video viewing area (not controls)
-        const nonVideoSelectors = [
-            '.premium-controls-wrapper',
-            '.premium-player-header'
-        ];
-        
-        return !nonVideoSelectors.some(selector => target.closest(selector));
+        // Video area is anywhere that's NOT a control
+        return !this.isInteractiveControl(target);
     }
     
     preventSyntheticClick() {
@@ -913,9 +906,6 @@ class PremiumTouchCoordinator {
         this.resetTouchState();
     }
 }
-// ==============================================================================
-// END REPLACEMENT 1
-// ==============================================================================
 
 // --- Premium Video Controls UI Manager ---
 class PremiumControlsManager {
@@ -2692,13 +2682,7 @@ if (document.getElementById('appContainer')) {
             shortcutsTooltip: modal.querySelector('.premium-shortcuts-tooltip')
         };
         
-        // ==============================================================================
-        // REPLACEMENT 7: Remove Conflicting Mobile Touch Handlers
-        // ==============================================================================
-        // NOTE: The code blocks for "FIX 5: Mobile-specific touch improvements" and 
-        // "Enhanced touch controls visibility for mobile" that were previously here
-        // have been REMOVED as requested. The logic is now handled by PremiumTouchCoordinator.
-        // ==============================================================================
+        // NOTE: Conflicting mobile touch handlers have been removed. Logic is handled by PremiumTouchCoordinator.
         
         // Mobile specific video handling
         if (isIOS) {
@@ -2954,43 +2938,32 @@ if (document.getElementById('appContainer')) {
         };
 
         // ==============================================================================
-        // REPLACEMENT 6: Fix Play Button (Bottom Control Bar)
+        // FIXED: Play Button Handler - Capture Phase
         // ==============================================================================
         const handlePlayPauseButton = (e) => {
-            e.stopPropagation(); // Prevent bubble to touch coordinator
+            e.preventDefault();
+            e.stopImmediatePropagation();
             togglePlayPause();
         };
 
-        controlsManager.elements.playBtn.addEventListener('click', handlePlayPauseButton);
+        // Use CAPTURE phase
+        controlsManager.elements.playBtn.addEventListener('click', handlePlayPauseButton, { capture: true });
 
-        // Touch optimization for mobile
+        // Mobile: touchend in capture phase
         if (isMobile) {
-            let playTouchHandled = false;
-            
-            controlsManager.elements.playBtn.addEventListener('touchend', (e) => {
-                handlePlayPauseButton(e);
-                playTouchHandled = true;
-                setTimeout(() => { playTouchHandled = false; }, 500);
-            }, { passive: true });
-            
-            // Prevent duplicate from click
-            controlsManager.elements.playBtn.addEventListener('click', (e) => {
-                if (playTouchHandled) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    return false;
-                }
-            }, { capture: true });
+            controlsManager.elements.playBtn.addEventListener('touchend', handlePlayPauseButton, { 
+                passive: false, 
+                capture: true 
+            });
         }
-        // ==============================================================================
-        // END REPLACEMENT 6
         // ==============================================================================
         
         // ==============================================================================
-        // REPLACEMENT 5: Fix Control Buttons (Skip, Volume, etc.)
+        // FIXED: Skip Buttons - Capture Phase
         // ==============================================================================
         const handleSkipBackward = (e) => {
-            e.stopPropagation();
+            e.preventDefault();
+            e.stopImmediatePropagation();
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
@@ -3003,7 +2976,8 @@ if (document.getElementById('appContainer')) {
         };
 
         const handleSkipForward = (e) => {
-            e.stopPropagation();
+            e.preventDefault();
+            e.stopImmediatePropagation();
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
@@ -3015,39 +2989,21 @@ if (document.getElementById('appContainer')) {
             }
         };
 
-        controlsManager.elements.skipBackward.addEventListener('click', handleSkipBackward);
-        controlsManager.elements.skipForward.addEventListener('click', handleSkipForward);
+        // Use CAPTURE phase
+        controlsManager.elements.skipBackward.addEventListener('click', handleSkipBackward, { capture: true });
+        controlsManager.elements.skipForward.addEventListener('click', handleSkipForward, { capture: true });
 
-        // Touch optimization
+        // Mobile: touchend in capture phase
         if (isMobile) {
-            let skipTouchHandled = false;
-            
-            controlsManager.elements.skipBackward.addEventListener('touchend', (e) => {
-                handleSkipBackward(e);
-                skipTouchHandled = true;
-                setTimeout(() => { skipTouchHandled = false; }, 500);
-            }, { passive: true });
-            
-            controlsManager.elements.skipForward.addEventListener('touchend', (e) => {
-                handleSkipForward(e);
-                skipTouchHandled = true;
-                setTimeout(() => { skipTouchHandled = false; }, 500);
-            }, { passive: true });
-            
-            // Prevent duplicate from click
-            const preventSkipDuplicate = (e) => {
-                if (skipTouchHandled) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    return false;
-                }
-            };
-            
-            controlsManager.elements.skipBackward.addEventListener('click', preventSkipDuplicate, { capture: true });
-            controlsManager.elements.skipForward.addEventListener('click', preventSkipDuplicate, { capture: true });
+            controlsManager.elements.skipBackward.addEventListener('touchend', handleSkipBackward, { 
+                passive: false, 
+                capture: true 
+            });
+            controlsManager.elements.skipForward.addEventListener('touchend', handleSkipForward, { 
+                passive: false, 
+                capture: true 
+            });
         }
-        // ==============================================================================
-        // END REPLACEMENT 5
         // ==============================================================================
         
         const toggleMute = () => {
@@ -3069,13 +3025,10 @@ if (document.getElementById('appContainer')) {
         });
         
         // ==============================================================================
-        // REPLACEMENT 4: Fix Progress Bar Handler
+        // FIXED: Progress Bar - Capture Phase + Proper Touch Handling
         // ==============================================================================
-        // ===== PROGRESS BAR - UNIFIED DESKTOP & MOBILE =====
-
         let seekState = {
             active: false,
-            startX: 0,
             touchIdentifier: null,
             mouseDown: false
         };
@@ -3087,7 +3040,6 @@ if (document.getElementById('appContainer')) {
             const rect = controlsManager.elements.progressBar.getBoundingClientRect();
             const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
             
-            // Update visual position
             controlsManager.elements.progressPlayed.style.width = `${percent * 100}%`;
             controlsManager.elements.progressHandle.style.left = `${percent * 100}%`;
             
@@ -3120,12 +3072,12 @@ if (document.getElementById('appContainer')) {
         // === DESKTOP: Mouse Events ===
         controlsManager.elements.progressBar.addEventListener('mousedown', (e) => {
             e.preventDefault();
-            e.stopPropagation();
+            e.stopImmediatePropagation();
             
             seekState.mouseDown = true;
             startSeeking();
             updateSeekPosition(e.clientX);
-        });
+        }, { capture: true });
 
         document.addEventListener('mousemove', (e) => {
             if (seekState.mouseDown && seekState.active) {
@@ -3140,35 +3092,33 @@ if (document.getElementById('appContainer')) {
             }
         });
 
-        // === MOBILE: Touch Events ===
+        // === MOBILE: Touch Events in CAPTURE phase ===
         controlsManager.elements.progressBar.addEventListener('touchstart', (e) => {
-            // Prevent coordinator from handling this
+            e.preventDefault();
             e.stopImmediatePropagation();
             
-            if (e.touches.length > 1) return; // Ignore multi-touch
+            if (e.touches.length > 1) return;
             
             const touch = e.touches[0];
             seekState.touchIdentifier = touch.identifier;
             startSeeking();
             updateSeekPosition(touch.clientX);
-        }, { passive: true }); // Passive - we don't need preventDefault
+        }, { passive: false, capture: true });
 
-        controlsManager.elements.progressBar.addEventListener('touchmove', (e) => {
-            if (!seekState.active) return;
+        // Attach touchmove to DOCUMENT so it tracks outside progress bar
+        document.addEventListener('touchmove', (e) => {
+            if (!seekState.active || seekState.touchIdentifier === null) return;
             
-            // Find our touch
             const touch = Array.from(e.touches).find(t => t.identifier === seekState.touchIdentifier);
             if (!touch) return;
             
             updateSeekPosition(touch.clientX);
         }, { passive: true });
 
-        controlsManager.elements.progressBar.addEventListener('touchend', (e) => {
-            if (!seekState.active) return;
+        // Attach touchend to DOCUMENT
+        document.addEventListener('touchend', (e) => {
+            if (!seekState.active || seekState.touchIdentifier === null) return;
             
-            e.stopImmediatePropagation(); // Prevent coordinator from handling
-            
-            // Find our touch
             const touch = Array.from(e.changedTouches).find(t => t.identifier === seekState.touchIdentifier);
             if (!touch) {
                 stopSeeking();
@@ -3179,14 +3129,11 @@ if (document.getElementById('appContainer')) {
             stopSeeking();
         }, { passive: true });
 
-        controlsManager.elements.progressBar.addEventListener('touchcancel', () => {
-            stopSeeking();
+        document.addEventListener('touchcancel', () => {
+            if (seekState.active) {
+                stopSeeking();
+            }
         }, { passive: true });
-
-        // Prevent any clicks on progress bar from reaching coordinator
-        controlsManager.elements.progressBar.addEventListener('click', (e) => {
-            e.stopPropagation();
-        }, { capture: true });
 
         // === Progress bar hover preview (desktop only) ===
         if (!isMobile) {
@@ -3210,49 +3157,28 @@ if (document.getElementById('appContainer')) {
             });
         }
         // ==============================================================================
-        // END REPLACEMENT 4
-        // ==============================================================================
         
         // ==============================================================================
-        // REPLACEMENT 2: Fix Settings Button Handler
+        // FIXED: Settings Button Handler - Capture Phase
         // ==============================================================================
-        // Settings menu - unified handler
         const toggleSettingsMenu = (e) => {
-            // Don't prevent default - let button work naturally
-            e.stopPropagation(); // Stop event from reaching touch coordinator
+            e.preventDefault();
+            e.stopImmediatePropagation();
             
             const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
             controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
         };
 
-        controlsManager.elements.settingsBtn.addEventListener('click', toggleSettingsMenu);
+        // Use CAPTURE phase
+        controlsManager.elements.settingsBtn.addEventListener('click', toggleSettingsMenu, { capture: true });
 
-        // Touch devices: use touchend for faster response, but allow click as fallback
+        // Mobile: touchend in capture phase
         if (isMobile) {
-            let touchHandled = false;
-            
-            controlsManager.elements.settingsBtn.addEventListener('touchend', (e) => {
-                e.stopPropagation();
-                toggleSettingsMenu(e);
-                touchHandled = true;
-                
-                // Reset flag after click event would fire
-                setTimeout(() => {
-                    touchHandled = false;
-                }, 500);
-            }, { passive: true }); // Passive - we don't need to prevent
-            
-            // Prevent duplicate action from click
-            controlsManager.elements.settingsBtn.addEventListener('click', (e) => {
-                if (touchHandled) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    return false;
-                }
-            }, { capture: true });
+            controlsManager.elements.settingsBtn.addEventListener('touchend', toggleSettingsMenu, { 
+                passive: false, 
+                capture: true 
+            });
         }
-        // ==============================================================================
-        // END REPLACEMENT 2
         // ==============================================================================
         
         const closeSettingsMenu = (e) => {
@@ -3285,11 +3211,10 @@ if (document.getElementById('appContainer')) {
                         option.classList.add('active');
                     }
                     
-                    // ==============================================================================
-                    // REPLACEMENT 8: Fix Settings Menu Item Selection (Quality)
-                    // ==============================================================================
+                    // === FIXED: Quality Select - Capture Phase ===
                     const handleQualitySelect = (e) => {
-                        e.stopPropagation();
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
                         const player = getSafePlayer();
                         if (!player) return;
                         
@@ -3309,29 +3234,16 @@ if (document.getElementById('appContainer')) {
                         controlsManager.elements.settingsMenu.classList.remove('active');
                     };
 
-                    option.addEventListener('click', handleQualitySelect);
+                    // Use CAPTURE phase
+                    option.addEventListener('click', handleQualitySelect, { capture: true });
 
-                    // Touch optimization
+                    // Mobile: touchend in capture phase
                     if (isMobile) {
-                        let qualityTouchHandled = false;
-                        
-                        option.addEventListener('touchend', (e) => {
-                            handleQualitySelect(e);
-                            qualityTouchHandled = true;
-                            setTimeout(() => { qualityTouchHandled = false; }, 500);
-                        }, { passive: true });
-                        
-                        option.addEventListener('click', (e) => {
-                            if (qualityTouchHandled) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                return false;
-                            }
-                        }, { capture: true });
+                        option.addEventListener('touchend', handleQualitySelect, { 
+                            passive: false, 
+                            capture: true 
+                        });
                     }
-                    // ==============================================================================
-                    // END REPLACEMENT 8 (Quality)
-                    // ==============================================================================
                     
                     controlsManager.elements.qualityOptions.appendChild(option);
                 });
@@ -3352,11 +3264,10 @@ if (document.getElementById('appContainer')) {
                         option.classList.add('active');
                     }
                     
-                    // ==============================================================================
-                    // REPLACEMENT 8: Fix Settings Menu Item Selection (Speed)
-                    // ==============================================================================
+                    // === FIXED: Speed Select - Capture Phase ===
                     const handleSpeedSelect = (e) => {
-                        e.stopPropagation();
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
                         const player = getSafePlayer();
                         if (!player) return;
 
@@ -3374,31 +3285,18 @@ if (document.getElementById('appContainer')) {
 
                         // Close menu
                         controlsManager.elements.settingsMenu.classList.remove('active');
-                    }
+                    };
 
-                    option.addEventListener('click', handleSpeedSelect);
+                    // Use CAPTURE phase
+                    option.addEventListener('click', handleSpeedSelect, { capture: true });
 
-                    // Touch optimization
+                    // Mobile: touchend in capture phase
                     if (isMobile) {
-                        let speedTouchHandled = false;
-
-                        option.addEventListener('touchend', (e) => {
-                            handleSpeedSelect(e);
-                            speedTouchHandled = true;
-                            setTimeout(() => { speedTouchHandled = false; }, 500);
-                        }, { passive: true });
-
-                        option.addEventListener('click', (e) => {
-                            if (speedTouchHandled) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                return false;
-                            }
-                        }, { capture: true });
+                        option.addEventListener('touchend', handleSpeedSelect, { 
+                            passive: false, 
+                            capture: true 
+                        });
                     }
-                    // ==============================================================================
-                    // END REPLACEMENT 8 (Speed)
-                    // ==============================================================================
                     
                     controlsManager.elements.speedOptions.appendChild(option);
                 });
@@ -3467,48 +3365,32 @@ if (document.getElementById('appContainer')) {
         };
 
         // ==============================================================================
-        // REPLACEMENT 3: Fix Close Button Handler
+        // FIXED: Close Button Handler - Capture Phase
         // ==============================================================================
-        // Close button - unified handler
         const handleClose = (e) => {
-            e.stopPropagation(); // Stop event from reaching touch coordinator
+            e.preventDefault();
+            e.stopImmediatePropagation(); // Stop ALL propagation
             closePlayer();
         };
 
-        // Main close button
-        controlsManager.elements.closeBtn.addEventListener('click', handleClose);
+        // Use CAPTURE phase to intercept before touch coordinator
+        controlsManager.elements.closeBtn.addEventListener('click', handleClose, { capture: true });
+        controlsManager.elements.closeErrorBtn.addEventListener('click', handleClose, { capture: true });
 
-        // Error overlay close button
-        controlsManager.elements.closeErrorBtn.addEventListener('click', handleClose);
-
-        // Touch optimization for mobile
+        // Mobile: Add touchend in capture phase
         if (isMobile) {
-            let closeTouchHandled = false;
-            
-            const handleCloseTouch = (e) => {
-                e.stopPropagation();
+            controlsManager.elements.closeBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopImmediatePropagation();
                 closePlayer();
-                closeTouchHandled = true;
-                setTimeout(() => { closeTouchHandled = false; }, 500);
-            };
+            }, { passive: false, capture: true }); // NOT passive - we need preventDefault
             
-            controlsManager.elements.closeBtn.addEventListener('touchend', handleCloseTouch, { passive: true });
-            controlsManager.elements.closeErrorBtn.addEventListener('touchend', handleCloseTouch, { passive: true });
-            
-            // Prevent duplicate from click
-            const preventDuplicateClick = (e) => {
-                if (closeTouchHandled) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    return false;
-                }
-            };
-            
-            controlsManager.elements.closeBtn.addEventListener('click', preventDuplicateClick, { capture: true });
-            controlsManager.elements.closeErrorBtn.addEventListener('click', preventDuplicateClick, { capture: true });
+            controlsManager.elements.closeErrorBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                closePlayer();
+            }, { passive: false, capture: true });
         }
-        // ==============================================================================
-        // END REPLACEMENT 3
         // ==============================================================================
         
         const handleKeyDown = (e) => {
