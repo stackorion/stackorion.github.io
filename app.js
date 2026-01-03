@@ -95,7 +95,7 @@ class VideoTokenRefreshManager {
 
     async refreshVideoToken(videoId, tierId, libraryId, player) {
         try {
-            // Check if player is still valid before refreshing
+            // ✅ NEW: Check if player is still valid before refreshing
             if (!player || !player.el() || player.isDisposed()) {
                 this.stopRefresh(videoId);
                 return;
@@ -122,7 +122,7 @@ class VideoTokenRefreshManager {
             const data = await response.json();
 
             if (response.ok && data.status === 'success') {
-                // Double-check player validity before updating source
+                // ✅ FIXED: Double-check player validity before updating source
                 if (!player || !player.el() || player.isDisposed()) {
                     this.stopRefresh(videoId);
                     return;
@@ -139,7 +139,7 @@ class VideoTokenRefreshManager {
 
                 // Restore playback state
                 player.one('loadedmetadata', () => {
-                    // Verify player still exists before restoring state
+                    // ✅ FIXED: Verify player still exists before restoring state
                     if (!player || !player.el() || player.isDisposed()) return;
                     
                     player.currentTime(currentTime);
@@ -268,14 +268,16 @@ class VideoAnalyticsTracker {
         this.batchQueue = [];
         this.batchInterval = 10000; // Send batch every 10 seconds
         this.tierIdCache = new Map(); // Cache videoId -> numeric tierId
-        this.sessionIdCache = new Map();  // Track session IDs
+        this.sessionIdCache = new Map();  // ✅ NEW: Track session IDs
         this.startBatchTimer();
     }
 
+    // ✅ NEW: Generate unique session ID for each viewing session
     generateSessionId() {
         return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
 
+    // ✅ NEW: Get or create session ID for a video
     getSessionId(videoId) {
         if (!this.sessionIdCache.has(videoId)) {
             this.sessionIdCache.set(videoId, this.generateSessionId());
@@ -283,23 +285,26 @@ class VideoAnalyticsTracker {
         return this.sessionIdCache.get(videoId);
     }
 
+    // ✅ NEW: Clear session ID when video is closed
     clearSession(videoId) {
         this.sessionIdCache.delete(videoId);
     }
 
+    // ✅ NEW: Store tier ID mapping when video is opened
     setVideoTierMapping(videoId, numericTierId) {
         this.tierIdCache.set(videoId, numericTierId);
     }
 
     trackEvent(videoId, event, player, tierName) {
+        // ✅ FIX: Get numeric tier ID from cache or use default
         const numericTierId = this.tierIdCache.get(videoId) || 1;
-        const sessionId = this.getSessionId(videoId);
+        const sessionId = this.getSessionId(videoId);  // ✅ NEW: Get session ID
         
         const eventData = {
             event: event,
             video_id: videoId,
-            session_id: sessionId,
-            tier_id: numericTierId,
+            session_id: sessionId,  // ✅ NEW: Include session ID
+            tier_id: numericTierId,  // ✅ NOW: Numeric tier ID
             current_time: player ? player.currentTime() : 0,
             duration: player ? player.duration() : 0,
             quality: player ? this.getCurrentQuality(player) : 'auto'
@@ -307,6 +312,7 @@ class VideoAnalyticsTracker {
 
         this.batchQueue.push(eventData);
 
+        // Send immediately for critical events
         if (event === 'play' || event === 'ended' || event === 'error') {
             this.sendBatch();
         }
@@ -335,6 +341,7 @@ class VideoAnalyticsTracker {
             const token = localStorage.getItem('lustroom_jwt');
             if (!token) return;
 
+            // Send each event
             for (const event of batch) {
                 await fetch(`${API_BASE_URL}/analytics/track`, {
                     method: 'POST',
@@ -397,6 +404,7 @@ class PremiumQualityManager {
 
     initialize() {
         try {
+            // Use Video.js built-in quality levels (HLS support)
             if (typeof this.player.qualityLevels === 'function') {
                 this.qualityLevels = this.player.qualityLevels();
                 
@@ -406,9 +414,11 @@ class PremiumQualityManager {
                     });
                 }
             } else {
+                // Fallback: detect from tech
                 this.detectQualitiesFromTech();
             }
         } catch (error) {
+            // Quality detection failed, only show Auto
             this.availableQualities = ['auto'];
         }
     }
@@ -433,10 +443,12 @@ class PremiumQualityManager {
         this.currentQuality = quality;
 
         if (quality === 'auto') {
+            // Enable auto quality switching
             for (let i = 0; i < this.qualityLevels.length; i++) {
                 this.qualityLevels[i].enabled = true;
             }
         } else {
+            // Disable all except selected quality
             for (let i = 0; i < this.qualityLevels.length; i++) {
                 const level = this.qualityLevels[i];
                 level.enabled = level.height === parseInt(quality);
@@ -495,422 +507,6 @@ class PremiumSpeedManager {
     }
 }
 
-// --- Premium Video Touch Coordinator V2 (Production-Ready) ---
-class PremiumTouchCoordinator {
-    constructor(modal, player, controlsManager) {
-        this.modal = modal;
-        this.player = player;
-        this.controlsManager = controlsManager;
-        
-        // Touch state tracking
-        this.touchState = {
-            startX: 0,
-            startY: 0,
-            startTime: 0,
-            moved: false,
-            isActive: false,
-            target: null,
-            identifier: null // Track specific touch
-        };
-        
-        // Tap detection state
-        this.tapState = {
-            lastTapTime: 0,
-            lastTapX: 0,
-            pendingSingleTap: null // Timer for single tap delay
-        };
-        
-        // Gesture state
-        this.gestureState = {
-            isSwipeSeeking: false,
-            initialPlayerTime: 0
-        };
-        
-        // Configuration
-        this.config = {
-            tapThreshold: 20, // Pixels - higher for Android
-            doubleTapWindow: 400, // ms - more forgiving
-            doubleTapDistance: 100, // Pixels - allow more distance
-            swipeThreshold: 60, // Pixels
-            swipeAngleThreshold: 30 // Degrees - must be mostly horizontal
-        };
-        
-        // Click prevention tracking
-        this.syntheticClickPrevention = {
-            active: false,
-            timeout: null
-        };
-        
-        this.init();
-    }
-    
-    init() {
-        // Passive listeners for performance, except where we need to prevent
-        this.modal.addEventListener('touchstart', this.handleTouchStart.bind(this), { 
-            passive: true, // Passive - we don't prevent here
-            capture: false 
-        });
-        
-        this.modal.addEventListener('touchmove', this.handleTouchMove.bind(this), { 
-            passive: true // Passive - only prevent in specific handlers
-        });
-        
-        this.modal.addEventListener('touchend', this.handleTouchEnd.bind(this), { 
-            passive: true 
-        });
-        
-        this.modal.addEventListener('touchcancel', this.handleTouchCancel.bind(this), {
-            passive: true
-        });
-        
-        // Capture phase click handler to prevent synthetic clicks
-        this.modal.addEventListener('click', this.handleClick.bind(this), { 
-            capture: true 
-        });
-    }
-    
-    handleTouchStart(e) {
-        // Only track first touch (ignore multi-touch)
-        if (e.touches.length > 1) {
-            this.resetTouchState();
-            return;
-        }
-        
-        const touch = e.touches[0];
-        const target = e.target;
-        
-        // Reset touch state
-        this.touchState = {
-            startX: touch.clientX,
-            startY: touch.clientY,
-            startTime: Date.now(),
-            moved: false,
-            isActive: true,
-            target: target,
-            identifier: touch.identifier
-        };
-        
-        // Always show controls on touch
-        this.controlsManager.showControls();
-        
-        // Check if touching an interactive control
-        if (this.isInteractiveControl(target)) {
-            // Let the control handle it entirely
-            this.touchState.isActive = false;
-            return;
-        }
-        
-        // Check if touching video area (non-control)
-        if (this.isVideoArea(target)) {
-            // Prepare for gesture detection
-            this.gestureState.isSwipeSeeking = false;
-            if (this.player && !this.player.isDisposed()) {
-                this.gestureState.initialPlayerTime = this.player.currentTime();
-            }
-        }
-    }
-    
-    handleTouchMove(e) {
-        if (!this.touchState.isActive) return;
-        
-        // Find our tracked touch
-        const touch = Array.from(e.touches).find(t => t.identifier === this.touchState.identifier);
-        if (!touch) return;
-        
-        const deltaX = touch.clientX - this.touchState.startX;
-        const deltaY = touch.clientY - this.touchState.startY;
-        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-        
-        // Mark as moved if beyond threshold
-        if (distance > this.config.tapThreshold) {
-            this.touchState.moved = true;
-            
-            // Cancel any pending single tap
-            if (this.tapState.pendingSingleTap) {
-                clearTimeout(this.tapState.pendingSingleTap);
-                this.tapState.pendingSingleTap = null;
-            }
-            
-            // Check if this is a horizontal swipe (seek gesture)
-            if (Math.abs(deltaX) > this.config.swipeThreshold) {
-                const angle = Math.abs(Math.atan2(deltaY, deltaX) * 180 / Math.PI);
-                
-                // Must be mostly horizontal (angle close to 0 or 180)
-                if (angle < this.config.swipeAngleThreshold || angle > (180 - this.config.swipeAngleThreshold)) {
-                    this.gestureState.isSwipeSeeking = true;
-                    this.showSeekFeedback(deltaX);
-                }
-            }
-        }
-    }
-    
-    handleTouchEnd(e) {
-        if (!this.touchState.isActive) return;
-        
-        // Find our tracked touch
-        const touch = Array.from(e.changedTouches).find(t => t.identifier === this.touchState.identifier);
-        if (!touch) {
-            this.resetTouchState();
-            return;
-        }
-        
-        const duration = Date.now() - this.touchState.startTime;
-        const deltaX = touch.clientX - this.touchState.startX;
-        
-        // Handle swipe gesture completion
-        if (this.gestureState.isSwipeSeeking) {
-            this.commitSeekGesture(deltaX);
-            this.hideSeekFeedback();
-            this.preventSyntheticClick();
-            this.resetTouchState();
-            return;
-        }
-        
-        // Ignore if touch moved (but wasn't a swipe)
-        if (this.touchState.moved) {
-            this.resetTouchState();
-            return;
-        }
-        
-        // This is a tap - process it
-        this.processTap(touch.clientX, touch.clientY, duration);
-        
-        // Prevent synthetic click for taps
-        this.preventSyntheticClick();
-        
-        this.resetTouchState();
-    }
-    
-    handleTouchCancel(e) {
-        this.hideSeekFeedback();
-        this.resetTouchState();
-    }
-    
-    processTap(tapX, tapY, duration) {
-        const now = Date.now();
-        const timeSinceLastTap = now - this.tapState.lastTapTime;
-        const distanceFromLastTap = Math.abs(tapX - this.tapState.lastTapX);
-        
-        // Check for double-tap
-        const isDoubleTap = 
-            timeSinceLastTap < this.config.doubleTapWindow && 
-            timeSinceLastTap > 50 && // Minimum time to avoid touch jitter
-            distanceFromLastTap < this.config.doubleTapDistance;
-        
-        if (isDoubleTap) {
-            // Cancel any pending single tap
-            if (this.tapState.pendingSingleTap) {
-                clearTimeout(this.tapState.pendingSingleTap);
-                this.tapState.pendingSingleTap = null;
-            }
-            
-            // Execute double-tap action immediately
-            this.executeDoubleTap(tapX);
-            
-            // Don't reset lastTapTime to 0 - just set it far enough back
-            this.tapState.lastTapTime = now - this.config.doubleTapWindow - 100;
-            this.tapState.lastTapX = tapX;
-        } else {
-            // This might be first tap of double-tap, so delay single-tap action
-            this.tapState.lastTapTime = now;
-            this.tapState.lastTapX = tapX;
-            
-            // Clear any existing pending tap
-            if (this.tapState.pendingSingleTap) {
-                clearTimeout(this.tapState.pendingSingleTap);
-            }
-            
-            // Wait for potential double-tap before executing single-tap
-            this.tapState.pendingSingleTap = setTimeout(() => {
-                this.executeSingleTap(tapX);
-                this.tapState.pendingSingleTap = null;
-            }, this.config.doubleTapWindow);
-        }
-    }
-    
-    executeSingleTap(tapX) {
-        const screenWidth = window.innerWidth;
-        const centerZoneStart = screenWidth * 0.25;
-        const centerZoneEnd = screenWidth * 0.75;
-        
-        // Only center taps toggle play/pause on single tap
-        if (tapX >= centerZoneStart && tapX <= centerZoneEnd) {
-            this.togglePlayPause();
-        }
-        // Side taps just show controls (already done)
-    }
-    
-    executeDoubleTap(tapX) {
-        const screenWidth = window.innerWidth;
-        const leftZone = screenWidth * 0.33;
-        const rightZone = screenWidth * 0.67;
-        
-        if (tapX < leftZone) {
-            // Left zone - skip backward
-            this.skipBackward();
-        } else if (tapX > rightZone) {
-            // Right zone - skip forward
-            this.skipForward();
-        } else {
-            // Center zone - toggle play/pause
-            this.togglePlayPause();
-        }
-    }
-    
-    showSeekFeedback(deltaX) {
-        if (!this.player || this.player.isDisposed()) return;
-        
-        const screenWidth = window.innerWidth;
-        const seekAmount = (deltaX / screenWidth) * 30; // 30 seconds per full swipe
-        const direction = deltaX > 0 ? '⏩' : '⏪';
-        const seconds = Math.abs(Math.round(seekAmount));
-        
-        if (this.controlsManager.elements.gestureIndicator) {
-            this.controlsManager.elements.gestureIndicator.textContent = `${direction} ${seconds}s`;
-            this.controlsManager.elements.gestureIndicator.classList.add('show');
-        }
-    }
-    
-    commitSeekGesture(deltaX) {
-        if (!this.player || this.player.isDisposed()) return;
-        
-        const screenWidth = window.innerWidth;
-        const seekAmount = (deltaX / screenWidth) * 30;
-        
-        const newTime = Math.max(0, Math.min(
-            this.player.duration(), 
-            this.gestureState.initialPlayerTime + seekAmount
-        ));
-        
-        this.player.currentTime(newTime);
-        this.vibrate([10, 50, 10]);
-    }
-    
-    hideSeekFeedback() {
-        if (this.controlsManager.elements.gestureIndicator) {
-            setTimeout(() => {
-                this.controlsManager.elements.gestureIndicator.classList.remove('show');
-            }, 500);
-        }
-    }
-    
-    togglePlayPause() {
-        if (!this.player || this.player.isDisposed()) return;
-        
-        try {
-            if (this.player.paused()) {
-                this.player.play().catch(() => {});
-            } else {
-                this.player.pause();
-            }
-            this.vibrate(10);
-        } catch (error) {
-            // Player disposed
-        }
-    }
-    
-    skipBackward() {
-        if (!this.player || this.player.isDisposed()) return;
-        
-        this.player.currentTime(Math.max(0, this.player.currentTime() - 10));
-        this.controlsManager.showGestureIndicator('⏪ 10s');
-        this.vibrate([10, 50, 10]);
-    }
-    
-    skipForward() {
-        if (!this.player || this.player.isDisposed()) return;
-        
-        const duration = this.player.duration();
-        this.player.currentTime(Math.min(duration, this.player.currentTime() + 10));
-        this.controlsManager.showGestureIndicator('⏩ 10s');
-        this.vibrate([10, 50, 10]);
-    }
-    
-    isInteractiveControl(target) {
-        // CRITICAL: Check if target is inside ANY control area
-        // These elements handle their own touches and should not be processed by coordinator
-        const controlSelectors = [
-            '.premium-controls-wrapper',  // Entire bottom control bar
-            '.premium-player-header',     // Entire top header
-            '.premium-settings-menu',     // Settings dropdown
-            '.premium-error-overlay',     // Error overlay buttons
-            '.premium-loading-overlay'    // Loading overlay
-        ];
-        
-        // Check if touching any control area
-        const isInControlArea = controlSelectors.some(selector => target.closest(selector));
-        
-        // ANDROID FIX: Also check for specific button elements
-        const isButton = target.matches('button, .premium-control-btn, .premium-close-btn');
-        const isInButton = target.closest('button, .premium-control-btn, .premium-close-btn');
-        
-        return isInControlArea || isButton || isInButton;
-    }
-    
-    isVideoArea(target) {
-        // Video area is anywhere that's NOT a control
-        return !this.isInteractiveControl(target);
-    }
-    
-    preventSyntheticClick() {
-        this.syntheticClickPrevention.active = true;
-        
-        if (this.syntheticClickPrevention.timeout) {
-            clearTimeout(this.syntheticClickPrevention.timeout);
-        }
-        
-        this.syntheticClickPrevention.timeout = setTimeout(() => {
-            this.syntheticClickPrevention.active = false;
-        }, 500); // 500ms should cover the 300ms delay + safety margin
-    }
-    
-    handleClick(e) {
-        // Only block synthetic clicks following our touches
-        if (this.syntheticClickPrevention.active) {
-            // Check if this is clicking a control that should work
-            if (!this.isInteractiveControl(e.target)) {
-                e.preventDefault();
-                e.stopPropagation();
-                return false;
-            }
-        }
-    }
-    
-    vibrate(pattern) {
-        if (navigator.vibrate) {
-            try {
-                navigator.vibrate(pattern);
-            } catch (e) {
-                // Vibration not supported or failed
-            }
-        }
-    }
-    
-    resetTouchState() {
-        this.touchState = {
-            startX: 0,
-            startY: 0,
-            startTime: 0,
-            moved: false,
-            isActive: false,
-            target: null,
-            identifier: null
-        };
-        
-        this.gestureState.isSwipeSeeking = false;
-    }
-    
-    destroy() {
-        if (this.tapState.pendingSingleTap) {
-            clearTimeout(this.tapState.pendingSingleTap);
-        }
-        if (this.syntheticClickPrevention.timeout) {
-            clearTimeout(this.syntheticClickPrevention.timeout);
-        }
-        this.resetTouchState();
-    }
-}
-
 // --- Premium Video Controls UI Manager ---
 class PremiumControlsManager {
     constructor(container, player, state, quality, speed) {
@@ -937,10 +533,13 @@ class PremiumControlsManager {
     }
 
     hideControls() {
+        // ✅ FIXED: Better mobile detection
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         
+        // Allow hiding even when paused in fullscreen mode
         if (this.state.isSeeking) return;
         
+        // ✅ NEW: On mobile, only hide if video is playing
         if (isMobile && this.player && this.player.paused && !this.player.isDisposed()) {
             return;
         }
@@ -960,8 +559,9 @@ class PremiumControlsManager {
             clearTimeout(this.state.controlsTimeout);
         }
         
+        // ✅ NEW: Mobile-specific timeout duration
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        const hideDelay = isMobile ? 3000 : 4000; 
+        const hideDelay = isMobile ? 3000 : 4000; // Shorter on mobile
         
         this.state.controlsTimeout = setTimeout(() => {
             if (this.state.shouldHideControls()) {
@@ -1095,7 +695,7 @@ class PremiumControlsManager {
     }
 }
 
-// --- Announcement Slider for Multiple Announcements ---
+// --- NEW: Announcement Slider for Multiple Announcements ---
 class AnnouncementSlider {
     constructor(containerSelector) {
         this.container = document.querySelector(containerSelector);
@@ -1108,6 +708,7 @@ class AnnouncementSlider {
             return;
         }
 
+        // Build the HTML for the slider
         let slidesHTML = '';
         announcements.forEach(ann => {
             const hasButton = ann.button_text && ann.button_url;
@@ -1137,6 +738,7 @@ class AnnouncementSlider {
         
         this.container.style.display = 'block';
 
+        // Initialize Swiper
         this.swiper = new Swiper('.announcement-swiper', {
             loop: announcements.length > 1,
             autoplay: announcements.length > 1 ? {
@@ -1164,19 +766,23 @@ class AnnouncementSlider {
             }
         });
 
+        // Handle dismiss buttons
         this.container.querySelectorAll('[data-slide-dismiss]').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 
                 if (this.swiper && announcements.length > 1) {
+                    // If multiple slides, just remove this one
                     const slideIndex = this.swiper.activeIndex;
                     this.swiper.removeSlide(slideIndex);
                     
+                    // If no slides left, hide container
                     if (this.swiper.slides.length === 0) {
                         this.container.style.display = 'none';
                     }
                 } else {
+                    // Single announcement - hide entire container
                     this.container.style.display = 'none';
                 }
             });
@@ -1191,13 +797,14 @@ class AnnouncementSlider {
     }
 }
 
-// --- Load user data from localStorage ---
+// --- NEW: Load user data from localStorage ---
 function loadUserData() {
     try {
         userInfo = JSON.parse(localStorage.getItem('user_info') || 'null');
         userSubscriptions = JSON.parse(localStorage.getItem('user_subscriptions') || '[]');
         return true;
     } catch (error) {
+        // Silently handle error without logging to console
         userInfo = null;
         userSubscriptions = [];
         return false;
@@ -1205,6 +812,7 @@ function loadUserData() {
 }
 
 // --- Subscription Status Renderer ---
+// --- Subscription Status Renderer (V3 MULTI-SUBSCRIPTION) ---
 function renderSubscriptionStatus() {
     const subscriptionStatusDiv = document.getElementById('subscriptionStatus');
     if (!subscriptionStatusDiv) return;
@@ -1215,12 +823,14 @@ function renderSubscriptionStatus() {
     }
 
     try {
+        // Clear previous content
         subscriptionStatusDiv.innerHTML = '';
         subscriptionStatusDiv.style.display = 'flex';
         subscriptionStatusDiv.style.flexWrap = 'wrap';
         subscriptionStatusDiv.style.gap = '10px';
         subscriptionStatusDiv.style.alignItems = 'center';
 
+        // Render each subscription as a badge
         userSubscriptions.forEach(sub => {
             const daysRemaining = sub.days_remaining;
             let statusText, statusClass;
@@ -1236,6 +846,7 @@ function renderSubscriptionStatus() {
                 statusClass = 'status-expired';
             }
 
+            // Create subscription badge
             const badge = document.createElement('div');
             badge.className = `subscription-status-badge ${statusClass}`;
             badge.innerHTML = `
@@ -1248,11 +859,12 @@ function renderSubscriptionStatus() {
         });
 
     } catch (error) {
+        // Silently handle error without logging to console
         subscriptionStatusDiv.style.display = 'none';
     }
 }
 
-// --- RENEWAL AND SUPPORT RENDERERS ---
+// --- NEW RENEWAL AND SUPPORT RENDERERS ---
 function renderRenewalBanner() {
     const existingBanner = document.getElementById('renewalBanner');
     if (existingBanner) {
@@ -1261,6 +873,7 @@ function renderRenewalBanner() {
 
     if (!userSubscriptions || userSubscriptions.length === 0) return;
 
+    // Find ALL expiring subscriptions first
     const expiringSubscriptions = userSubscriptions.filter(sub => {
         if (!sub.end_date) return false;
         const expiryDate = new Date(sub.end_date);
@@ -1270,8 +883,10 @@ function renderRenewalBanner() {
         return days <= 7 && days > 0;
     });
 
+    // ✅ PRIORITY LOGIC: Prioritize Echo Chamber renewal link
     let expiringSubscription = expiringSubscriptions.find(sub => sub.platform_name === 'Echo Chamber' && sub.renewal_url);
 
+    // If no Echo Chamber link, fall back to the first available one
     if (!expiringSubscription) {
         expiringSubscription = expiringSubscriptions.find(sub => sub.renewal_url);
     }
@@ -1283,7 +898,7 @@ function renderRenewalBanner() {
         const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         const renewalUrl = expiringSubscription.renewal_url;
         
-        if (!renewalUrl) return;
+        if (!renewalUrl) return; // Don't show if renewal URL is missing
         
         const banner = document.createElement('div');
         banner.id = 'renewalBanner';
@@ -1295,18 +910,22 @@ function renderRenewalBanner() {
         
         const appContainer = document.getElementById('appContainer');
         if (appContainer) {
+            // Prepend banner inside the container but after the header
             appContainer.querySelector('header').after(banner);
         }
     }
 }
 
 async function renderHeaderActions() {
+    // --- 1. Handle Support Link with Priority Logic ---
     let supportUrl = null;
     if (userSubscriptions.length > 0) {
+        // ✅ PRIORITY LOGIC: Try to find Echo Chamber support URL first
         const echoChamberSub = userSubscriptions.find(sub => sub.platform_name === 'Echo Chamber' && sub.support_url);
         if (echoChamberSub) {
             supportUrl = echoChamberSub.support_url;
         } else {
+            // Fallback: find the first subscription that has a support URL
             const fallbackSub = userSubscriptions.find(sub => sub.support_url);
             if (fallbackSub) {
                 supportUrl = fallbackSub.support_url;
@@ -1323,9 +942,11 @@ async function renderHeaderActions() {
         supportLink.style.display = 'none';
     }
 
+    // --- 2. ✅ FIXED: Fetch Fresh System Config from Backend ---
     const downloadAppButton = document.getElementById('downloadAppButton');
     if (downloadAppButton) {
         try {
+            // Fetch live system settings from backend
             const token = localStorage.getItem('lustroom_jwt');
             if (!token) {
                 downloadAppButton.style.display = 'none';
@@ -1339,6 +960,7 @@ async function renderHeaderActions() {
             const data = await response.json();
             
             if (response.ok && data.status === 'success' && data.system_config) {
+                // ✅ Use fresh data from backend, not stale localStorage
                 const systemConfig = data.system_config;
                 const showButton = systemConfig.show_download_button === 'true';
                 const downloadUrl = systemConfig.download_app_url || '';
@@ -1353,11 +975,13 @@ async function renderHeaderActions() {
                 downloadAppButton.style.display = 'none';
             }
         } catch (error) {
+            // Silently handle error
             downloadAppButton.style.display = 'none';
         }
     }
 }
 
+// --- Logic for login.html ---
 // --- Logic for login.html ---
 if (document.getElementById('loginForm')) {
     const loginForm = document.getElementById('loginForm');
@@ -1391,11 +1015,13 @@ if (document.getElementById('loginForm')) {
             const data = await response.json();
             
             if (response.ok && data.status === 'success' && data.access_token) {
+                // Save token and basic user info
                 localStorage.setItem('lustroom_jwt', data.access_token);
                 localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
                 localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
                 localStorage.setItem('user_info', JSON.stringify(data.user_info));
                 
+                // Make second call to get profile data with subscriptions
                 try {
                     const profileResponse = await fetch(`${API_BASE_URL}/profile`, {
                         headers: { 'Authorization': `Bearer ${data.access_token}` }
@@ -1404,27 +1030,34 @@ if (document.getElementById('loginForm')) {
                     const profileData = await profileResponse.json();
                     
                     if (profileResponse.ok && profileData.status === 'success') {
+                        // Save subscriptions data
                         localStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions));
                         
+                        // ✅ NEW: Save announcement data if present
                         if (profileData.announcements) {
                             localStorage.setItem('global_announcements', JSON.stringify(profileData.announcements));
                         } else {
                             localStorage.removeItem('global_announcements');
                         }
                         
+                        // ✅ NEW: Save system_config data if present
                         if (profileData.system_config) {
                             localStorage.setItem('system_config', JSON.stringify(profileData.system_config));
                         } else {
                             localStorage.removeItem('system_config');
                         }
                         
+                        // Load user data into global variables
                         loadUserData();
+                        
+                        // Redirect to main page
                         window.location.href = 'links.html';
                     } else {
                         displayError("Failed to load user profile. Please try logging in again.");
                         showLoading(false);
                     }
                 } catch (profileError) {
+                    // Silently handle error without logging to console
                     displayError("An error occurred while loading your profile. Please try again.");
                     showLoading(false);
                 }
@@ -1434,6 +1067,7 @@ if (document.getElementById('loginForm')) {
             }
         } catch (error) {
             showLoading(false);
+            // Silently handle error without logging to console
             displayError("An error occurred while trying to log in. Please check your internet connection or try again later.");
         }
     });
@@ -1468,6 +1102,7 @@ if (document.getElementById('appContainer')) {
     const themeManager = new ThemeManager();
     const announcementSlider = new AnnouncementSlider('#announcementSliderContainer');
 
+    // --- Utility Functions ---
     function isTokenValid() {
         const token = localStorage.getItem('lustroom_jwt');
         const obtainedAt = parseInt(localStorage.getItem('lustroom_jwt_obtained_at'), 10);
@@ -1489,6 +1124,7 @@ if (document.getElementById('appContainer')) {
             const thresholdDate = new Date(now.getTime() - (daysThreshold * 24 * 60 * 60 * 1000));
             return contentDate > thresholdDate;
         } catch (error) {
+            // Silently handle error without logging to console
             return false;
         }
     }
@@ -1502,6 +1138,7 @@ if (document.getElementById('appContainer')) {
             const diffDays = Math.floor(diffTime / (24 * 60 * 60 * 1000));
             return diffDays === 0 ? 'Today' : `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
         } catch (error) {
+            // Silently handle error without logging to console
             return '';
         }
     }
@@ -1520,6 +1157,7 @@ if (document.getElementById('appContainer')) {
         ].join(' ').toLowerCase().trim();
     }
 
+    // --- Event Delegation for Copy Buttons ---
     function setupCopyButtonDelegation() {
         const linksContentContainer = document.getElementById('linksContentContainer');
         if (!linksContentContainer) return;
@@ -1538,12 +1176,15 @@ if (document.getElementById('appContainer')) {
                             event.target.textContent = 'Copy Link';
                             event.target.classList.remove('copied');
                         }, 2000);
-                    }).catch(err => {});
+                    }).catch(err => {
+                        // Silently handle error without logging to console
+                    });
                 }
             }
         });
     }
 
+    // --- Debounce function for search input ---
     function debounce(func, wait) {
         let timeout;
         return function executedFunction(...args) {
@@ -1556,6 +1197,7 @@ if (document.getElementById('appContainer')) {
         };
     }
 
+    // --- Handle search input ---
     function handleSearchInput(event) {
         const query = event.target.value.toLowerCase().trim();
         currentFilterState.query = query;
@@ -1572,6 +1214,7 @@ if (document.getElementById('appContainer')) {
         }
     }
 
+    // --- Tier-level search ---
     function handleTierLevelSearch(query) {
         const tierCards = document.querySelectorAll('.tier-card');
         let visibleCount = 0;
@@ -1617,6 +1260,7 @@ if (document.getElementById('appContainer')) {
         tiersGrid.parentNode.insertBefore(messageDiv, tiersGrid);
     }
 
+    // --- Async Guard Functions for Data Caching ---
     async function ensurePlatformsData() {
         if (allPlatformsData.length > 0) {
             return Promise.resolve(allPlatformsData);
@@ -1652,6 +1296,7 @@ if (document.getElementById('appContainer')) {
         }
     }
 
+    // --- Skeleton Loaders ---
     function renderPlatformSkeleton() {
         let skeletonHTML = '<h2>Platforms</h2><div class="platforms-grid">';
         for (let i = 0; i < 3; i++) {
@@ -1695,6 +1340,7 @@ if (document.getElementById('appContainer')) {
         addBackButtonListener('tiers', urlParams.get('platform_id'));
     }
 
+    // --- Gallery Skeleton ---
     function renderGallerySkeleton() {
         let skeletonHTML = `
             <div class="view-header">
@@ -1716,10 +1362,10 @@ if (document.getElementById('appContainer')) {
         searchContainer.style.display = 'none';
     }
 
+    // --- Modal Logic ---
     const platformModal = document.getElementById('platformModal');
 
     function showPlatformModal(platform) {
-        if (!platformModal) return;
         document.getElementById('modalImage').src = platform.thumbnail_url || '';
         document.getElementById('modalTitle').textContent = platform.name;
         document.getElementById('modalDescription').innerHTML = platform.description;
@@ -1754,8 +1400,7 @@ if (document.getElementById('appContainer')) {
         if (modalElement) {
             modalElement.style.display = 'none';
             if (modalElement.id === 'platformModal') {
-                const video = document.getElementById('modalTeaserVideo');
-                if(video) video.pause();
+                document.getElementById('modalTeaserVideo').pause();
             }
         }
     }
@@ -1770,9 +1415,11 @@ if (document.getElementById('appContainer')) {
         }
     };
 
+    // --- Simplified View-Rendering Functions ---
     function renderPlatforms(platforms) {
         let platformsHTML = '<div class="platforms-grid">';
         platforms.forEach(platform => {
+            // Check if user has any subscription to this platform
             const hasSubscription = userSubscriptions.some(sub => sub.platform_id === platform.id);
             platformsHTML += `<div class="platform-card ${!hasSubscription ? 'locked' : ''}" data-platform-id="${platform.id}"><div class="platform-thumbnail" style="background-image: url('${platform.thumbnail_url || ''}')"></div><div class="platform-name">${platform.name}</div>${!hasSubscription ? '<div class="lock-icon">🔒</div>' : ''}</div>`;
         });
@@ -1801,6 +1448,7 @@ if (document.getElementById('appContainer')) {
         </div>
         <div class="tiers-grid">`;
     tiers.forEach(tier => {
+        // Use is_accessible from backend instead of checking userSubscriptions
         const isLocked = !tier.is_accessible;
         const lockedClass = isLocked ? 'locked' : '';
         const lockIcon = isLocked ? '<div class="lock-icon">🔒</div>' : '';
@@ -1824,6 +1472,7 @@ if (document.getElementById('appContainer')) {
         const tiersData = allTiersData[platformId];
 
         if (!tiersData || !Array.isArray(tiersData)) {
+            // Silently handle error without logging to console
             displayError("Unable to load tiers for this platform.");
             return;
         }
@@ -1831,6 +1480,7 @@ if (document.getElementById('appContainer')) {
         renderTiers(tiersData, platformId, platformName);
     }
 
+    // --- Content View Logic ---
     async function fetchAndDisplayContent(platformId, tierId, tierName, platformName) {
         searchScope = 'content';
         renderContentSkeleton(tierName, platformName);
@@ -1869,6 +1519,7 @@ if (document.getElementById('appContainer')) {
                 displayError(data.message || "Failed to fetch content.");
             }
         } catch (error) {
+            // Silently handle error without logging to console
             displayError("An error occurred while fetching content.");
         }
     }
@@ -1889,26 +1540,31 @@ if (document.getElementById('appContainer')) {
             tierGroup.className = 'tier-group';
             links.forEach(link => {
                 const isRecentContent = isRecent(link.added_at);
+                // Removed console.log that was exposing backend details
 
                 const card = document.createElement('div');
                 card.className = 'link-card';
                 if (link.locked) card.classList.add('locked');
                 if (isRecentContent) {
                     card.classList.add('is-new');
+                    // Removed console.log that was exposing backend details
                 }
                 card.dataset.contentType = link.content_type || 'Video';
                 card.dataset.recentStatus = isRecentContent ? 'true' : 'false';
                 card.dataset.searchText = generateSearchableText(link);
                 card.dataset.tierName = tierName;
                 card.dataset.platformId = platformId;
-                card.dataset.tierId = link.tier_id;
+                card.dataset.tierId = link.tier_id; // ✅ FIX: Use numeric ID from API
 
+                // Handle Gallery content type differently
                 const isGallery = link.content_type === 'Gallery';
 
+                // Thumbnail section (if present)
                 if (link.thumbnail_url) {
                     const thumbnailContainer = document.createElement('div');
                     thumbnailContainer.className = 'thumbnail-container';
                     
+                    // NEW: Add play button overlay for videos
                     if (!isGallery && !link.locked) {
                         const playOverlay = document.createElement('div');
                         playOverlay.className = 'video-play-overlay';
@@ -1925,6 +1581,7 @@ if (document.getElementById('appContainer')) {
                         newBadge.className = 'new-badge';
                         newBadge.textContent = `New! (${getDaysAgo(link.added_at)})`;
                         thumbnailContainer.appendChild(newBadge);
+                        // Removed console.log that was exposing backend details
                     }
                     const thumbnailImage = document.createElement('img');
                     thumbnailImage.src = link.thumbnail_url;
@@ -1932,6 +1589,7 @@ if (document.getElementById('appContainer')) {
                     thumbnailImage.loading = 'lazy';
                     thumbnailContainer.appendChild(thumbnailImage);
                     
+                    // NEW: Add click handler for video playback
                     if (!isGallery && !link.locked) {
                         thumbnailContainer.style.cursor = 'pointer';
                         thumbnailContainer.addEventListener('click', () => {
@@ -1945,10 +1603,12 @@ if (document.getElementById('appContainer')) {
                 const cardContent = document.createElement('div');
                 cardContent.className = 'card-content';
 
+                // Title section with text-based badge for recent items without thumbnails
                 const title = document.createElement('h3');
                 const titleText = document.createTextNode(link.title || "Untitled Link");
                 title.appendChild(titleText);
                 
+                // Add icon for Gallery content type
                 if (isGallery) {
                     const icon = document.createElement('span');
                     icon.className = 'content-type-icon gallery-icon';
@@ -1961,6 +1621,7 @@ if (document.getElementById('appContainer')) {
                     newBadgeText.className = 'new-badge-text';
                     newBadgeText.textContent = `New! (${getDaysAgo(link.added_at)})`;
                     title.appendChild(newBadgeText);
+                    // Removed console.log that was exposing backend details
                 }
                 cardContent.appendChild(title);
 
@@ -1984,12 +1645,14 @@ if (document.getElementById('appContainer')) {
 
                 if (!link.locked) {
                     if (isGallery) {
+                        // --- NEW: Add a "View Gallery" button ---
                         const viewButton = document.createElement('a');
                         viewButton.className = 'view-gallery-btn';
                         viewButton.textContent = '🖼️ View Gallery';
                         viewButton.href = `links.html?view=gallery&slug=${link.url}`;
                         actionsContainer.appendChild(viewButton);
                     } else {
+                        // NEW: Watch Video button
                         const watchButton = document.createElement('button');
                         watchButton.className = 'watch-video-btn';
                         watchButton.textContent = '▶️ Watch Video';
@@ -2012,6 +1675,7 @@ if (document.getElementById('appContainer')) {
         }
     }
 
+    // --- Setup filters with Recently Added support ---
     function setupFilters(contentData) {
         const filterContainer = document.getElementById('filterContainer');
         if (!filterContainer) return;
@@ -2076,6 +1740,7 @@ if (document.getElementById('appContainer')) {
         filterContainer.addEventListener('click', handleFilterClick);
     }
 
+    // --- Filter handling with search support ---
     function handleFilterClick(event) {
         if (!event.target.classList.contains('filter-btn')) return;
 
@@ -2094,6 +1759,7 @@ if (document.getElementById('appContainer')) {
         applyFilters();
     }
 
+    // --- Apply filters with search support ---
     function applyFilters() {
         const { view, type, query } = currentFilterState;
 
@@ -2114,11 +1780,14 @@ if (document.getElementById('appContainer')) {
 
             if (view === 'Recent' && isRecentContent) {
                 card.classList.add('recent-highlight');
+                const badge = card.querySelector('.new-badge') || card.querySelector('.new-badge-text');
+                // Removed console.log that was exposing backend details
             } else {
                 card.classList.remove('recent-highlight');
             }
 
             if (shouldShow) hasVisibleContent = true;
+            // Removed console.log that was exposing backend details
         });
 
         document.querySelectorAll('.tier-group').forEach(group => {
@@ -2138,6 +1807,7 @@ if (document.getElementById('appContainer')) {
         }
     }
 
+    // --- Navigation Handlers ---
     function handlePlatformClick(event) {
         const card = event.target.closest('.platform-card');
         if (!card) return;
@@ -2173,11 +1843,13 @@ if (document.getElementById('appContainer')) {
                 history.pushState({view: 'platforms'}, '', `links.html`);
                 router();
             } else if (backTo === 'history') {
+                // Use history.back() for gallery view
                 history.back();
             }
         };
     }
 
+    // --- Gallery Functions ---
     async function fetchAndDisplayGallery(slug) {
         renderGallerySkeleton();
         try {
@@ -2186,6 +1858,8 @@ if (document.getElementById('appContainer')) {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
+            
+            // Removed console.log that was exposing backend details
             
             if (response.ok && data.status === 'success' && data.gallery) {
                 renderGallery(data.gallery);
@@ -2196,11 +1870,14 @@ if (document.getElementById('appContainer')) {
                 displayError(data.message || "Failed to fetch gallery.");
             }
         } catch (error) {
+            // Silently handle error without logging to console
             displayError("An error occurred while fetching the gallery.");
         }
     }
 
     function renderGallery(galleryData) {
+        // Removed console.log that was exposing backend details
+        
         mainContent.innerHTML = `
             <div class="view-header">
                 <button id="backButton" class="back-button">← Back</button>
@@ -2217,10 +1894,15 @@ if (document.getElementById('appContainer')) {
         
         const galleryGrid = document.getElementById('galleryGrid');
         
+        // Removed console.log that was exposing backend details
+        
         galleryData.images.forEach((image, index) => {
+            // Removed console.log that was exposing backend details
+            
             const item = document.createElement('div');
             item.className = 'gallery-item';
             
+            // Create a temporary image to get actual dimensions
             const tempImg = new Image();
             const linkElement = document.createElement('a');
             linkElement.href = image.url;
@@ -2228,9 +1910,11 @@ if (document.getElementById('appContainer')) {
             linkElement.setAttribute('data-pswp-height', '1080');
             linkElement.target = '_blank';
             
+            // Load actual dimensions when image loads
             tempImg.onload = function() {
                 linkElement.setAttribute('data-pswp-width', this.naturalWidth.toString());
                 linkElement.setAttribute('data-pswp-height', this.naturalHeight.toString());
+                // Removed console.log that was exposing backend details
             };
             tempImg.src = image.url;
             
@@ -2249,15 +1933,21 @@ if (document.getElementById('appContainer')) {
             galleryGrid.appendChild(item);
         });
         
+        // Initialize PhotoSwipe after DOM is ready and images have dimensions
         setTimeout(() => {
             initPhotoSwipe();
         }, 500);
         
+        // Add back button listener using history.back()
         addBackButtonListener('history');
     }
 
     function initPhotoSwipe() {
+    // Removed console.log that was exposing backend details
+    
+    // Check if PhotoSwipe is loaded
     if (typeof PhotoSwipeLightbox === 'undefined') {
+        // Silently handle error without logging to console
         return;
     }
     
@@ -2284,23 +1974,29 @@ if (document.getElementById('appContainer')) {
             preload: [1, 2]
         });
         
+        // --- 🎯 NEW TRACKING LOGIC ---
         let viewedImageIndexes = new Set();
         let gallerySlugForTracking = null;
         
+        // Get slug from URL
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('view') === 'gallery') {
             gallerySlugForTracking = urlParams.get('slug');
         }
 
+        // Track which images are viewed as user navigates
         lightbox.on('change', () => {
             if (lightbox.pswp) {
                 const currentIndex = lightbox.pswp.currIndex;
                 viewedImageIndexes.add(currentIndex);
+                // Removed console.log that was exposing backend details
             }
         });
 
+        // Send tracking data when gallery is closed
         lightbox.on('close', () => {
             const totalUniqueViews = viewedImageIndexes.size;
+            // Removed console.log that was exposing backend details
 
             if (totalUniqueViews > 0 && gallerySlugForTracking) {
                 const token = localStorage.getItem('lustroom_jwt');
@@ -2310,6 +2006,7 @@ if (document.getElementById('appContainer')) {
                         images_viewed_count: totalUniqueViews
                     };
 
+                    // Fire-and-forget tracking request
                     fetch(`${API_BASE_URL}/gallery/log_view`, {
                         method: 'POST',
                         headers: {
@@ -2320,17 +2017,24 @@ if (document.getElementById('appContainer')) {
                     })
                     .then(response => {
                         if (response.ok) {
-                           // OK
+                            // Removed console.log that was exposing backend details
+                        } else {
+                            // Removed console.log that was exposing backend details
                         }
                     })
-                    .catch(error => {});
+                    .catch(error => {
+                        // Silently handle error without logging to console
+                    });
                 }
             }
             
+            // Clear the tracking data for next session
             viewedImageIndexes.clear();
             gallerySlugForTracking = null;
         });
+        // --- END TRACKING LOGIC ---
         
+        // Auto-hide UI on mouse idle
         let uiHideTimeout;
         let isUIVisible = true;
         
@@ -2359,6 +2063,9 @@ if (document.getElementById('appContainer')) {
         });
         
         lightbox.on('uiRegister', function() {
+            // Removed console.log that was exposing backend details
+            
+            // Fullscreen button
             lightbox.pswp.ui.registerElement({
                 name: 'fullscreen-button',
                 order: 9,
@@ -2373,6 +2080,7 @@ if (document.getElementById('appContainer')) {
                 }
             });
             
+            // Download button
             lightbox.pswp.ui.registerElement({
                 name: 'download-button',
                 order: 8,
@@ -2388,6 +2096,7 @@ if (document.getElementById('appContainer')) {
             });
         });
         
+        // Slideshow functionality
         let slideshowInterval = null;
         let isPlaying = false;
         
@@ -2421,11 +2130,15 @@ if (document.getElementById('appContainer')) {
         });
         
         lightbox.init();
-    } catch (error) {}
+        // Removed console.log that was exposing backend details
+    } catch (error) {
+        // Silently handle error without logging to console
+    }
 }
 
-    // --- PREMIUM VIDEO PLAYER (UPDATED WITH REPLACEMENTS) ---
+    // --- PREMIUM VIDEO PLAYER (PRODUCTION v2.1 MOBILE FIX) ---
     function openVideoPlayer(link, tierId) {
+        // Extract video ID and library ID
         const videoIdMatch = link.url.match(/\/([a-f0-9-]{36})\//);
         if (!videoIdMatch) return;
         
@@ -2433,29 +2146,35 @@ if (document.getElementById('appContainer')) {
         const libraryIdMatch = link.url.match(/library_id=(\d+)/);
         const libraryId = libraryIdMatch ? libraryIdMatch[1] : '555806';
         
+        // ✅ FIX 1: Detect mobile device
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
         
         const numericTierId = link.tier_id || 1;
         analyticsTracker.setVideoTierMapping(videoId, numericTierId);
         
+        // Create modal
         const modal = document.createElement('div');
         modal.className = 'premium-player-modal';
         modal.setAttribute('role', 'dialog');
         modal.setAttribute('aria-label', 'Video player');
         modal.setAttribute('aria-modal', 'true');
         
+        // ✅ FIX 2: Add mobile-specific class
         if (isMobile) {
             modal.classList.add('mobile-player');
         }
         
+        // Build HTML structure (same as before)
         modal.innerHTML = `
             <div class="premium-player-content">
+                <!-- Loading Overlay -->
                 <div class="player-loading-overlay">
                     <div class="player-spinner"></div>
                     <div class="player-loading-text">Loading video...</div>
                 </div>
                 
+                <!-- Error Overlay -->
                 <div class="player-error-overlay">
                     <div class="player-error-content">
                         <div class="player-error-icon">⚠️</div>
@@ -2468,6 +2187,7 @@ if (document.getElementById('appContainer')) {
                     </div>
                 </div>
                 
+                <!-- Top Header -->
                 <div class="premium-player-header">
                     <button class="premium-close-btn" aria-label="Close video player">
                         <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
@@ -2478,6 +2198,7 @@ if (document.getElementById('appContainer')) {
                     <div class="premium-header-spacer"></div>
                 </div>
                 
+                <!-- Video Container -->
                 <div class="premium-video-wrapper">
                     <video 
                         id="premiumPlayer_${videoId}" 
@@ -2495,6 +2216,7 @@ if (document.getElementById('appContainer')) {
                         autoplay
                     ></video>
                     
+                    <!-- Center Play Button Overlay -->
                     <div class="premium-center-overlay">
                         <button class="premium-center-play-btn show" aria-label="Play video">
                             <svg viewBox="0 0 24 24" fill="currentColor">
@@ -2503,13 +2225,18 @@ if (document.getElementById('appContainer')) {
                         </button>
                     </div>
                     
+                    <!-- Gesture Indicator (for mobile) -->
                     <div class="premium-gesture-indicator"></div>
+                    
+                    <!-- Quality/Speed Change Indicator -->
                     <div class="premium-change-indicator"></div>
                 </div>
                 
+                <!-- Custom Controls -->
                 <div class="premium-controls-wrapper">
                     <div class="premium-controls-bg"></div>
                     
+                    <!-- Progress Bar -->
                     <div class="premium-progress-container">
                         <div class="premium-progress-bar" role="slider" aria-label="Video progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
                             <div class="premium-progress-buffered"></div>
@@ -2521,7 +2248,9 @@ if (document.getElementById('appContainer')) {
                         </div>
                     </div>
                     
+                    <!-- Bottom Controls Row -->
                     <div class="premium-controls-row">
+                        <!-- Play/Pause -->
                         <button class="premium-control-btn premium-play-btn" aria-label="Play">
                             <svg class="play-icon" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M8 5v14l11-7z"/>
@@ -2531,6 +2260,7 @@ if (document.getElementById('appContainer')) {
                             </svg>
                         </button>
                         
+                        <!-- Skip Backward 10s -->
                         <button class="premium-control-btn premium-skip-backward premium-skip-btn" aria-label="Rewind 10 seconds">
                             <svg viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M12 5V2.21c0-.45-.54-.67-.85-.35l-3.8 3.79c-.2.2-.2.51 0 .71l3.79 3.79c.32.31.86.09.86-.36V7c3.73 0 6.68 3.42 5.86 7.29-.47 2.27-2.31 4.1-4.57 4.57-3.57.75-6.75-1.7-7.23-5.01-.07-.48-.49-.85-.98-.85-.6 0-1.08.53-1 1.13.62 4.39 4.8 7.64 9.53 6.72 3.12-.61 5.63-3.12 6.24-6.24C20.84 9.48 16.94 5 12 5z"/>
@@ -2538,6 +2268,7 @@ if (document.getElementById('appContainer')) {
                             </svg>
                         </button>
                         
+                        <!-- Skip Forward 10s -->
                         <button class="premium-control-btn premium-skip-forward premium-skip-btn" aria-label="Forward 10 seconds">
                             <svg viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M12 5V2.21c0-.45.54-.67.85-.35l3.8 3.79c.2.2.2.51 0 .71l-3.79 3.79c-.32.31-.86.09-.86-.36V7c-3.73 0-6.68 3.42-5.86 7.29.47 2.27 2.31 4.1 4.57 4.57 3.57.75 6.75-1.7 7.23-5.01.07-.48.49-.85.98-.85.6 0 1.08.53-1 1.13-.62 4.39-4.8 7.64-9.53 6.72-3.12-.61-5.63-3.12-6.24-6.24C3.16 9.48 7.06 5 12 5z"/>
@@ -2545,6 +2276,7 @@ if (document.getElementById('appContainer')) {
                             </svg>
                         </button>
                         
+                        <!-- Volume Control -->
                         <div class="premium-volume-group">
                             <button class="premium-control-btn premium-volume-btn" aria-label="Mute">
                                 <svg class="volume-high" viewBox="0 0 24 24" fill="currentColor">
@@ -2562,10 +2294,13 @@ if (document.getElementById('appContainer')) {
                             </div>
                         </div>
                         
+                        <!-- Time Display -->
                         <div class="premium-time-display">0:00 / 0:00</div>
                         
+                        <!-- Spacer -->
                         <div class="premium-controls-spacer"></div>
                         
+                        <!-- Settings Button -->
                         <div class="premium-settings-btn">
                             <button class="premium-control-btn" aria-label="Settings" aria-haspopup="true" aria-expanded="false">
                                 <svg viewBox="0 0 24 24" fill="currentColor">
@@ -2585,6 +2320,37 @@ if (document.getElementById('appContainer')) {
                         </div>
                     </div>
                 </div>
+                
+                <!-- Keyboard Shortcuts Tooltip (hidden by default) -->
+                <div class="premium-shortcuts-tooltip">
+                    <div class="premium-shortcuts-title">Keyboard Shortcuts</div>
+                    <div class="premium-shortcuts-list">
+                        <div class="premium-shortcut-item">
+                            <span class="premium-shortcut-key">Space</span>
+                            <span class="premium-shortcut-desc">Play/Pause</span>
+                        </div>
+                        <div class="premium-shortcut-item">
+                            <span class="premium-shortcut-key">←</span>
+                            <span class="premium-shortcut-desc">Rewind 10s</span>
+                        </div>
+                        <div class="premium-shortcut-item">
+                            <span class="premium-shortcut-key">→</span>
+                            <span class="premium-shortcut-desc">Forward 10s</span>
+                        </div>
+                        <div class="premium-shortcut-item">
+                            <span class="premium-shortcut-key">M</span>
+                            <span class="premium-shortcut-desc">Mute/Unmute</span>
+                        </div>
+                        <div class="premium-shortcut-item">
+                            <span class="premium-shortcut-key">F</span>
+                            <span class="premium-shortcut-desc">Fullscreen</span>
+                        </div>
+                        <div class="premium-shortcut-item">
+                            <span class="premium-shortcut-key">?</span>
+                            <span class="premium-shortcut-desc">Show shortcuts</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
         
@@ -2593,10 +2359,15 @@ if (document.getElementById('appContainer')) {
         
         const playerId = `premiumPlayer_${videoId}`;
         
+        // ✅ FIXED: Always request fullscreen on modal open
         const requestFullscreen = () => {
             const elem = modal;
+            
+            // Try standard fullscreen API first
             if (elem.requestFullscreen) {
-                elem.requestFullscreen().catch(() => {});
+                elem.requestFullscreen().catch(() => {
+                    // Fullscreen failed - continue anyway
+                });
             } else if (elem.webkitRequestFullscreen) {
                 elem.webkitRequestFullscreen();
             } else if (elem.mozRequestFullScreen) {
@@ -2605,13 +2376,16 @@ if (document.getElementById('appContainer')) {
                 elem.msRequestFullscreen();
             }
             
+            // For iOS, also try video element fullscreen as fallback
             if (isIOS) {
                 setTimeout(() => {
-                    const videoElement = document.querySelector(`#${playerId} video`);
+                    const videoElement = player.el().querySelector('video');
                     if (videoElement && videoElement.webkitEnterFullscreen && !document.fullscreenElement) {
                         try {
                             videoElement.webkitEnterFullscreen();
-                        } catch (err) {}
+                        } catch (err) {
+                            // Fullscreen not supported or blocked
+                        }
                     }
                 }, 100);
             }
@@ -2619,6 +2393,7 @@ if (document.getElementById('appContainer')) {
         
         setTimeout(requestFullscreen, 50);
         
+        // ✅ FIX 2: Initialize Video.js with mobile optimizations (Issue 2)
         const player = videojs(playerId, {
             controls: false,
             autoplay: false,
@@ -2626,20 +2401,23 @@ if (document.getElementById('appContainer')) {
             playsinline: true,
             responsive: true,
             fluid: true,
+            // ✅ FIXED: Mobile-optimized configuration
             nativeControlsForTouch: false,
             html5: {
                 vhs: {
                     enableLowInitialPlaylist: true,
                     smoothQualityChange: true,
-                    overrideNative: !isIOS,
+                    overrideNative: !isIOS, // iOS uses native HLS
                     bandwidth: isMobile ? 1500000 : 5000000,
+                    // ✅ NEW: Better mobile buffering
                     maxMaxBufferLength: isMobile ? 30 : 60,
                     maxBufferLength: isMobile ? 20 : 30,
                     maxBufferSize: isMobile ? 30 * 1000 * 1000 : 60 * 1000 * 1000
                 },
                 nativeVideoTracks: isIOS,
                 nativeAudioTracks: isIOS,
-                nativeTextTracks: false
+                // ✅ NEW: Android-specific fixes
+                nativeTextTracks: false // Prevent subtitle rendering issues
             }
         });
         
@@ -2648,13 +2426,13 @@ if (document.getElementById('appContainer')) {
         
         activePlayers.set(playerId, { player, modal });
         
+        // Initialize managers (same as before)
         const stateManager = new PremiumPlayerStateManager();
         const qualityManager = new PremiumQualityManager(player);
         const speedManager = new PremiumSpeedManager(player);
         const controlsManager = new PremiumControlsManager(modal, player, stateManager, qualityManager, speedManager);
         
-        const touchCoordinator = new PremiumTouchCoordinator(modal, player, controlsManager);
-        
+        // Get all DOM elements
         controlsManager.elements = {
             header: modal.querySelector('.premium-player-header'),
             controls: modal.querySelector('.premium-controls-wrapper'),
@@ -2686,12 +2464,77 @@ if (document.getElementById('appContainer')) {
             shortcutsTooltip: modal.querySelector('.premium-shortcuts-tooltip')
         };
         
-        // NOTE: Conflicting mobile touch handlers have been removed. Logic is handled by PremiumTouchCoordinator.
-        
-        // Mobile specific video handling
-        if (isIOS) {
-            const videoElement = document.querySelector(`#${playerId} video`);
+        // ✅ FIX 5: Mobile-specific touch improvements
+        if (isMobile) {
+            // Disable default touch actions on video element
+            const videoElement = player.el().querySelector('video');
             if (videoElement) {
+                videoElement.style.touchAction = 'none';
+                
+                // Prevent context menu on long press
+                videoElement.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    return false;
+                });
+                
+                // ✅ NEW: Prevent iOS Safari bottom bar from appearing
+                videoElement.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                }, { passive: false });
+            }
+            
+            // ✅ NEW: Enhanced touch controls visibility for mobile
+            let touchTimer;
+            let lastTouchTime = 0;
+            
+            const handleTouchInteraction = (e) => {
+                const now = Date.now();
+                const timeSinceLastTouch = now - lastTouchTime;
+                lastTouchTime = now;
+                
+                // Skip if touching controls directly
+                const controlElements = [
+                    '.premium-control-btn',
+                    '.premium-progress-bar',
+                    '.premium-settings-menu'
+                ];
+                
+                if (controlElements.some(selector => e.target.closest(selector))) {
+                    return;
+                }
+                
+                // ✅ NEW: Toggle controls visibility on quick tap (not swipe)
+                if (e.type === 'touchend' && timeSinceLastTouch < 200 && !touchMoved) {
+                    if (controlsManager.state.showingControls) {
+                        controlsManager.hideControls();
+                    } else {
+                        controlsManager.showControls();
+                    }
+                    return;
+                }
+                
+                // Show controls on any touch movement
+                controlsManager.showControls();
+                clearTimeout(touchTimer);
+                
+                // Auto-hide after delay
+                touchTimer = setTimeout(() => {
+                    if (!player.paused()) {
+                        controlsManager.hideControls();
+                    }
+                }, 3000);
+            };
+            
+            modal.addEventListener('touchstart', handleTouchInteraction, { passive: true });
+            modal.addEventListener('touchmove', handleTouchInteraction, { passive: true });
+            modal.addEventListener('touchend', handleTouchInteraction, { passive: true });
+        }
+        
+        // ✅ FIX 7: Handle iOS video fullscreen properly
+        if (isIOS) {
+            const videoElement = player.el().querySelector('video');
+            if (videoElement) {
+                // Ensure all iOS-specific attributes are set
                 videoElement.setAttribute('playsinline', '');
                 videoElement.setAttribute('webkit-playsinline', '');
                 videoElement.setAttribute('x-webkit-airplay', 'allow');
@@ -2702,23 +2545,29 @@ if (document.getElementById('appContainer')) {
                 
                 videoElement.addEventListener('webkitendfullscreen', () => {
                     stateManager.isFullscreen = false;
+                    // Don't auto-close on iOS - user might want to continue watching
                 });
                 
+                // Handle iOS playback initialization
                 videoElement.addEventListener('loadedmetadata', () => {
+                    // Force load on iOS to enable playback
                     videoElement.load();
                 });
             }
         }
 
+        // ✅ FIX 5: Android-specific video handling (Issue 5)
         if (!isIOS && isMobile) {
             player.ready(() => {
-                const videoElement = document.querySelector(`#${playerId} video`);
+                const videoElement = player.el().querySelector('video');
                 if (!videoElement) return;
                 
+                // ✅ FIXED: Set attributes in ready callback
                 videoElement.setAttribute('controlslist', 'nodownload nofullscreen');
                 videoElement.setAttribute('disablepictureinpicture', '');
-                videoElement.setAttribute('preload', 'metadata');
+                videoElement.setAttribute('preload', 'metadata'); // Better Android performance
                 
+                // Handle Android fullscreen events
                 const fullscreenHandler = () => {
                     if (document.fullscreenElement === videoElement) {
                         stateManager.isFullscreen = true;
@@ -2730,68 +2579,98 @@ if (document.getElementById('appContainer')) {
                 videoElement.addEventListener('fullscreenchange', fullscreenHandler);
                 videoElement.addEventListener('webkitfullscreenchange', fullscreenHandler);
                 
+                // ✅ NEW: Better WebView detection and handling
                 const isWebView = navigator.userAgent.includes('wv') || 
                                  window.navigator.standalone ||
                                  window.matchMedia('(display-mode: standalone)').matches;
                 
                 if (isWebView) {
+                    // Running in Android WebView or PWA
                     videoElement.setAttribute('x5-video-player-type', 'h5');
                     videoElement.setAttribute('x5-video-player-fullscreen', 'true');
                     videoElement.setAttribute('x5-video-orientation', 'landscape');
+                    
+                    // ✅ NEW: Force load in WebView
                     videoElement.load();
                 }
+                
+                // ✅ NEW: Android-specific error recovery
+                videoElement.addEventListener('error', (e) => {
+                    console.error('Android video error:', e);
+                    // Attempt recovery by reloading source
+                    if (player && !player.isDisposed()) {
+                        setTimeout(() => {
+                            player.src(player.currentSrc());
+                        }, 1000);
+                    }
+                });
             });
         }
 
+        // ✅ FIX 6: Handle orientation changes on mobile (Issue 6)
         if (isMobile) {
             let orientationTimeout;
             let lastOrientation = window.orientation;
             let isChangingOrientation = false;
             
             const handleOrientationChange = () => {
+                // ✅ NEW: Clear previous timeout
                 if (orientationTimeout) {
                     clearTimeout(orientationTimeout);
                 }
                 
+                // ✅ NEW: Only trigger if orientation actually changed
                 const currentOrientation = window.orientation;
                 if (currentOrientation === lastOrientation) return;
                 lastOrientation = currentOrientation;
                 isChangingOrientation = true;
                 
+                // ✅ NEW: Pause interactions during rotation
                 modal.style.pointerEvents = 'none';
                 
+                // ✅ NEW: Show loading indicator
                 if (controlsManager.elements.loadingOverlay) {
                     controlsManager.elements.loadingOverlay.classList.add('active');
                 }
                 
+                // ✅ FIXED: Debounced resize with player validation
                 orientationTimeout = setTimeout(() => {
                     if (player && !player.isDisposed() && player.el()) {
                         try {
                             player.trigger('resize');
                             
+                            // ✅ NEW: Force video element dimensions update
                             const videoElement = player.el().querySelector('video');
                             if (videoElement) {
                                 videoElement.style.width = '100%';
                                 videoElement.style.height = '100%';
+                                
+                                // ✅ NEW: Force repaint
                                 videoElement.offsetHeight;
                             }
                             
+                            // ✅ NEW: Re-enable interactions
                             modal.style.pointerEvents = '';
                             isChangingOrientation = false;
                             
+                            // ✅ NEW: Hide loading indicator
                             if (controlsManager.elements.loadingOverlay) {
                                 controlsManager.elements.loadingOverlay.classList.remove('active');
                             }
                             
+                            // ✅ NEW: Show controls briefly
                             controlsManager.showControls();
-                        } catch (error) {}
+                        } catch (error) {
+                            // Player disposed during orientation change
+                        }
                     }
-                }, 300);
+                }, 300); // Increased delay for stability
             };
             
             window.addEventListener('orientationchange', handleOrientationChange);
             window.addEventListener('resize', handleOrientationChange);
             
+             // ✅ NEW: Prevent touches during orientation change
             modal.addEventListener('touchstart', (e) => {
                 if (isChangingOrientation) {
                     e.preventDefault();
@@ -2799,6 +2678,7 @@ if (document.getElementById('appContainer')) {
                 }
             }, { passive: false, capture: true });
             
+            // Cleanup on modal removal
             modal.addEventListener('remove', () => {
                 if (orientationTimeout) {
                     clearTimeout(orientationTimeout);
@@ -2808,15 +2688,19 @@ if (document.getElementById('appContainer')) {
             });
         }
         
+        // Set video source
         player.src({
             src: link.url,
             type: 'application/x-mpegURL'
         });
 
+        // ✅ FIXED: Unmute video on all devices
         player.ready(() => {
+            // Unmute and set full volume
             player.muted(false);
             player.volume(1);
             
+            // Force load on iOS
             if (isIOS) {
                 const videoElement = player.el().querySelector('video');
                 if (videoElement) {
@@ -2825,12 +2709,15 @@ if (document.getElementById('appContainer')) {
             }
         });
 
+        // ✅ OPTIMIZATION 2: Add Network State Monitoring (Opt 2)
         if (isMobile && navigator.connection) {
             const updateNetworkState = () => {
                 const connection = navigator.connection;
                 const effectiveType = connection.effectiveType;
                 
+                // Adjust quality based on network
                 if (effectiveType === 'slow-2g' || effectiveType === '2g') {
+                    // Force lowest quality
                     if (qualityManager && qualityManager.getAvailableQualities().length > 0) {
                         const qualities = qualityManager.getAvailableQualities();
                         const lowestQuality = qualities[qualities.length - 1];
@@ -2844,18 +2731,22 @@ if (document.getElementById('appContainer')) {
             navigator.connection.addEventListener('change', updateNetworkState);
             updateNetworkState();
             
+            // Cleanup
             modal.addEventListener('remove', () => {
                 navigator.connection.removeEventListener('change', updateNetworkState);
             });
         }
         
+        // Initialize quality manager after source is set
         player.ready(() => {
             qualityManager.initialize();
             
+            // Wait for quality levels to load
             setTimeout(() => {
                 renderSettingsMenu();
             }, 2000);
             
+            // Also re-render when quality levels change
             const checkQualityLevels = setInterval(() => {
                 if (qualityManager.getAvailableQualities().length > 1) {
                     renderSettingsMenu();
@@ -2863,9 +2754,11 @@ if (document.getElementById('appContainer')) {
                 }
             }, 500);
             
+            // Stop checking after 10 seconds
             setTimeout(() => clearInterval(checkQualityLevels), 10000);
         });
         
+        // --- NEW: Helper function to safely get player ---
         const getSafePlayer = () => {
             const playerData = activePlayers.get(playerId);
             if (!playerData || !playerData.player) return null;
@@ -2879,6 +2772,7 @@ if (document.getElementById('appContainer')) {
             return activePlayer;
         };
         
+        // --- NEW: Player health check function ---
         const isPlayerHealthy = (id) => {
             try {
                 const playerData = activePlayers.get(id);
@@ -2894,6 +2788,7 @@ if (document.getElementById('appContainer')) {
             }
         };
         
+        // --- NEW: Cleanup function ---
         const cleanupPlayer = (id) => {
             const playerData = activePlayers.get(id);
             if (playerData) {
@@ -2904,16 +2799,23 @@ if (document.getElementById('appContainer')) {
                     if (playerData.modal && playerData.modal.parentNode) {
                         playerData.modal.remove();
                     }
-                } catch (e) {}
+                } catch (e) {
+                    // Already cleaned up
+                }
                 activePlayers.delete(id);
             }
         };
         
+        // --- Event Handlers ---
+        
+        // ✅ NEW: Haptic feedback utility for iOS
         function triggerHapticFeedback(style = 'medium') {
             if ('vibrate' in navigator) {
+                // Simple vibration for Android
                 navigator.vibrate(10);
             }
             
+            // iOS haptic feedback
             if (window.Taptic && window.Taptic.impact) {
                 window.Taptic.impact(style);
             } else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.haptic) {
@@ -2921,6 +2823,7 @@ if (document.getElementById('appContainer')) {
             }
         }
         
+        // Play/Pause
         const togglePlayPause = () => {
             if (!isPlayerHealthy(playerId)) {
                 cleanupPlayer(playerId);
@@ -2931,85 +2834,61 @@ if (document.getElementById('appContainer')) {
             try {
                 if (activePlayer.paused()) {
                     activePlayer.play().catch(() => {});
-                    triggerHapticFeedback('light');
+                    triggerHapticFeedback('light'); // ✅ NEW
                 } else {
                     activePlayer.pause();
-                    triggerHapticFeedback('light');
+                    triggerHapticFeedback('light'); // ✅ NEW
                 }
             } catch (error) {
                 cleanupPlayer(playerId);
             }
         };
-
-        // ==============================================================================
-        // FIXED: Play Button Handler - Capture Phase
-        // ==============================================================================
-        const handlePlayPauseButton = (e) => {
+        
+        controlsManager.elements.playBtn.addEventListener('click', togglePlayPause);
+        
+        // ✅ NEW: Fixed Center Play Button Handling
+        const centerPlayBtnClickHandler = (e) => {
             e.preventDefault();
-            e.stopImmediatePropagation();
+            e.stopPropagation();
             togglePlayPause();
         };
 
-        // Use CAPTURE phase
-        controlsManager.elements.playBtn.addEventListener('click', handlePlayPauseButton, { capture: true });
+        // Use both click and touchend for reliability
+        controlsManager.elements.centerPlayBtn.addEventListener('click', centerPlayBtnClickHandler);
 
-        // Mobile: touchend in capture phase
-        if (isMobile) {
-            controlsManager.elements.playBtn.addEventListener('touchend', handlePlayPauseButton, { 
-                passive: false, 
-                capture: true 
-            });
+        // ✅ NEW: Add touchend listener for iOS reliability
+        if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+            controlsManager.elements.centerPlayBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Only trigger if touch didn't move (not a swipe)
+                if (!touchMoved) {
+                    togglePlayPause();
+                }
+            }, { passive: false });
         }
-        // ==============================================================================
         
-        // ==============================================================================
-        // FIXED: Skip Buttons - Capture Phase
-        // ==============================================================================
-        const handleSkipBackward = (e) => {
-            e.preventDefault();
-            e.stopImmediatePropagation();
+        // Skip buttons
+        controlsManager.elements.skipBackward.addEventListener('click', () => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
             activePlayer.currentTime(Math.max(0, activePlayer.currentTime() - 10));
-            controlsManager.showGestureIndicator('⏪ 10s');
-            
-            if (navigator.vibrate) {
-                navigator.vibrate([10, 50, 10]);
-            }
-        };
-
-        const handleSkipForward = (e) => {
-            e.preventDefault();
-            e.stopImmediatePropagation();
+            controlsManager.showGestureIndicator('⏪');
+            triggerHapticFeedback('medium'); // ✅ NEW
+        });
+        
+        controlsManager.elements.skipForward.addEventListener('click', () => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
             
             activePlayer.currentTime(Math.min(activePlayer.duration(), activePlayer.currentTime() + 10));
-            controlsManager.showGestureIndicator('⏩ 10s');
-            
-            if (navigator.vibrate) {
-                navigator.vibrate([10, 50, 10]);
-            }
-        };
-
-        // Use CAPTURE phase
-        controlsManager.elements.skipBackward.addEventListener('click', handleSkipBackward, { capture: true });
-        controlsManager.elements.skipForward.addEventListener('click', handleSkipForward, { capture: true });
-
-        // Mobile: touchend in capture phase
-        if (isMobile) {
-            controlsManager.elements.skipBackward.addEventListener('touchend', handleSkipBackward, { 
-                passive: false, 
-                capture: true 
-            });
-            controlsManager.elements.skipForward.addEventListener('touchend', handleSkipForward, { 
-                passive: false, 
-                capture: true 
-            });
-        }
-        // ==============================================================================
+            controlsManager.showGestureIndicator('⏩');
+            triggerHapticFeedback('medium'); // ✅ NEW
+        });
         
+        // Volume controls
         const toggleMute = () => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
@@ -3028,18 +2907,58 @@ if (document.getElementById('appContainer')) {
             activePlayer.muted(volume === 0);
         });
         
-        // ==============================================================================
-        // FIXED: Progress Bar - Capture Phase + Proper Touch Handling
-        // ==============================================================================
-        let seekState = {
-            active: false,
-            touchIdentifier: null,
-            mouseDown: false
+        // ✅ FIXED: Progress bar seeking with better mobile support
+        // Progress bar seeking
+        let isSeeking = false;
+        let seekStartTime = 0; // ✅ NEW: Track seek start time
+
+        const handleProgressClick = (e) => {
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            // ✅ FIXED: Better touch coordinate handling
+            const clientX = e.type.includes('touch') ? 
+                (e.touches && e.touches[0] ? e.touches[0].clientX : e.changedTouches[0].clientX) : 
+                e.clientX;
+            
+            const rect = controlsManager.elements.progressBar.getBoundingClientRect();
+            const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            const newTime = percent * activePlayer.duration();
+            
+            // ✅ NEW: Validate seek time
+            if (isFinite(newTime) && newTime >= 0) {
+                activePlayer.currentTime(newTime);
+                
+                // ✅ NEW: Visual feedback for mobile
+                if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                    controlsManager.elements.progressBar.style.setProperty('--touch-x', `${percent * 100}%`);
+                }
+            }
         };
 
-        const updateSeekPosition = (clientX, shouldCommit = false) => {
+        // ✅ NEW: Unified touch/mouse event handling
+        const startSeeking = (e) => {
+            isSeeking = true;
+            seekStartTime = Date.now();
+            stateManager.isSeeking = true;
+            controlsManager.elements.progressBar.classList.add('seeking');
+            
+            // ✅ NEW: Prevent text selection on mobile
+            e.preventDefault();
+            
+            // Update position immediately
+            handleProgressClick(e);
+        };
+
+        const continueSeeking = (e) => {
+            if (!isSeeking) return;
+            
             const activePlayer = getSafePlayer();
-            if (!activePlayer) return null;
+            if (!activePlayer) return;
+            
+            const clientX = e.type.includes('touch') ? 
+                (e.touches && e.touches[0] ? e.touches[0].clientX : e.changedTouches[0].clientX) : 
+                e.clientX;
             
             const rect = controlsManager.elements.progressBar.getBoundingClientRect();
             const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
@@ -3047,212 +2966,128 @@ if (document.getElementById('appContainer')) {
             controlsManager.elements.progressPlayed.style.width = `${percent * 100}%`;
             controlsManager.elements.progressHandle.style.left = `${percent * 100}%`;
             
-            if (shouldCommit) {
-                const newTime = percent * activePlayer.duration();
-                if (isFinite(newTime) && newTime >= 0) {
-                    activePlayer.currentTime(newTime);
+            // ✅ NEW: Show time preview on mobile
+            if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                const time = percent * activePlayer.duration();
+                if (controlsManager.elements.timeDisplay) {
+                    controlsManager.elements.timeDisplay.textContent = 
+                        `${controlsManager.formatTime(time)} / ${controlsManager.formatTime(activePlayer.duration())}`;
                 }
             }
+        };
+
+        const endSeeking = (e) => {
+            if (!isSeeking) return;
             
-            return percent;
-        };
-
-        const startSeeking = () => {
-            if (!seekState.active) {
-                seekState.active = true;
-                stateManager.isSeeking = true;
-                controlsManager.elements.progressBar.classList.add('seeking');
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            // ✅ NEW: Only seek if it was an intentional drag (not a quick tap)
+            const seekDuration = Date.now() - seekStartTime;
+            
+            const clientX = e.type.includes('touch') ? 
+                (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : e.clientX) : 
+                e.clientX;
+            
+            const rect = controlsManager.elements.progressBar.getBoundingClientRect();
+            const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            const newTime = percent * activePlayer.duration();
+            
+            if (isFinite(newTime) && newTime >= 0) {
+                activePlayer.currentTime(newTime);
             }
-        };
-
-        const stopSeeking = () => {
-            seekState.active = false;
-            seekState.touchIdentifier = null;
-            seekState.mouseDown = false;
+            
+            isSeeking = false;
             stateManager.isSeeking = false;
             controlsManager.elements.progressBar.classList.remove('seeking');
         };
 
-        // === DESKTOP: Mouse Events ===
-        controlsManager.elements.progressBar.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-            
-            seekState.mouseDown = true;
-            startSeeking();
-            updateSeekPosition(e.clientX);
-        }, { capture: true });
-
-        document.addEventListener('mousemove', (e) => {
-            if (seekState.mouseDown && seekState.active) {
-                updateSeekPosition(e.clientX);
+        // ✅ NEW: Single click/tap handler for progress bar
+        controlsManager.elements.progressBar.addEventListener('click', (e) => {
+            // Only handle direct clicks, not drags
+            if (!isSeeking) {
+                handleProgressClick(e);
             }
         });
 
-        document.addEventListener('mouseup', (e) => {
-            if (seekState.mouseDown) {
-                updateSeekPosition(e.clientX, true);
-                stopSeeking();
-            }
-        });
+        // Mouse events (desktop)
+        controlsManager.elements.progressBar.addEventListener('mousedown', startSeeking);
+        document.addEventListener('mousemove', continueSeeking);
+        document.addEventListener('mouseup', endSeeking);
 
-        // ==============================================================================
-        // FIXED: Progress Bar - Android Compatible (Fix 4)
-        // ==============================================================================
-        if (isMobile) {
-            let progressTouchIdentifier = null;
-            let progressTouchActive = false;
+        // ✅ FIXED: Touch events (mobile) - attach to modal to capture all touches
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+            controlsManager.elements.progressBar.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startSeeking(e);
+            }, { passive: false });
             
-            const handleProgressTouchStart = (e) => {
-                // Don't use preventDefault here - let it bubble naturally
-                
-                if (e.touches.length > 1) return;
-                
-                const touch = e.touches[0];
-                progressTouchIdentifier = touch.identifier;
-                progressTouchActive = true;
-                
-                startSeeking();
-                updateSeekPosition(touch.clientX);
-                
-                // Show controls during seek
-                controlsManager.showControls();
-            };
-            
-            const handleProgressTouchMove = (e) => {
-                if (!progressTouchActive || progressTouchIdentifier === null) return;
-                
-                const touch = Array.from(e.touches).find(t => t.identifier === progressTouchIdentifier);
-                if (!touch) return;
-                
-                // Prevent scrolling during seek
-                if (seekState.active) {
+            modal.addEventListener('touchmove', (e) => {
+                if (isSeeking) {
                     e.preventDefault();
+                    continueSeeking(e);
                 }
-                
-                updateSeekPosition(touch.clientX);
-            };
+            }, { passive: false });
             
-            const handleProgressTouchEnd = (e) => {
-                if (!progressTouchActive || progressTouchIdentifier === null) return;
-                
-                const touch = Array.from(e.changedTouches).find(t => t.identifier === progressTouchIdentifier);
-                if (!touch) {
-                    progressTouchActive = false;
-                    progressTouchIdentifier = null;
-                    stopSeeking();
-                    return;
+            modal.addEventListener('touchend', (e) => {
+                if (isSeeking) {
+                    e.preventDefault();
+                    endSeeking(e);
                 }
-                
-                updateSeekPosition(touch.clientX, true);
-                
-                progressTouchActive = false;
-                progressTouchIdentifier = null;
-                stopSeeking();
-            };
-            
-            const handleProgressTouchCancel = () => {
-                if (progressTouchActive) {
-                    progressTouchActive = false;
-                    progressTouchIdentifier = null;
-                    stopSeeking();
-                }
-            };
-            
-            // Attach directly to progress bar (NOT document)
-            controlsManager.elements.progressBar.addEventListener('touchstart', handleProgressTouchStart, { passive: true });
-            controlsManager.elements.progressBar.addEventListener('touchmove', handleProgressTouchMove, { passive: false });
-            controlsManager.elements.progressBar.addEventListener('touchend', handleProgressTouchEnd, { passive: true });
-            controlsManager.elements.progressBar.addEventListener('touchcancel', handleProgressTouchCancel, { passive: true });
-            
-            // Cleanup function
-            modal.addEventListener('remove', () => {
-                controlsManager.elements.progressBar.removeEventListener('touchstart', handleProgressTouchStart);
-                controlsManager.elements.progressBar.removeEventListener('touchmove', handleProgressTouchMove);
-                controlsManager.elements.progressBar.removeEventListener('touchend', handleProgressTouchEnd);
-                controlsManager.elements.progressBar.removeEventListener('touchcancel', handleProgressTouchCancel);
-            });
+            }, { passive: false });
         }
-
-        // === Progress bar hover preview (desktop only) ===
-        if (!isMobile) {
-            controlsManager.elements.progressBar.addEventListener('mousemove', (e) => {
-                const activePlayer = getSafePlayer();
-                if (!activePlayer) return;
-                
-                const rect = controlsManager.elements.progressBar.getBoundingClientRect();
-                const percent = (e.clientX - rect.left) / rect.width;
-                const time = percent * activePlayer.duration();
-                
-                if (isFinite(time)) {
-                    controlsManager.elements.thumbnailTime.textContent = controlsManager.formatTime(time);
-                    controlsManager.elements.progressThumbnail.style.left = `${percent * 100}%`;
-                    controlsManager.elements.progressThumbnail.style.display = 'block';
-                }
-            });
-            
-            controlsManager.elements.progressBar.addEventListener('mouseleave', () => {
-                controlsManager.elements.progressThumbnail.style.display = 'none';
-            });
-        }
-        // ==============================================================================
         
-        // ==============================================================================
-        // FIXED: Settings Button Handler - Android Compatible (Fix 2)
-        // ==============================================================================
-        const toggleSettingsMenu = (e) => {
-            e.preventDefault();
-            e.stopImmediatePropagation();
+        // Progress bar hover - show thumbnail preview
+        controlsManager.elements.progressBar.addEventListener('mousemove', (e) => {
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
             
+            const rect = controlsManager.elements.progressBar.getBoundingClientRect();
+            const percent = (e.clientX - rect.left) / rect.width;
+            const time = percent * activePlayer.duration();
+            
+            if (isFinite(time)) {
+                controlsManager.elements.thumbnailTime.textContent = controlsManager.formatTime(time);
+                controlsManager.elements.progressThumbnail.style.left = `${percent * 100}%`;
+                controlsManager.elements.progressThumbnail.style.display = 'block';
+            }
+        });
+        
+        controlsManager.elements.progressBar.addEventListener('mouseleave', () => {
+            controlsManager.elements.progressThumbnail.style.display = 'none';
+        });
+        
+        // Settings menu
+        controlsManager.elements.settingsBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
             controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
-            
-            // Visual feedback
-            if (isActive) {
-                controlsManager.elements.settingsBtn.style.background = 'rgba(255, 255, 255, 0.2)';
-            } else {
-                controlsManager.elements.settingsBtn.style.background = '';
-            }
-        };
+        });
 
-        // Desktop: Standard click
-        controlsManager.elements.settingsBtn.addEventListener('click', toggleSettingsMenu);
-
-        // Mobile: Use touchstart for instant response
+        // ✅ NEW: Mobile-specific touch handler
         if (isMobile) {
-            const handleTouchSettings = (e) => {
+            controlsManager.elements.settingsBtn.addEventListener('touchend', (e) => {
                 e.preventDefault();
-                e.stopImmediatePropagation();
-                
-                // Block subsequent events
-                const blockEvent = (evt) => {
-                    evt.preventDefault();
-                    evt.stopImmediatePropagation();
-                };
-                
-                e.currentTarget.addEventListener('touchmove', blockEvent, { once: true, passive: false });
-                e.currentTarget.addEventListener('touchend', blockEvent, { once: true, passive: false });
-                e.currentTarget.addEventListener('touchcancel', blockEvent, { once: true, passive: false });
-                
-                toggleSettingsMenu(e);
-            };
-            
-            controlsManager.elements.settingsBtn.addEventListener('touchstart', handleTouchSettings, { passive: false });
+                e.stopPropagation();
+                const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
+                controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
+            }, { passive: false });
         }
-        // ==============================================================================
         
+        // Close settings menu when clicking outside
         const closeSettingsMenu = (e) => {
             if (controlsManager.elements.settingsMenu && 
                 !controlsManager.elements.settingsMenu.contains(e.target) && 
                 !controlsManager.elements.settingsBtn.contains(e.target)) {
                 controlsManager.elements.settingsMenu.classList.remove('active');
                 controlsManager.elements.settingsBtn.setAttribute('aria-expanded', 'false');
-                controlsManager.elements.settingsBtn.style.background = '';
             }
         };
         
         document.addEventListener('click', closeSettingsMenu);
         
+        // Render settings menu options
         function renderSettingsMenu() {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
@@ -3272,12 +3107,7 @@ if (document.getElementById('appContainer')) {
                         option.classList.add('active');
                     }
                     
-                    // ==============================================================================
-                    // FIXED: Quality Select - Android Compatible (Fix 3)
-                    // ==============================================================================
-                    const handleQualitySelect = (e) => {
-                        e.preventDefault();
-                        e.stopImmediatePropagation();
+                    option.addEventListener('click', () => {
                         const player = getSafePlayer();
                         if (!player) return;
                         
@@ -3295,40 +3125,7 @@ if (document.getElementById('appContainer')) {
                         
                         // Close menu
                         controlsManager.elements.settingsMenu.classList.remove('active');
-                        controlsManager.elements.settingsBtn.style.background = '';
-                    };
-
-                    // Desktop: Standard click
-                    option.addEventListener('click', handleQualitySelect);
-
-                    // Mobile: Use touchstart for instant response
-                    if (isMobile) {
-                        const handleTouchQuality = (e) => {
-                            e.preventDefault();
-                            e.stopImmediatePropagation();
-                            
-                            // Visual feedback
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
-                            setTimeout(() => {
-                                if (e.currentTarget && e.currentTarget.style) {
-                                    e.currentTarget.style.background = '';
-                                }
-                            }, 200);
-                            
-                            // Block subsequent events
-                            const blockEvent = (evt) => {
-                                evt.preventDefault();
-                                evt.stopImmediatePropagation();
-                            };
-                            
-                            e.currentTarget.addEventListener('touchmove', blockEvent, { once: true, passive: false });
-                            e.currentTarget.addEventListener('touchend', blockEvent, { once: true, passive: false });
-                            
-                            handleQualitySelect(e);
-                        };
-                        
-                        option.addEventListener('touchstart', handleTouchQuality, { passive: false });
-                    }
+                    });
                     
                     controlsManager.elements.qualityOptions.appendChild(option);
                 });
@@ -3349,73 +3146,40 @@ if (document.getElementById('appContainer')) {
                         option.classList.add('active');
                     }
                     
-                    // ==============================================================================
-                    // FIXED: Speed Select - Android Compatible (Fix 3)
-                    // ==============================================================================
-                    const handleSpeedSelect = (e) => {
-                        e.preventDefault();
-                        e.stopImmediatePropagation();
+                    option.addEventListener('click', () => {
                         const player = getSafePlayer();
                         if (!player) return;
-
+                        
                         speedManager.setSpeed(speed);
                         stateManager.currentSpeed = speed;
-
+                        
                         // Update active state
                         controlsManager.elements.speedOptions.querySelectorAll('.premium-settings-item').forEach(item => {
                             item.classList.remove('active');
                         });
                         option.classList.add('active');
-
+                        
                         // Show indicator
                         controlsManager.showChangeIndicator(`Speed: ${speedManager.getCurrentSpeedLabel()}`);
-
+                        
                         // Close menu
                         controlsManager.elements.settingsMenu.classList.remove('active');
-                        controlsManager.elements.settingsBtn.style.background = '';
-                    };
-
-                    // Desktop: Standard click
-                    option.addEventListener('click', handleSpeedSelect);
-
-                    // Mobile: Use touchstart for instant response
-                    if (isMobile) {
-                        const handleTouchSpeed = (e) => {
-                            e.preventDefault();
-                            e.stopImmediatePropagation();
-                            
-                            // Visual feedback
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
-                            setTimeout(() => {
-                                if (e.currentTarget && e.currentTarget.style) {
-                                    e.currentTarget.style.background = '';
-                                }
-                            }, 200);
-                            
-                            // Block subsequent events
-                            const blockEvent = (evt) => {
-                                evt.preventDefault();
-                                evt.stopImmediatePropagation();
-                            };
-                            
-                            e.currentTarget.addEventListener('touchmove', blockEvent, { once: true, passive: false });
-                            e.currentTarget.addEventListener('touchend', blockEvent, { once: true, passive: false });
-                            
-                            handleSpeedSelect(e);
-                        };
-                        
-                        option.addEventListener('touchstart', handleTouchSpeed, { passive: false });
-                    }
+                    });
                     
                     controlsManager.elements.speedOptions.appendChild(option);
                 });
             }
         }
         
+        // ✅ FIXED: Better fullscreen handling
         const handleFullscreenChange = () => {
             const wasFullscreen = stateManager.isFullscreen;
             stateManager.isFullscreen = !!document.fullscreenElement;
             
+            // Update fullscreen state but don't auto-close
+            // Let user explicitly close with close button
+            
+            // Handle iOS-specific fullscreen
             if (isIOS) {
                 const videoElement = player.el().querySelector('video');
                 if (videoElement) {
@@ -3426,106 +3190,98 @@ if (document.getElementById('appContainer')) {
         };
         
         document.addEventListener('fullscreenchange', handleFullscreenChange);
+        // ✅ NEW: iOS-specific fullscreen handler
         if (isIOS) {
             document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
         }
         
+        // Close button and ESC key
         const closePlayer = () => {
-            if (touchCoordinator) {
-                touchCoordinator.destroy();
-            }
-
+            // ✅ NEW: Clear session tracking
             analyticsTracker.clearSession(videoId);
             
+            // Stop token refresh
             tokenRefreshManager.stopRefresh(videoId);
             
+            // ✅ NEW: Clean up player events first
             if (modal && modal._cleanupPlayerEvents) {
                 modal._cleanupPlayerEvents();
             }
             
+            // Remove from global registry
             activePlayers.delete(playerId);
             
+            // Remove event listeners
             document.removeEventListener('fullscreenchange', handleFullscreenChange);
             document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
             document.removeEventListener('click', closeSettingsMenu);
             document.removeEventListener('keydown', handleKeyDown);
             
+            // ✅ NEW: Clear all intervals/timeouts
             if (hideControlsInterval) {
                 clearInterval(hideControlsInterval);
             }
             
+            // Exit fullscreen if active
             if (document.fullscreenElement) {
                 document.exitFullscreen().catch(() => {});
             }
             
+            // ✅ FIXED: More thorough player disposal
             if (player && !player.isDisposed()) {
                 try {
+                    // Pause first to stop any ongoing operations
                     player.pause();
+                    
+                    // Clear source to stop any network requests
                     player.src('');
+                    
+                    // Then dispose
                     player.dispose();
-                } catch (e) {}
+                } catch (e) {
+                    // Player already disposed or in invalid state
+                }
             }
             
+            // Remove modal
             if (modal && modal.parentNode) {
                 modal.remove();
             }
             
+            // Restore body overflow
             document.body.style.overflow = '';
         };
 
-        // ==============================================================================
-        // FIXED: Close Button Handler - Android Compatible (Fix 1)
-        // ==============================================================================
-        const handleClose = (e) => {
+        controlsManager.elements.closeBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            e.stopImmediatePropagation();
-            
-            // Immediate visual feedback
-            e.currentTarget.style.transform = 'scale(0.9)';
-            setTimeout(() => {
-                if (e.currentTarget && e.currentTarget.style) {
-                    e.currentTarget.style.transform = '';
-                }
-            }, 100);
-            
+            e.stopPropagation();
             closePlayer();
-        };
+        });
 
-        // Desktop: Standard click
-        controlsManager.elements.closeBtn.addEventListener('click', handleClose);
-        controlsManager.elements.closeErrorBtn.addEventListener('click', handleClose);
+        controlsManager.elements.closeErrorBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closePlayer();
+        });
 
-        // Mobile: Use touchstart for instant response (Android-friendly)
+        // ✅ NEW: Mobile-specific touch handlers
         if (isMobile) {
-            const handleTouchClose = (e) => {
+            controlsManager.elements.closeBtn.addEventListener('touchend', (e) => {
                 e.preventDefault();
-                e.stopImmediatePropagation();
-                
-                // Block all subsequent events for this touch
-                const blockEvent = (evt) => {
-                    evt.preventDefault();
-                    evt.stopImmediatePropagation();
-                };
-                
-                e.currentTarget.addEventListener('touchmove', blockEvent, { once: true, passive: false });
-                e.currentTarget.addEventListener('touchend', blockEvent, { once: true, passive: false });
-                e.currentTarget.addEventListener('touchcancel', blockEvent, { once: true, passive: false });
-                
-                // Visual feedback
-                e.currentTarget.style.transform = 'scale(0.9)';
-                
-                // Close after brief delay for visual feedback
-                setTimeout(() => {
-                    closePlayer();
-                }, 50);
-            };
+                e.stopPropagation();
+                closePlayer();
+            }, { passive: false });
             
-            controlsManager.elements.closeBtn.addEventListener('touchstart', handleTouchClose, { passive: false });
-            controlsManager.elements.closeErrorBtn.addEventListener('touchstart', handleTouchClose, { passive: false });
+            controlsManager.elements.closeErrorBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                closePlayer();
+            }, { passive: false });
         }
-        // ==============================================================================
         
+        // Keyboard handler
         const handleKeyDown = (e) => {
+            // Don't handle if settings menu is open
             if (controlsManager.elements.settingsMenu && 
                 controlsManager.elements.settingsMenu.classList.contains('active')) {
                 if (e.key === 'Escape') {
@@ -3564,6 +3320,7 @@ if (document.getElementById('appContainer')) {
                     break;
                 case 'f':
                     e.preventDefault();
+                    // F key does nothing since we auto-enter fullscreen
                     break;
                 case '?':
                     e.preventDefault();
@@ -3583,6 +3340,7 @@ if (document.getElementById('appContainer')) {
         
         document.addEventListener('keydown', handleKeyDown);
         
+        // Error handling
         controlsManager.elements.retryBtn.addEventListener('click', () => {
             controlsManager.showErrorOverlay(false);
             controlsManager.showLoadingOverlay(true);
@@ -3595,6 +3353,8 @@ if (document.getElementById('appContainer')) {
                 activePlayer.load();
             }
         });
+        
+        // --- Video.js Event Listeners ---
         
         player.on('loadstart', () => {
             controlsManager.showLoadingOverlay(true);
@@ -3631,8 +3391,10 @@ if (document.getElementById('appContainer')) {
             analyticsTracker.trackEvent(videoId, 'ended', player, tierId);
         });
         
+        // Updated timeupdate handler with defensive programming
         player.on('timeupdate', () => {
             try {
+                // Check if player still exists and is valid
                 const playerData = activePlayers.get(playerId);
                 if (!playerData || !playerData.player) {
                     return;
@@ -3640,6 +3402,7 @@ if (document.getElementById('appContainer')) {
                 
                 const activePlayer = playerData.player;
                 
+                // Multiple safety checks
                 if (!activePlayer || 
                     !activePlayer.el() || 
                     activePlayer.isDisposed() ||
@@ -3647,21 +3410,25 @@ if (document.getElementById('appContainer')) {
                     return;
                 }
                 
-                if (!stateManager.isSeeking) {
+                if (!isSeeking) {
                     const current = activePlayer.currentTime();
                     const duration = activePlayer.duration();
                     
+                    // Check if values are valid
                     if (!isFinite(current) || !isFinite(duration) || duration <= 0) {
                         return;
                     }
                     
+                    // Get buffered time safely
                     let buffered = 0;
                     try {
                         if (activePlayer.buffered && 
                             activePlayer.buffered().length > 0) {
                             buffered = activePlayer.buffered().end(activePlayer.buffered().length - 1);
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        // Silently handle buffered error
+                    }
                     
                     if (controlsManager && 
                         controlsManager.updateProgress && 
@@ -3671,10 +3438,12 @@ if (document.getElementById('appContainer')) {
                     }
                 }
             } catch (error) {
+                // Player disposed or not ready - clean up
                 activePlayers.delete(playerId);
             }
         });
         
+        // Updated volumechange handler with defensive programming
         player.on('volumechange', () => {
             try {
                 const playerData = activePlayers.get(playerId);
@@ -3699,6 +3468,7 @@ if (document.getElementById('appContainer')) {
                     controlsManager.elements.volumeSlider.value = muted ? 0 : volume;
                 }
             } catch (error) {
+                // Silently handle
                 activePlayers.delete(playerId);
             }
         });
@@ -3731,6 +3501,7 @@ if (document.getElementById('appContainer')) {
             analyticsTracker.trackEvent(videoId, 'error', player, tierId);
         });
 
+        // ✅ NEW: Store event cleanup function (Issue 7)
         modal._cleanupPlayerEvents = () => {
             if (player && !player.isDisposed()) {
                 try {
@@ -3744,18 +3515,267 @@ if (document.getElementById('appContainer')) {
                     player.off('timeupdate');
                     player.off('volumechange');
                     player.off('error');
-                } catch (error) {}
+                } catch (error) {
+                    // Player already disposed
+                }
             }
         };
         
+        // --- Controls Visibility Logic ---
+        
+        // Show controls on mouse movement (non-mobile)
         if (!isMobile) {
             modal.addEventListener('mousemove', () => {
                 controlsManager.showControls();
             });
         }
         
+        // Click on video area to toggle play/pause
+        const videoArea = controlsManager.elements.progressBar.parentElement.parentElement;
+        if (videoArea) {
+            videoArea.addEventListener('click', (e) => {
+                // Only toggle if clicking on video area, not on controls
+                if (e.target.closest('.premium-controls-row') || 
+                    e.target.closest('.premium-progress-container') ||
+                    e.target.closest('.premium-settings-menu')) {
+                    return;
+                }
+                togglePlayPause();
+            });
+        }
+        
+        // --- Mobile Touch Gestures (Issue 1 & 2 Fixes) ---
+
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchStartTime = 0;
+        let isSwiping = false;
+        let touchMoved = false; // ✅ NEW: Track if touch moved significantly
+        let preventNextClick = false; // ✅ NEW: Flag to prevent ghost clicks
+
+        modal.addEventListener('touchstart', (e) => {
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            const controlElements = [
+                '.premium-controls-wrapper',
+                '.premium-player-header',
+                '.premium-progress-bar',
+                '.premium-control-btn',
+                '.premium-settings-menu',
+                '.premium-volume-slider'
+            ];
+            
+            if (controlElements.some(selector => e.target.closest(selector))) {
+                return;
+            }
+            
+            const touchCount = e.touches.length;
+            if (touchCount === 1) {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+                touchStartTime = activePlayer.currentTime();
+                isSwiping = false;
+                touchMoved = false; // ✅ NEW: Reset movement flag
+                preventNextClick = false; // ✅ NEW: Reset click prevention flag
+            }
+        }, { passive: true });
+        
+        // Replace touchmove handler
+        modal.addEventListener('touchmove', (e) => {
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            const controlElements = [
+                '.premium-controls-wrapper',
+                '.premium-player-header',
+                '.premium-progress-bar',
+                '.premium-control-btn',
+                '.premium-settings-menu',
+                '.premium-volume-slider'
+            ];
+            
+            if (controlElements.some(selector => e.target.closest(selector))) {
+                return;
+            }
+            
+            if (e.touches.length !== 1) return;
+            
+            const touchCurrentX = e.touches[0].clientX;
+            const touchCurrentY = e.touches[0].clientY;
+            
+            const deltaX = touchCurrentX - touchStartX;
+            const deltaY = touchCurrentY - touchStartY;
+            
+            // ✅ NEW: Mark as moved if threshold exceeded
+            if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+                touchMoved = true;
+            }
+            
+            if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+                isSwiping = true;
+                preventNextClick = true; // ✅ NEW: Prevent click after swipe
+                e.preventDefault();
+                
+                const seekAmount = (deltaX / window.innerWidth) * 30;
+                const newTime = Math.max(0, Math.min(activePlayer.duration(), touchStartTime + seekAmount));
+                
+                if (controlsManager.elements.gestureIndicator) {
+                    const direction = deltaX > 0 ? '⏩' : '⏪';
+                    const seconds = Math.abs(Math.round(seekAmount));
+                    controlsManager.elements.gestureIndicator.textContent = `${direction} ${seconds}s`;
+                    controlsManager.elements.gestureIndicator.classList.add('show');
+                }
+            }
+        }, { passive: false });
+        
+        // Replace touchend handler
+        modal.addEventListener('touchend', (e) => {
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            if (controlsManager.elements.gestureIndicator) {
+                controlsManager.elements.gestureIndicator.classList.remove('show');
+            }
+            
+            const controlElements = [
+                '.premium-controls-wrapper',
+                '.premium-player-header',
+                '.premium-progress-bar',
+                '.premium-control-btn',
+                '.premium-settings-menu',
+                '.premium-volume-slider'
+            ];
+            
+            if (controlElements.some(selector => e.target.closest(selector))) {
+                return;
+            }
+            
+            const touchEndX = e.changedTouches[0].clientX;
+            const touchEndY = e.changedTouches[0].clientY;
+            
+            const deltaX = touchEndX - touchStartX;
+            const deltaY = touchEndY - touchStartY;
+            
+            if (isSwiping && Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+                const seekAmount = (deltaX / window.innerWidth) * 30;
+                const newTime = Math.max(0, Math.min(activePlayer.duration(), touchStartTime + seekAmount));
+                activePlayer.currentTime(newTime);
+                
+                if (seekAmount > 0) {
+                    controlsManager.showGestureIndicator('⏩');
+                } else {
+                    controlsManager.showGestureIndicator('⏪');
+                }
+            }
+            
+            // ✅ NEW: Prevent click events after gesture
+            if (preventNextClick) {
+                const preventClickHandler = (clickEvent) => {
+                    clickEvent.preventDefault();
+                    clickEvent.stopPropagation();
+                    modal.removeEventListener('click', preventClickHandler, true);
+                };
+                modal.addEventListener('click', preventClickHandler, true);
+                
+                // Clear flag after short delay
+                setTimeout(() => {
+                    preventNextClick = false;
+                    modal.removeEventListener('click', preventClickHandler, true);
+                }, 300);
+            }
+            
+            isSwiping = false;
+            touchMoved = false; // ✅ NEW: Reset movement flag
+        }, { passive: true });
+        
+        // --- Enhanced Double-tap with Clear Zone Detection ---
+
+        let lastTapTime = 0;
+        let lastTapX = 0;
+        const doubleTapThreshold = 300;
+        const centerTapZoneWidth = 0.4; // 40% of screen width in center
+
+        modal.addEventListener('touchend', (e) => {
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+            
+            // ✅ NEW: Don't process taps if user was swiping
+            if (touchMoved || isSwiping) {
+                return;
+            }
+            
+            // Skip if touching controls
+            const controlElements = [
+                '.premium-controls-wrapper',
+                '.premium-player-header',
+                '.premium-progress-bar',
+                '.premium-control-btn',
+                '.premium-settings-menu'
+            ];
+            
+            if (controlElements.some(selector => e.target.closest(selector))) {
+                return;
+            }
+            
+            const currentTime = Date.now();
+            const tapLength = currentTime - lastTapTime;
+            const tapX = e.changedTouches[0].clientX;
+            const screenWidth = window.innerWidth;
+            
+            // Calculate tap zones
+            const leftZoneEnd = screenWidth * 0.3;
+            const rightZoneStart = screenWidth * 0.7;
+            const centerZoneStart = screenWidth * ((1 - centerTapZoneWidth) / 2);
+            const centerZoneEnd = screenWidth * ((1 + centerTapZoneWidth) / 2);
+            
+            // ✅ NEW: Check if tap is in same general area as last tap
+            const isSameArea = Math.abs(tapX - lastTapX) < screenWidth * 0.15;
+            
+            if (tapLength < doubleTapThreshold && tapLength > 0 && isSameArea) {
+                // Double tap detected
+                e.preventDefault(); // ✅ NEW: Prevent any default behavior
+                
+                if (tapX < leftZoneEnd) {
+                    // Left side - rewind
+                    activePlayer.currentTime(Math.max(0, activePlayer.currentTime() - 10));
+                    controlsManager.showGestureIndicator('⏪ 10s');
+                    triggerHapticFeedback('medium');
+                } else if (tapX > rightZoneStart) {
+                    // Right side - forward
+                    activePlayer.currentTime(Math.min(activePlayer.duration(), activePlayer.currentTime() + 10));
+                    controlsManager.showGestureIndicator('⏩ 10s');
+                    triggerHapticFeedback('medium');
+                } else if (tapX >= centerZoneStart && tapX <= centerZoneEnd) {
+                    // Center - toggle play/pause
+                    togglePlayPause();
+                }
+                
+                lastTapTime = 0; // Reset to prevent triple-tap
+                lastTapX = 0;
+            } else {
+                // Potential first tap of double-tap sequence
+                lastTapTime = currentTime;
+                lastTapX = tapX;
+                
+                // ✅ NEW: Immediate single-tap feedback for center zone only
+                if (tapX >= centerZoneStart && tapX <= centerZoneEnd) {
+                    // Delay to allow for double-tap detection
+                    setTimeout(() => {
+                        // Only execute if no double-tap occurred
+                        if (Date.now() - lastTapTime >= doubleTapThreshold) {
+                            togglePlayPause();
+                        }
+                    }, doubleTapThreshold);
+                }
+            }
+        });
+        
+        // --- Initialize Controls Visibility ---
+        
         controlsManager.showControls();
         
+        // Start auto-hide timer (desktop only, mobile handled by touchstart above)
         let hideControlsInterval;
         if (!isMobile) {
             hideControlsInterval = setInterval(() => {
@@ -3765,8 +3785,13 @@ if (document.getElementById('appContainer')) {
             }, 1000);
         }
         
+        // --- Token Refresh Integration ---
+        
         tokenRefreshManager.registerVideo(videoId, player, tierId, libraryId);
         
+        // --- Analytics Integration ---
+        
+        // Track timeupdate every 5 seconds (throttled)
         let lastTrackedTime = 0;
         player.on('timeupdate', () => {
             const activePlayer = getSafePlayer();
@@ -3774,18 +3799,22 @@ if (document.getElementById('appContainer')) {
 
             const currentTime = activePlayer.currentTime();
             
+            // Only track every 5 seconds to avoid spam
             if (currentTime - lastTrackedTime >= 5) {
                 analyticsTracker.trackEvent(videoId, 'timeupdate', activePlayer, tierId);
                 lastTrackedTime = currentTime;
             }
         });
         
+        // Cleanup on close
         modal.addEventListener('remove', () => {
             clearInterval(hideControlsInterval);
+            // Note: player.dispose() will remove event listeners automatically
             closePlayer();
         });
     }
 
+    // --- Global cleanup function for video players ---
     function cleanupAllVideoPlayers() {
         activePlayers.forEach((playerData, playerId) => {
             try {
@@ -3795,16 +3824,23 @@ if (document.getElementById('appContainer')) {
                 if (playerData.modal && playerData.modal.parentNode) {
                     playerData.modal.remove();
                 }
-            } catch (error) {}
+            } catch (error) {
+                // Silently handle cleanup errors
+            }
         });
         activePlayers.clear();
         tokenRefreshManager.stopAll();
     }
 
+    // --- Main Application Router ---
     async function router() {
+        // Clean up any existing video players before loading new content
         cleanupAllVideoPlayers();
+        
+        // Load user data at the start of router
         loadUserData();
         
+        // 🎯 NEW: Hide app loader after first successful load
         const appLoader = document.getElementById('app-loader');
         const appContainer = document.getElementById('appContainer');
         
@@ -3818,13 +3854,16 @@ if (document.getElementById('appContainer')) {
             }
         }
         
+        // ⚡ NEW: Start session refresh manager
         if (!sessionRefreshManager.refreshTimer) {
             sessionRefreshManager.start();
         }
         
+        // NEW (V2): Load and display multiple announcements
         const announcementsData = JSON.parse(localStorage.getItem('global_announcements') || '[]');
         announcementSlider.showAnnouncements(announcementsData);
         
+        // Render renewal banner and header actions
         renderRenewalBanner();
         await renderHeaderActions();
 
@@ -3840,9 +3879,12 @@ if (document.getElementById('appContainer')) {
             const tierId = urlParams.get('tier_id');
             const slug = urlParams.get('slug');
 
+            // Handle gallery view
             if (view === 'gallery' && slug) {
                 await fetchAndDisplayGallery(slug);
                 renderSubscriptionStatus();
+                
+                // 🎯 NEW: Hide loader after content is ready
                 hideAppLoader();
                 return;
             }
@@ -3885,10 +3927,12 @@ if (document.getElementById('appContainer')) {
 
             renderSubscriptionStatus();
             
+            // 🎯 NEW: Hide loader after content is ready
             hideAppLoader();
         } catch (error) {
+            // Silently handle error without logging to console
             displayError("An error occurred while loading the page. Please try again.");
-            hideAppLoader();
+            hideAppLoader(); // Hide loader even on error
         }
     }
 
@@ -3906,6 +3950,7 @@ if (document.getElementById('appContainer')) {
         window.location.href = 'index.html';
     });
     
+    // Add cleanup on page unload
     window.addEventListener('beforeunload', () => {
         cleanupAllVideoPlayers();
     });
