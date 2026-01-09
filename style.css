@@ -1870,6 +1870,7 @@ body.theme-dark .announcement-error {
 .player-loading-overlay.active {
     opacity: 1;
     pointer-events: auto;
+    /* ✅ SAFE UX: Only blocks interaction when actually loading */
 }
 
 /* ✅ NEW: Prevent touches during loading */
@@ -1928,6 +1929,7 @@ body.theme-dark .announcement-error {
 .player-error-overlay.active {
     opacity: 1;
     pointer-events: auto;
+    /* ✅ SAFE UX: Only blocks interaction when showing error */
 }
 
 .player-error-content {
@@ -2981,6 +2983,14 @@ body.theme-dark .announcement-error {
     user-select: text;
 }
 
+/* ✅ SAFE UX: Allow normal button interaction */
+.premium-player-modal.mobile-player button {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: manipulation; /* Enable fast taps */
+}
+
 /* ✅ FIX 6: Prevent bounce scrolling on iOS */
 .premium-player-modal.mobile-player {
     overscroll-behavior: contain;
@@ -2998,6 +3008,8 @@ body.theme-dark .announcement-error {
 .premium-player-modal.mobile-player .premium-progress-bar {
     -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
     touch-action: manipulation;
+    /* ✅ SAFE UX: Allow browser optimizations */
+    will-change: transform;
 }
 
 /* ✅ NEW: Prevent iOS Safari address bar from covering controls */
@@ -3038,6 +3050,8 @@ body.theme-dark .announcement-error {
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
+    /* ✅ SAFE UX: Let video handle its own touch events */
+    touch-action: none; /* Only for video element, handled by player */
 }
 
 /* ✅ NEW: Force hardware acceleration for smooth playback */
@@ -3472,4 +3486,23 @@ body.player-active {
     position: fixed;
     width: 100%;
     height: 100%;
+}
+
+/* ============================================================================
+   PERFORMANCE OPTIMIZATIONS
+   ============================================================================ */
+
+/* ✅ SAFE UX: GPU acceleration for smooth animations */
+.premium-player-modal,
+.premium-controls-wrapper,
+.premium-player-header,
+.premium-center-play-btn {
+    will-change: transform, opacity;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+}
+
+/* Reset will-change after animation */
+.premium-player-modal:not(.animating) * {
+    will-change: auto;
 }

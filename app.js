@@ -1146,9 +1146,10 @@ if (document.getElementById('loginForm')) {
 // ============================================================================
 
 class Router {
-    constructor(appState, authManager) {
+    constructor(appState, authManager, uiManager) {
         this.appState = appState;
         this.authManager = authManager;
+        this.uiManager = uiManager;
         this.mainContent = document.getElementById('mainContent');
         this.searchContainer = document.getElementById('searchContainer');
         this.searchInput = document.getElementById('searchInput');
@@ -1230,13 +1231,13 @@ class Router {
                 fetchAndDisplayContent(platformId, tierId, tierName, platformName);
             } else if (view === 'tiers' && platformId) {
                 this.appState.searchScope = 'tiers';
-                renderTierSkeleton(platformName);
+                this.uiManager.renderTierSkeleton(platformName);
                 fetchAndDisplayTiers(platformId, platformName);
             } else {
                 this.appState.searchScope = 'platforms';
-                renderPlatformSkeleton();
+                this.uiManager.renderPlatformSkeleton();
                 const platformsData = await ensurePlatformsData();
-                renderPlatforms(platformsData);
+                this.uiManager.renderPlatforms(platformsData);
             }
 
             if (this.searchInput) {
@@ -1247,13 +1248,129 @@ class Router {
             renderSubscriptionStatus();
             hideAppLoader();
         } catch (error) {
-            displayError("An error occurred while loading the page. Please try again.");
+            window.appRouter.uiManager.showError("An error occurred while loading the page. Please try again.");
             hideAppLoader();
         }
     }
     
     handlePopState() {
         this.navigate();
+    }
+}
+
+// ============================================================================
+// UI MANAGER CLASS - Handles all rendering logic
+// ============================================================================
+
+class UIManager {
+    constructor(appState, mainContent, searchContainer) {
+        this.appState = appState;
+        this.mainContent = mainContent;
+        this.searchContainer = searchContainer;
+    }
+    
+    showError(message, container = this.mainContent) {
+        container.innerHTML = `<div class="error-message">${message}</div>`;
+    }
+    
+    renderPlatformSkeleton() {
+        let skeletonHTML = '<h2>Platforms</h2><div class="platforms-grid">';
+        for (let i = 0; i < 3; i++) {
+            skeletonHTML += `<div class="platform-card-skeleton"><div class="skeleton skeleton-platform-thumbnail"></div><div class="skeleton skeleton-platform-title"></div></div>`;
+        }
+        skeletonHTML += '</div>';
+        this.mainContent.innerHTML = skeletonHTML;
+        this.searchContainer.style.display = 'none';
+    }
+    
+    renderTierSkeleton(platformName) {
+        let skeletonHTML = `
+            <div class="view-header">
+                <button id="backButton" class="back-button">← Back to Platforms</button>
+                <h2>${platformName || 'Tiers'}</h2>
+            </div>
+            <div class="tiers-grid">`;
+        for (let i = 0; i < 3; i++) {
+            skeletonHTML += `<div class="tier-card-skeleton"><div class="skeleton skeleton-tier-thumbnail"></div><div class="skeleton skeleton-tier-title"></div></div>`;
+        }
+        skeletonHTML += '</div>';
+        this.mainContent.innerHTML = skeletonHTML;
+        this.searchContainer.style.display = 'block';
+    }
+    
+    renderContentSkeleton(tierName, platformName) {
+        let skeletonHTML = `
+            <div class="view-header">
+                <button id="backButton" class="back-button">← Back to Tiers</button>
+                <h2>${tierName || 'Content'} <span class="header-breadcrumb">/ ${platformName}</span></h2>
+            </div>`;
+        for (let i = 0; i < 2; i++) {
+            skeletonHTML += `<div class="tier-group"><div class="skeleton skeleton-title"></div><div class="skeleton-card"><div class="skeleton skeleton-thumbnail"></div><div class="skeleton-card-content"><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text short"></div></div></div></div>`;
+        }
+        this.mainContent.innerHTML = skeletonHTML;
+        this.searchContainer.style.display = 'block';
+    }
+    
+    renderGallerySkeleton() {
+        let skeletonHTML = `
+            <div class="view-header">
+                <button id="backButton" class="back-button">← Back</button>
+                <h2>Gallery</h2>
+            </div>
+            <div class="gallery-container">
+                <div class="gallery-skeleton">
+                    <div class="skeleton skeleton-gallery-title"></div>
+                    <div class="skeleton skeleton-gallery-description"></div>
+                    <div class="gallery-grid">`;
+        
+        for (let i = 0; i < 6; i++) {
+            skeletonHTML += `<div class="gallery-item-skeleton"><div class="skeleton skeleton-gallery-image"></div></div>`;
+        }
+        
+        skeletonHTML += `</div></div></div>`;
+        this.mainContent.innerHTML = skeletonHTML;
+        this.searchContainer.style.display = 'none';
+    }
+    
+    renderPlatforms(platforms) {
+        let platformsHTML = '<div class="platforms-grid">';
+        platforms.forEach(platform => {
+            const hasSubscription = this.appState.subscriptions.some(sub => sub.platform_id === platform.id);
+            platformsHTML += `<div class="platform-card ${!hasSubscription ? 'locked' : ''}" data-platform-id="${platform.id}"><div class="platform-thumbnail" style="background-image: url('${platform.thumbnail_url || ''}')"></div><div class="platform-name">${platform.name}</div>${!hasSubscription ? '<div class="lock-icon">🔒</div>' : ''}</div>`;
+        });
+        platformsHTML += '</div>';
+
+        let welcomeHTML = '';
+        if (this.appState.userInfo && this.appState.userInfo.name) {
+            welcomeHTML = `<div class="welcome-message">Welcome back, ${this.appState.userInfo.name}!</div>`;
+        }
+
+        this.mainContent.innerHTML = welcomeHTML + '<h2>Platforms</h2>' + platformsHTML;
+        this.searchContainer.style.display = 'none';
+    }
+    
+    renderTiers(tiers, platformId, platformName) {
+        if (!tiers || !Array.isArray(tiers)) {
+            this.showError("No tiers data available for this platform.");
+            return;
+        }
+
+        let tiersHTML = `
+            <div class="view-header">
+                <button id="backButton" class="back-button">← Back to Platforms</button>
+                <h2>${platformName} Tiers</h2>
+            </div>
+            <div class="tiers-grid">`;
+        tiers.forEach(tier => {
+            const isLocked = !tier.is_accessible;
+            const lockedClass = isLocked ? 'locked' : '';
+            const lockIcon = isLocked ? '<div class="lock-icon">🔒</div>' : '';
+            
+            tiersHTML += `<div class="tier-card ${lockedClass}" data-tier-id="${tier.id}" data-searchable-text="${(tier.name + ' ' + (tier.description || '')).toLowerCase()}"><div class="tier-thumbnail" style="background-image: url('${tier.thumbnail_url || ''}')"></div><div class="tier-name">${tier.name}</div>${lockIcon}</div>`;
+        });
+        tiersHTML += '</div>';
+        this.mainContent.innerHTML = tiersHTML;
+        this.searchContainer.style.display = 'block';
     }
 }
 
@@ -1270,12 +1387,16 @@ if (document.getElementById('appContainer')) {
     appState = new AppState();
     authManager = new AuthManager();
     
-    // ✅ Initialize Router
-    window.appRouter = new Router(appState, authManager);
-
     const mainContent = document.getElementById('mainContent');
-    const logoutButton = document.getElementById('logoutButton');
     const searchContainer = document.getElementById('searchContainer');
+    
+    // ✅ Initialize UIManager
+    const uiManager = new UIManager(appState, mainContent, searchContainer);
+    
+    // ✅ Initialize Router
+    window.appRouter = new Router(appState, authManager, uiManager);
+
+    const logoutButton = document.getElementById('logoutButton');
     const searchInput = document.getElementById('searchInput');
 
     const themeManager = new ThemeManager();
@@ -1466,72 +1587,6 @@ if (document.getElementById('appContainer')) {
         }
     }
 
-    // --- Skeleton Loaders ---
-    function renderPlatformSkeleton() {
-        let skeletonHTML = '<h2>Platforms</h2><div class="platforms-grid">';
-        for (let i = 0; i < 3; i++) {
-            skeletonHTML += `<div class="platform-card-skeleton"><div class="skeleton skeleton-platform-thumbnail"></div><div class="skeleton skeleton-platform-title"></div></div>`;
-        }
-        skeletonHTML += '</div>';
-        mainContent.innerHTML = skeletonHTML;
-        searchContainer.style.display = 'none';
-    }
-
-    function renderTierSkeleton(platformName) {
-        let skeletonHTML = `
-            <div class="view-header">
-                <button id="backButton" class="back-button">← Back to Platforms</button>
-                <h2>${platformName || 'Tiers'}</h2>
-            </div>
-            <div class="tiers-grid">`;
-        for (let i = 0; i < 3; i++) {
-            skeletonHTML += `<div class="tier-card-skeleton"><div class="skeleton skeleton-tier-thumbnail"></div><div class="skeleton skeleton-tier-title"></div></div>`;
-        }
-        skeletonHTML += '</div>';
-        mainContent.innerHTML = skeletonHTML;
-        searchContainer.style.display = 'block';
-        searchInput.placeholder = `Search in ${platformName || 'Tiers'}`;
-        addBackButtonListener('platforms');
-    }
-
-    function renderContentSkeleton(tierName, platformName) {
-        let skeletonHTML = `
-            <div class="view-header">
-                <button id="backButton" class="back-button">← Back to Tiers</button>
-                <h2>${tierName || 'Content'} <span class="header-breadcrumb">/ ${platformName}</span></h2>
-            </div>`;
-        for (let i = 0; i < 2; i++) {
-            skeletonHTML += `<div class="tier-group"><div class="skeleton skeleton-title"></div><div class="skeleton-card"><div class="skeleton skeleton-thumbnail"></div><div class="skeleton-card-content"><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text short"></div></div></div></div>`;
-        }
-        mainContent.innerHTML = skeletonHTML;
-        searchContainer.style.display = 'block';
-        searchInput.placeholder = `Search in ${tierName || 'Content'}`;
-        const urlParams = new URLSearchParams(window.location.search);
-        addBackButtonListener('tiers', urlParams.get('platform_id'));
-    }
-
-    // --- Gallery Skeleton ---
-    function renderGallerySkeleton() {
-        let skeletonHTML = `
-            <div class="view-header">
-                <button id="backButton" class="back-button">← Back</button>
-                <h2>Gallery</h2>
-            </div>
-            <div class="gallery-container">
-                <div class="gallery-skeleton">
-                    <div class="skeleton skeleton-gallery-title"></div>
-                    <div class="skeleton skeleton-gallery-description"></div>
-                    <div class="gallery-grid">`;
-        
-        for (let i = 0; i < 6; i++) {
-            skeletonHTML += `<div class="gallery-item-skeleton"><div class="skeleton skeleton-gallery-image"></div></div>`;
-        }
-        
-        skeletonHTML += `</div></div></div>`;
-        mainContent.innerHTML = skeletonHTML;
-        searchContainer.style.display = 'none';
-    }
-
     // --- Modal Logic ---
     const platformModal = document.getElementById('platformModal');
 
@@ -1585,75 +1640,22 @@ if (document.getElementById('appContainer')) {
         }
     };
 
-    // --- Simplified View-Rendering Functions ---
-    function renderPlatforms(platforms) {
-        let platformsHTML = '<div class="platforms-grid">';
-        platforms.forEach(platform => {
-            // Check if user has any subscription to this platform
-            const hasSubscription = appState.subscriptions.some(sub => sub.platform_id === platform.id);
-            platformsHTML += `<div class="platform-card ${!hasSubscription ? 'locked' : ''}" data-platform-id="${platform.id}"><div class="platform-thumbnail" style="background-image: url('${platform.thumbnail_url || ''}')"></div><div class="platform-name">${platform.name}</div>${!hasSubscription ? '<div class="lock-icon">🔒</div>' : ''}</div>`;
-        });
-        platformsHTML += '</div>';
-
-        let welcomeHTML = '';
-        if (appState.userInfo && appState.userInfo.name) {
-            welcomeHTML = `<div class="welcome-message">Welcome back, ${appState.userInfo.name}!</div>`;
-        }
-
-        mainContent.innerHTML = welcomeHTML + '<h2>Platforms</h2>' + platformsHTML;
-        searchContainer.style.display = 'none';
-        mainContent.querySelector('.platforms-grid').addEventListener('click', handlePlatformClick);
-    }
-
-    function renderTiers(tiers, platformId, platformName) {
-    if (!tiers || !Array.isArray(tiers)) {
-        displayError("No tiers data available for this platform.");
-        return;
-    }
-
-    let tiersHTML = `
-        <div class="view-header">
-            <button id="backButton" class="back-button">← Back to Platforms</button>
-            <h2>${platformName} Tiers</h2>
-        </div>
-        <div class="tiers-grid">`;
-    tiers.forEach(tier => {
-        // Use is_accessible from backend instead of checking userSubscriptions
-        const isLocked = !tier.is_accessible;
-        const lockedClass = isLocked ? 'locked' : '';
-        const lockIcon = isLocked ? '<div class="lock-icon">🔒</div>' : '';
-        
-        tiersHTML += `<div class="tier-card ${lockedClass}" data-tier-id="${tier.id}" data-searchable-text="${(tier.name + ' ' + (tier.description || '')).toLowerCase()}"><div class="tier-thumbnail" style="background-image: url('${tier.thumbnail_url || ''}')"></div><div class="tier-name">${tier.name}</div>${lockIcon}</div>`;
-    });
-        tiersHTML += '</div>';
-        mainContent.innerHTML = tiersHTML;
-        searchContainer.style.display = 'block';
-        searchInput.placeholder = `Search in ${platformName || 'Tiers'}`;
-        searchInput.value = '';
-        appState.filterState.query = '';
-        const existingMessage = document.getElementById('tierSearchMessage');
-        if (existingMessage) existingMessage.remove();
-        mainContent.querySelector('.tiers-grid').addEventListener('click', (e) => handleTierClick(e, platformId));
-        addBackButtonListener('platforms');
-    }
-
     function fetchAndDisplayTiers(platformId, platformName) {
         appState.searchScope = 'tiers';
         const tiersData = appState.tiers[platformId];
 
         if (!tiersData || !Array.isArray(tiersData)) {
-            // Silently handle error without logging to console
-            displayError("Unable to load tiers for this platform.");
+            window.appRouter.uiManager.showError("Unable to load tiers for this platform.");
             return;
         }
 
-        renderTiers(tiersData, platformId, platformName);
+        window.appRouter.uiManager.renderTiers(tiersData, platformId, platformName);
     }
 
     // --- Content View Logic ---
     async function fetchAndDisplayContent(platformId, tierId, tierName, platformName) {
         appState.searchScope = 'content';
-        renderContentSkeleton(tierName, platformName);
+        window.appRouter.uiManager.renderContentSkeleton(tierName, platformName);
         try {
             const token = localStorage.getItem('lustroom_jwt');
             const response = await fetch(`${API_BASE_URL}/get_patron_links?tier_id=${tierId}`, {
@@ -1686,11 +1688,11 @@ if (document.getElementById('appContainer')) {
                 localStorage.clear();
                 window.location.href = 'login.html';
             } else {
-                displayError(data.message || "Failed to fetch content.");
+                window.appRouter.uiManager.showError(data.message || "Failed to fetch content.");
             }
         } catch (error) {
             // Silently handle error without logging to console
-            displayError("An error occurred while fetching content.");
+            window.appRouter.uiManager.showError("An error occurred while fetching content.");
         }
     }
 
@@ -2021,7 +2023,7 @@ if (document.getElementById('appContainer')) {
 
     // --- Gallery Functions ---
     async function fetchAndDisplayGallery(slug) {
-        renderGallerySkeleton();
+        window.appRouter.uiManager.renderGallerySkeleton();
         try {
             const token = localStorage.getItem('lustroom_jwt');
             const response = await fetch(`${API_BASE_URL}/gallery/${slug}`, {
@@ -2037,11 +2039,11 @@ if (document.getElementById('appContainer')) {
                 localStorage.clear();
                 window.location.href = 'login.html';
             } else {
-                displayError(data.message || "Failed to fetch gallery.");
+                window.appRouter.uiManager.showError(data.message || "Failed to fetch gallery.");
             }
         } catch (error) {
             // Silently handle error without logging to console
-            displayError("An error occurred while fetching the gallery.");
+            window.appRouter.uiManager.showError("An error occurred while fetching the gallery.");
         }
     }
 
@@ -3373,6 +3375,9 @@ if (document.getElementById('appContainer')) {
             
             // Stop token refresh
             tokenRefreshManager.stopRefresh(videoId);
+            
+            // ✅ SAFE UX: Clean up ALL event listeners
+            eventCleanupFunctions.forEach(cleanup => cleanup());
             
             // ✅ NEW: Clean up player events first
             if (modal && modal._cleanupPlayerEvents) {
