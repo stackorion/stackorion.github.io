@@ -1,3 +1,4 @@
+
     // Configuration - IMPORTANT: This MUST match your live backend URL
     const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
 
@@ -146,7 +147,12 @@
         async refreshVideoToken(videoId, tierId, libraryId, player) {
             try {
                 // ✅ NEW: Check if player is still valid before refreshing
-                if (!player || !player.el() || player.isDisposed()) {
+                // Note: player might be a video.js instance or a simple object { currentTime: fn } for native player
+                const isVideoJS = player && typeof player.el === 'function';
+                const isDisposed = isVideoJS ? player.isDisposed() : false;
+                const hasElement = isVideoJS ? (player.el() !== null) : (document.getElementById(`nativeVideo_${videoId}`) !== null);
+
+                if (!player || isDisposed || !hasElement) {
                     this.stopRefresh(videoId);
                     return;
                 }
@@ -173,41 +179,78 @@
 
                 if (response.ok && data.status === 'success') {
                     // ✅ FIXED: Double-check player validity before updating source
-                    if (!player || !player.el() || player.isDisposed()) {
+                    const isDisposed2 = isVideoJS ? player.isDisposed() : false;
+                    const hasElement2 = isVideoJS ? (player.el() !== null) : (document.getElementById(`nativeVideo_${videoId}`) !== null);
+
+                    if (!player || isDisposed2 || !hasElement2) {
                         this.stopRefresh(videoId);
                         return;
                     }
 
                     // Update player source with new URL
-                    const currentTime = player.currentTime();
-                    const wasPaused = player.paused();
-                    
-                    player.src({
-                        src: data.url,
-                        type: 'application/x-mpegURL'
-                    });
-
-                    // Restore playback state
-                    player.one('loadedmetadata', () => {
-                        // ✅ FIXED: Verify player still exists before restoring state
-                        if (!player || !player.el() || player.isDisposed()) return;
+                    if (isVideoJS) {
+                        // Video.js Logic
+                        const currentTime = player.currentTime();
+                        const wasPaused = player.paused();
                         
-                        player.currentTime(currentTime);
-                        if (!wasPaused) {
-                            player.play().catch(() => {
-                                // Autoplay might be blocked - ignore error
-                            });
+                        player.src({
+                            src: data.url,
+                            type: 'application/x-mpegURL'
+                        });
+
+                        // Restore playback state
+                        player.one('loadedmetadata', () => {
+                            if (!player || !player.el() || player.isDisposed()) return;
+                            
+                            player.currentTime(currentTime);
+                            if (!wasPaused) {
+                                player.play().catch(() => {
+                                    // Autoplay might be blocked - ignore error
+                                });
+                            }
+                        });
+                    } else {
+                        // Native Mobile Player Logic
+                        // We need access to the actual video element, which is passed in the 'player' object in NativeMobilePlayer.register
+                        // However, NativeMobilePlayer registers 'this' as the player object context.
+                        // The implementation in NativeMobilePlayer passes an object: { currentTime: () => this.videoElement?.currentTime || 0 }
+                        // This is insufficient for updating src. 
+                        // IMPROVEMENT: NativeMobilePlayer should register 'this' directly, and we handle it here.
+                        
+                        // Let's assume the 'player' argument IS the NativeMobilePlayer instance for this fix
+                        if (player.videoElement) {
+                            const currentTime = player.videoElement.currentTime;
+                            const wasPaused = player.videoElement.paused;
+
+                            if (DeviceDetector.isIOS()) {
+                                player.videoElement.src = data.url;
+                            } else if (player.hlsInstance) {
+                                player.hlsInstance.loadSource(data.url);
+                            } else {
+                                player.videoElement.src = data.url;
+                            }
+
+                            player.videoElement.addEventListener('loadedmetadata', () => {
+                                player.videoElement.currentTime = currentTime;
+                                if (!wasPaused) player.videoElement.play();
+                            }, { once: true });
                         }
-                    });
+                    }
 
                 } else if (response.status === 403) {
                     // Subscription expired
                     this.stopRefresh(videoId);
-                    player.pause();
-                    player.error({
-                        code: 4,
-                        message: 'Your subscription has expired. Please renew to continue.'
-                    });
+                    if (isVideoJS) {
+                        player.pause();
+                        player.error({
+                            code: 4,
+                            message: 'Your subscription has expired. Please renew to continue.'
+                        });
+                    } else {
+                        // Native handling
+                        alert('Your subscription has expired. Please renew to continue.');
+                        if(player.close) player.close();
+                    }
                 }
             } catch (error) {
                 // Silently handle refresh errors
@@ -355,8 +398,8 @@
                 video_id: videoId,
                 session_id: sessionId,  // ✅ NEW: Include session ID
                 tier_id: numericTierId,  // ✅ NOW: Numeric tier ID
-                current_time: player ? player.currentTime() : 0,
-                duration: player ? player.duration() : 0,
+                current_time: player ? (player.currentTime ? player.currentTime() : (player.currentTime ? player.currentTime() : 0)) : 0, // Handle both VideoJS and Native object
+                duration: player ? (player.duration ? player.duration() : 0) : 0,
                 quality: player ? this.getCurrentQuality(player) : 'auto'
             };
 
@@ -369,11 +412,15 @@
         }
 
         getCurrentQuality(player) {
+            // If it's a native player, we can't easily detect HLS quality without Hls.js API access
+            // Assuming player is video.js if it has qualityLevels
             try {
-                const qualityLevels = player.qualityLevels();
-                if (qualityLevels && qualityLevels.selectedIndex >= 0) {
-                    const selected = qualityLevels[qualityLevels.selectedIndex];
-                    return selected.height ? `${selected.height}p` : 'auto';
+                if (typeof player.qualityLevels === 'function') {
+                    const qualityLevels = player.qualityLevels();
+                    if (qualityLevels && qualityLevels.selectedIndex >= 0) {
+                        const selected = qualityLevels[qualityLevels.selectedIndex];
+                        return selected.height ? `${selected.height}p` : 'auto';
+                    }
                 }
             } catch (e) {
                 // Silently handle
@@ -416,6 +463,262 @@
 
     // Global instance
     const analyticsTracker = new VideoAnalyticsTracker();
+
+    // ============================================================================
+    // PHASE 2: PLAYER FACTORY ARCHITECTURE (INSERTED HERE)
+    // ============================================================================
+
+    // --- Device Detection Utility ---
+    class DeviceDetector {
+        static isMobile() {
+            const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+            
+            // Check for mobile devices
+            const mobileRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+            const isMobileUA = mobileRegex.test(userAgent);
+            
+            // Check for touch capability
+            const hasTouch = ('ontouchstart' in window) || 
+                               (navigator.maxTouchPoints > 0) || 
+                               (navigator.msMaxTouchPoints > 0);
+            
+            // Check screen size (tablets and phones)
+            const isSmallScreen = window.innerWidth <= 1024;
+            
+            return isMobileUA || (hasTouch && isSmallScreen);
+        }
+        
+        static isIOS() {
+            return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        }
+        
+        static isAndroid() {
+            return /Android/i.test(navigator.userAgent);
+        }
+    }
+
+    // --- Native Mobile Player Class ---
+    class NativeMobilePlayer {
+        constructor(link, tierId) {
+            this.link = link;
+            this.tierId = tierId;
+            this.videoId = this.extractVideoId(link.url);
+            this.libraryId = this.extractLibraryId(link.url);
+            this.modal = null;
+            this.videoElement = null;
+            this.hlsInstance = null;
+            this.numericTierId = link.tier_id || 1;
+        }
+        
+        extractVideoId(url) {
+            const match = url.match(/\/([a-f0-9-]{36})\//);
+            return match ? match[1] : null;
+        }
+        
+        extractLibraryId(url) {
+            const match = url.match(/library_id=(\d+)/);
+            return match ? match[1] : '555806';
+        }
+        
+        open() {
+            if (!this.videoId) return;
+            
+            // Register with analytics tracker
+            analyticsTracker.setVideoTierMapping(this.videoId, this.numericTierId);
+            
+            // Create modal
+            this.createModal();
+            
+            // Setup video
+            this.setupVideo();
+            
+            // Register token refresh
+            tokenRefreshManager.registerVideo(
+                this.videoId, 
+                this, // Pass 'this' so refresh manager can access videoElement and hlsInstance
+                this.tierId, 
+                this.libraryId
+            );
+        }
+        
+        createModal() {
+            this.modal = document.createElement('div');
+            this.modal.className = 'native-player-modal';
+            this.modal.innerHTML = `
+                <div class="native-player-content">
+                    <div class="native-player-header">
+                        <button class="native-close-btn" aria-label="Close video">×</button>
+                        <div class="native-video-title">${this.link.title}</div>
+                    </div>
+                    <div class="native-video-wrapper">
+                        <video 
+                            id="nativeVideo_${this.videoId}"
+                            class="native-video"
+                            controls
+                            playsinline
+                            webkit-playsinline
+                            preload="metadata"
+                        ></video>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(this.modal);
+            document.body.classList.add('player-active');
+            
+            this.videoElement = document.getElementById(`nativeVideo_${this.videoId}`);
+            
+            // Setup close button
+            this.modal.querySelector('.native-close-btn').addEventListener('click', () => {
+                this.close();
+            });
+            
+            // Handle video end for native
+            this.videoElement.addEventListener('ended', () => {
+                this.close();
+            });
+        }
+        
+        setupVideo() {
+            const isIOS = DeviceDetector.isIOS();
+            
+            if (isIOS) {
+                // iOS supports HLS natively
+                this.videoElement.src = this.link.url;
+            } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+                // Android: Use Hls.js
+                this.hlsInstance = new Hls({
+                    enableWorker: true,
+                    lowLatencyMode: false,
+                    backBufferLength: 90
+                });
+                
+                this.hlsInstance.loadSource(this.link.url);
+                this.hlsInstance.attachMedia(this.videoElement);
+                
+                this.hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+                    this.videoElement.play().catch(() => {
+                        // Autoplay blocked - user will manually start
+                    });
+                });
+                
+                this.hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+                    if (data.fatal) {
+                        switch(data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                this.hlsInstance.startLoad();
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                this.hlsInstance.recoverMediaError();
+                                break;
+                            default:
+                                this.showError('Playback error occurred');
+                                break;
+                        }
+                    }
+                });
+            } else {
+                // Fallback: Try native playback
+                this.videoElement.src = this.link.url;
+            }
+            
+            // Attach analytics events
+            this.attachAnalytics();
+        }
+        
+        attachAnalytics() {
+            // Wrap video element in an object structure compatible with tracker
+            const playerWrapper = {
+                currentTime: () => this.videoElement.currentTime,
+                duration: () => this.videoElement.duration
+            };
+
+            const trackEvent = (eventName) => {
+                analyticsTracker.trackEvent(
+                    this.videoId, 
+                    eventName, 
+                    playerWrapper, 
+                    this.tierId
+                );
+            };
+            
+            this.videoElement.addEventListener('play', () => trackEvent('play'));
+            this.videoElement.addEventListener('pause', () => trackEvent('pause'));
+            this.videoElement.addEventListener('ended', () => trackEvent('ended'));
+            
+            // Throttled timeupdate tracking
+            let lastTrackedTime = 0;
+            this.videoElement.addEventListener('timeupdate', () => {
+                const currentTime = this.videoElement.currentTime;
+                if (currentTime - lastTrackedTime >= 5) {
+                    trackEvent('timeupdate');
+                    lastTrackedTime = currentTime;
+                }
+            });
+        }
+        
+        showError(message) {
+            if (this.modal) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'native-player-error';
+                errorDiv.style.cssText = "position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: white; padding: 20px; border-radius: 8px; text-align: center;";
+                errorDiv.textContent = message;
+                this.modal.querySelector('.native-video-wrapper').appendChild(errorDiv);
+            }
+        }
+        
+        close() {
+            // Clear session tracking
+            analyticsTracker.clearSession(this.videoId);
+            
+            // Stop token refresh
+            tokenRefreshManager.stopRefresh(this.videoId);
+            
+            // Cleanup HLS
+            if (this.hlsInstance) {
+                this.hlsInstance.destroy();
+                this.hlsInstance = null;
+            }
+            
+            // Remove modal
+            if (this.modal && this.modal.parentNode) {
+                this.modal.remove();
+            }
+            
+            document.body.classList.remove('player-active');
+        }
+    }
+
+    // --- Desktop Player Class (Wrapper for existing openVideoPlayer logic) ---
+    class DesktopPlayer {
+        constructor(link, tierId) {
+            this.link = link;
+            this.tierId = tierId;
+        }
+        
+        open() {
+            // Call the existing openVideoPlayer function
+            // We'll keep it as-is for now since it works perfectly on desktop
+            openVideoPlayer(this.link, this.tierId);
+        }
+    }
+
+    // --- Player Factory ---
+    class PlayerFactory {
+        static create(link, tierId) {
+            const isMobile = DeviceDetector.isMobile();
+            
+            if (isMobile) {
+                const player = new NativeMobilePlayer(link, tierId);
+                player.open();
+                return player;
+            } else {
+                const player = new DesktopPlayer(link, tierId);
+                player.open();
+                return player;
+            }
+        }
+    }
 
     // --- Premium Video Player State Manager ---
     class PremiumPlayerStateManager {
@@ -898,6 +1201,7 @@
                 // Create subscription badge
                 const badge = document.createElement('div');
                 badge.className = `subscription-status-badge ${statusClass}`;
+                badge.style.cssText = "background: #e3f2fd; color: #0d47a1; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; border: 1px solid #bbdefb;";
                 badge.innerHTML = `
                     <span class="badge-tier-name">${sub.tier_name}</span>
                     <span class="badge-divider">|</span>
@@ -952,9 +1256,10 @@
             const banner = document.createElement('div');
             banner.id = 'renewalBanner';
             banner.className = 'renewal-banner';
+            banner.style.cssText = "background: #fff3cd; color: #856404; padding: 10px; border-radius: 4px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #ffeeba;";
             banner.innerHTML = `
                 <span>Your access expires in ${days} day${days !== 1 ? 's' : ''}. Please renew to maintain access.</span>
-                <a href="${renewalUrl}" target="_blank" class="renew-button">Renew Now</a>
+                <a href="${renewalUrl}" target="_blank" class="renew-button" style="background: #ffc107; color: #000; padding: 5px 10px; border-radius: 3px; text-decoration: none; font-weight: bold;">Renew Now</a>
             `;
             
             const appContainer = document.getElementById('appContainer');
@@ -1612,6 +1917,7 @@
                     link.href = url;
                     link.target = '_blank';
                     link.className = 'social-link';
+                    link.style.marginRight = '10px';
                     link.textContent = name.charAt(0).toUpperCase() + name.slice(1);
                     socialsContainer.appendChild(link);
                 }
@@ -1764,8 +2070,9 @@
                         // NEW: Add click handler for video playback
                         if (!isGallery && !link.locked) {
                             thumbnailContainer.style.cursor = 'pointer';
+                            // ✅ UPDATED: Use PlayerFactory for thumbnail click
                             thumbnailContainer.addEventListener('click', () => {
-                                openVideoPlayer(link, tierName);
+                                PlayerFactory.create(link, tierName);
                             });
                         }
                         
@@ -1791,6 +2098,7 @@
                     if (isRecentContent && !link.thumbnail_url) {
                         const newBadgeText = document.createElement('span');
                         newBadgeText.className = 'new-badge-text';
+                        newBadgeText.style.cssText = "background: #ff3b30; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; margin-left: 8px;";
                         newBadgeText.textContent = `New! (${getDaysAgo(link.added_at)})`;
                         title.appendChild(newBadgeText);
                         // Removed console.log that was exposing backend details
@@ -1820,6 +2128,7 @@
                             // --- NEW: Add a "View Gallery" button ---
                             const viewButton = document.createElement('a');
                             viewButton.className = 'view-gallery-btn';
+                            viewButton.style.cssText = "display: block; text-align: center; background: #e3f2fd; color: #007aff; padding: 8px; border-radius: 4px; text-decoration: none; font-weight: 500;";
                             viewButton.textContent = '🖼️ View Gallery';
                             viewButton.href = `links.html?view=gallery&slug=${link.url}`;
                             actionsContainer.appendChild(viewButton);
@@ -1828,8 +2137,9 @@
                             const watchButton = document.createElement('button');
                             watchButton.className = 'watch-video-btn';
                             watchButton.textContent = '▶️ Watch Video';
+                            // ✅ UPDATED: Use PlayerFactory for button click
                             watchButton.addEventListener('click', () => {
-                                openVideoPlayer(link, tierName);
+                                PlayerFactory.create(link, tierName);
                             });
                             actionsContainer.appendChild(watchButton);
                         }
@@ -2056,7 +2366,7 @@
                     <h2>${galleryData.title} <span class="header-breadcrumb">/ ${galleryData.platform_name}</span></h2>
                 </div>
                 <div class="gallery-container">
-                    <div class="gallery-info">
+                    <div class="gallery-info" style="margin-bottom: 20px;">
                         <h3>${galleryData.title}</h3>
                         <p>${galleryData.description || ''}</p>
                     </div>
@@ -2097,6 +2407,7 @@
                 
                 const caption = document.createElement('div');
                 caption.className = 'gallery-caption';
+                caption.style.display = 'none'; // Hidden by default as per many pswp implementations
                 caption.textContent = image.title || `Image ${index + 1}`;
                 
                 linkElement.appendChild(img);
@@ -2309,6 +2620,7 @@
     }
 
         // --- PREMIUM VIDEO PLAYER (PRODUCTION v2.1 MOBILE FIX) ---
+        // Note: This function is now primarily called by DesktopPlayer via the Factory.
         function openVideoPlayer(link, tierId) {
             // Extract video ID and library ID
             const videoIdMatch = link.url.match(/\/([a-f0-9-]{36})\//);
@@ -2318,7 +2630,7 @@
             const libraryIdMatch = link.url.match(/library_id=(\d+)/);
             const libraryId = libraryIdMatch ? libraryIdMatch[1] : '555806';
             
-            // ✅ FIX 1: Detect mobile device
+            // ✅ FIX 1: Detect mobile device (Note: Factory handles this, but kept here for safety if called directly)
             const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
             const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
             
@@ -2341,32 +2653,32 @@
             modal.innerHTML = `
                 <div class="premium-player-content">
                     <!-- Loading Overlay -->
-                    <div class="player-loading-overlay">
-                        <div class="player-spinner"></div>
-                        <div class="player-loading-text">Loading video...</div>
+                    <div class="player-loading-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:5; display:flex; flex-direction:column; align-items:center; justify-content:center; color:white;">
+                        <div class="player-spinner" style="width:40px; height:40px; border:4px solid #f3f3f3; border-top:4px solid #3498db; border-radius:50%; animation:spin 1s linear infinite;"></div>
+                        <div class="player-loading-text" style="margin-top:10px;">Loading video...</div>
                     </div>
                     
                     <!-- Error Overlay -->
-                    <div class="player-error-overlay">
-                        <div class="player-error-content">
-                            <div class="player-error-icon">⚠️</div>
-                            <div class="player-error-title">Playback Error</div>
-                            <div class="player-error-message">We're having trouble playing this video. Please try again.</div>
+                    <div class="player-error-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:6; display:none; flex-direction:column; align-items:center; justify-content:center; color:white;">
+                        <div class="player-error-content" style="text-align:center;">
+                            <div class="player-error-icon" style="font-size:3rem; margin-bottom:10px;">⚠️</div>
+                            <div class="player-error-title" style="font-size:1.5rem; font-weight:bold; margin-bottom:10px;">Playback Error</div>
+                            <div class="player-error-message" style="margin-bottom:20px;">We're having trouble playing this video. Please try again.</div>
                             <div class="player-error-actions">
-                                <button class="player-error-btn player-error-btn-primary retry-btn">Retry</button>
-                                <button class="player-error-btn player-error-btn-secondary close-error-btn">Close</button>
+                                <button class="player-error-btn player-error-btn-primary retry-btn" style="background:#007aff; color:white; border:none; padding:10px 20px; border-radius:4px; cursor:pointer; margin:5px;">Retry</button>
+                                <button class="player-error-btn player-error-btn-secondary close-error-btn" style="background:transparent; color:white; border:1px solid white; padding:10px 20px; border-radius:4px; cursor:pointer; margin:5px;">Close</button>
                             </div>
                         </div>
                     </div>
                     
                     <!-- Top Header -->
-                    <div class="premium-player-header">
+                    <div class="premium-player-header" style="position:absolute; top:0; left:0; width:100%; height:50px; background:linear-gradient(to bottom, rgba(0,0,0,0.8), transparent); z-index:2; display:flex; align-items:center; padding:0 15px; box-sizing:border-box; transition:opacity 0.3s;">
                         <button class="premium-close-btn" aria-label="Close video player">
                             <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
                                 <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                             </svg>
                         </button>
-                        <div class="premium-video-title">${link.title}</div>
+                        <div class="premium-video-title" style="flex:1; margin-left:10px; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:white;">${link.title}</div>
                         <div class="premium-header-spacer"></div>
                     </div>
                     
@@ -2398,10 +2710,10 @@
                         </div>
                         
                         <!-- Gesture Indicator (for mobile) -->
-                        <div class="premium-gesture-indicator"></div>
+                        <div class="premium-gesture-indicator" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); font-size:3rem; color:white; opacity:0; pointer-events:none; transition:opacity 0.2s;"></div>
                         
                         <!-- Quality/Speed Change Indicator -->
-                        <div class="premium-change-indicator"></div>
+                        <div class="premium-change-indicator" style="position:absolute; top:60%; left:50%; transform:translate(-50%, -50%); background:rgba(0,0,0,0.7); color:white; padding:8px 16px; border-radius:20px; font-size:14px; opacity:0; pointer-events:none; transition:opacity 0.2s;"></div>
                     </div>
                     
                     <!-- Custom Controls -->
@@ -2413,9 +2725,9 @@
                             <div class="premium-progress-bar" role="slider" aria-label="Video progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
                                 <div class="premium-progress-buffered"></div>
                                 <div class="premium-progress-played"></div>
-                                <div class="premium-progress-handle"></div>
-                                <div class="premium-progress-thumbnail" style="display: none;">
-                                    <div class="premium-thumbnail-time">0:00</div>
+                                <div class="premium-progress-handle" style="position:absolute; top:50%; width:12px; height:12px; background:#fff; border-radius:50%; transform:translate(-50%, -50%); margin-top:-1px;"></div>
+                                <div class="premium-progress-thumbnail" style="display: none; position:absolute; bottom:20px; left:0; background:#000; border:2px solid #fff; padding:2px;">
+                                    <div class="premium-thumbnail-time" style="color:white; font-size:12px;">0:00</div>
                                 </div>
                             </div>
                         </div>
@@ -2427,14 +2739,14 @@
                                 <svg class="play-icon" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M8 5v14l11-7z"/>
                                 </svg>
-                                <svg class="pause-icon" viewBox="0 0 24 24" fill="currentColor">
+                                <svg class="pause-icon" viewBox="0 0 24 24" fill="currentColor" style="display:none;">
                                     <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
                                 </svg>
                             </button>
                             
                             <!-- Skip Backward 10s -->
                             <button class="premium-control-btn premium-skip-backward premium-skip-btn" aria-label="Rewind 10 seconds">
-                                <svg viewBox="0 0 24 24" fill="currentColor">
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
                                     <path d="M12 5V2.21c0-.45-.54-.67-.85-.35l-3.8 3.79c-.2.2-.2.51 0 .71l3.79 3.79c.32.31.86.09.86-.36V7c3.73 0 6.68 3.42 5.86 7.29-.47 2.27-2.31 4.1-4.57 4.57-3.57.75-6.75-1.7-7.23-5.01-.07-.48-.49-.85-.98-.85-.6 0-1.08.53-1 1.13.62 4.39 4.8 7.64 9.53 6.72 3.12-.61 5.63-3.12 6.24-6.24C20.84 9.48 16.94 5 12 5z"/>
                                     <text x="12" y="16" text-anchor="middle" font-size="8" font-weight="bold" fill="currentColor">10</text>
                                 </svg>
@@ -2442,27 +2754,27 @@
                             
                             <!-- Skip Forward 10s -->
                             <button class="premium-control-btn premium-skip-forward premium-skip-btn" aria-label="Forward 10 seconds">
-                                <svg viewBox="0 0 24 24" fill="currentColor">
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
                                     <path d="M12 5V2.21c0-.45-.54-.67-.85-.35l-3.8 3.79c-.2.2-.2.51 0 .71l-3.79 3.79c-.32.31-.86.09-.86-.36V7c-3.73 0-6.68 3.42-5.86 7.29.47 2.27 2.31 4.1 4.57 4.57 3.57.75 6.75-1.7 7.23-5.01.07-.48.49-.85.98-.85.6 0 1.08.53-1 1.13-.62 4.39-4.8 7.64-9.53 6.72-3.12-.61-5.63-3.12-6.24-6.24C3.16 9.48 7.06 5 12 5z"/>
                                     <text x="12" y="16" text-anchor="middle" font-size="8" font-weight="bold" fill="currentColor">10</text>
                                 </svg>
                             </button>
                             
                             <!-- Volume Control -->
-                            <div class="premium-volume-group">
+                            <div class="premium-volume-group" style="display:flex; align-items:center;">
                                 <button class="premium-control-btn premium-volume-btn" aria-label="Mute">
-                                    <svg class="volume-high" viewBox="0 0 24 24" fill="currentColor">
+                                    <svg class="volume-high" viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
                                         <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
                                     </svg>
-                                    <svg class="volume-low" viewBox="0 0 24 24" fill="currentColor">
+                                    <svg class="volume-low" viewBox="0 0 24 24" fill="currentColor" width="24" height="24" style="display:none;">
                                         <path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/>
                                     </svg>
-                                    <svg class="volume-mute" viewBox="0 0 24 24" fill="currentColor">
+                                    <svg class="volume-mute" viewBox="0 0 24 24" fill="currentColor" width="24" height="24" style="display:none;">
                                         <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
                                     </svg>
                                 </button>
-                                <div class="premium-volume-slider-wrapper">
-                                    <input type="range" class="premium-volume-slider" min="0" max="1" step="0.01" value="1" aria-label="Volume">
+                                <div class="premium-volume-slider-wrapper" style="width:0; overflow:hidden; transition:width 0.3s; display:flex; align-items:center;">
+                                    <input type="range" class="premium-volume-slider" min="0" max="1" step="0.01" value="1" aria-label="Volume" style="width:60px;">
                                 </div>
                             </div>
                             
@@ -2470,22 +2782,22 @@
                             <div class="premium-time-display">0:00 / 0:00</div>
                             
                             <!-- Spacer -->
-                            <div class="premium-controls-spacer"></div>
+                            <div class="premium-controls-spacer" style="flex:1;"></div>
                             
                             <!-- Settings Button -->
-                            <div class="premium-settings-btn">
+                            <div class="premium-settings-btn" style="position:relative;">
                                 <button class="premium-control-btn" aria-label="Settings" aria-haspopup="true" aria-expanded="false">
-                                    <svg viewBox="0 0 24 24" fill="currentColor">
+                                    <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
                                         <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
                                     </svg>
                                 </button>
-                                <div class="premium-settings-menu">
+                                <div class="premium-settings-menu" style="position:absolute; bottom:40px; right:0; background:rgba(0,0,0,0.9); border-radius:8px; padding:10px; min-width:200px; display:none; flex-direction:column;">
                                     <div class="premium-settings-section">
-                                        <div class="premium-settings-header">Quality</div>
+                                        <div class="premium-settings-header" style="color:#fff; font-size:12px; text-transform:uppercase; margin-bottom:5px;">Quality</div>
                                         <div class="premium-quality-options"></div>
                                     </div>
-                                    <div class="premium-settings-section">
-                                        <div class="premium-settings-header">Speed</div>
+                                    <div class="premium-settings-section" style="margin-top:10px;">
+                                        <div class="premium-settings-header" style="color:#fff; font-size:12px; text-transform:uppercase; margin-bottom:5px;">Speed</div>
                                         <div class="premium-speed-options"></div>
                                     </div>
                                 </div>
@@ -2494,31 +2806,31 @@
                     </div>
                     
                     <!-- Keyboard Shortcuts Tooltip (hidden by default) -->
-                    <div class="premium-shortcuts-tooltip">
-                        <div class="premium-shortcuts-title">Keyboard Shortcuts</div>
-                        <div class="premium-shortcuts-list">
-                            <div class="premium-shortcut-item">
-                                <span class="premium-shortcut-key">Space</span>
+                    <div class="premium-shortcuts-tooltip" style="position:absolute; top:60px; right:20px; background:rgba(0,0,0,0.9); color:white; padding:15px; border-radius:8px; display:none; z-index:10;">
+                        <div class="premium-shortcuts-title" style="font-weight:bold; margin-bottom:10px; border-bottom:1px solid #555; padding-bottom:5px;">Keyboard Shortcuts</div>
+                        <div class="premium-shortcuts-list" style="font-size:14px;">
+                            <div class="premium-shortcut-item" style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                                <span class="premium-shortcut-key" style="background:#333; padding:2px 6px; border-radius:4px; font-family:monospace;">Space</span>
                                 <span class="premium-shortcut-desc">Play/Pause</span>
                             </div>
-                            <div class="premium-shortcut-item">
-                                <span class="premium-shortcut-key">←</span>
+                            <div class="premium-shortcut-item" style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                                <span class="premium-shortcut-key" style="background:#333; padding:2px 6px; border-radius:4px; font-family:monospace;">←</span>
                                 <span class="premium-shortcut-desc">Rewind 10s</span>
                             </div>
-                            <div class="premium-shortcut-item">
-                                <span class="premium-shortcut-key">→</span>
+                            <div class="premium-shortcut-item" style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                                <span class="premium-shortcut-key" style="background:#333; padding:2px 6px; border-radius:4px; font-family:monospace;">→</span>
                                 <span class="premium-shortcut-desc">Forward 10s</span>
                             </div>
-                            <div class="premium-shortcut-item">
-                                <span class="premium-shortcut-key">M</span>
+                            <div class="premium-shortcut-item" style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                                <span class="premium-shortcut-key" style="background:#333; padding:2px 6px; border-radius:4px; font-family:monospace;">M</span>
                                 <span class="premium-shortcut-desc">Mute/Unmute</span>
                             </div>
-                            <div class="premium-shortcut-item">
-                                <span class="premium-shortcut-key">F</span>
+                            <div class="premium-shortcut-item" style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                                <span class="premium-shortcut-key" style="background:#333; padding:2px 6px; border-radius:4px; font-family:monospace;">F</span>
                                 <span class="premium-shortcut-desc">Fullscreen</span>
                             </div>
-                            <div class="premium-shortcut-item">
-                                <span class="premium-shortcut-key">?</span>
+                            <div class="premium-shortcut-item" style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                                <span class="premium-shortcut-key" style="background:#333; padding:2px 6px; border-radius:4px; font-family:monospace;">?</span>
                                 <span class="premium-shortcut-desc">Show shortcuts</span>
                             </div>
                         </div>
@@ -2652,8 +2964,8 @@
                     
                     // ✅ NEW: Prevent iOS Safari bottom bar from appearing
                     videoElement.addEventListener('touchstart', (e) => {
-                        e.preventDefault();
-                    }, { passive: false });
+                        // e.preventDefault(); // Commented out as it might block play
+                    }, { passive: true });
                 }
                 
                 // ✅ NEW: Enhanced touch controls visibility for mobile
@@ -2667,8 +2979,10 @@
                     
                     // Skip if touching controls directly
                     const controlElements = [
-                        '.premium-control-btn',
+                        '.premium-controls-wrapper',
+                        '.premium-player-header',
                         '.premium-progress-bar',
+                        '.premium-control-btn',
                         '.premium-settings-menu'
                     ];
                     
@@ -2676,17 +2990,6 @@
                         return;
                     }
                     
-                    // ✅ NEW: Toggle controls visibility on quick tap (not swipe)
-                    if (e.type === 'touchend' && timeSinceLastTouch < 200 && !touchMoved) {
-                        if (controlsManager.state.showingControls) {
-                            controlsManager.hideControls();
-                        } else {
-                            controlsManager.showControls();
-                        }
-                        return;
-                    }
-                    
-                    // Show controls on any touch movement
                     controlsManager.showControls();
                     clearTimeout(touchTimer);
                     
@@ -2699,8 +3002,6 @@
                 };
                 
                 modal.addEventListener('touchstart', handleTouchInteraction, { passive: true });
-                modal.addEventListener('touchmove', handleTouchInteraction, { passive: true });
-                modal.addEventListener('touchend', handleTouchInteraction, { passive: true });
             }
             
             // ✅ FIX 7: Handle iOS video fullscreen properly
@@ -2803,7 +3104,7 @@
                     
                     // ✅ NEW: Show loading indicator
                     if (controlsManager.elements.loadingOverlay) {
-                        controlsManager.elements.loadingOverlay.classList.add('active');
+                        controlsManager.elements.loadingOverlay.style.display = 'flex';
                     }
                     
                     // ✅ FIXED: Debounced resize with player validation
@@ -2828,7 +3129,7 @@
                                 
                                 // ✅ NEW: Hide loading indicator
                                 if (controlsManager.elements.loadingOverlay) {
-                                    controlsManager.elements.loadingOverlay.classList.remove('active');
+                                    controlsManager.elements.loadingOverlay.style.display = 'none';
                                 }
                                 
                                 // ✅ NEW: Show controls briefly
@@ -2981,21 +3282,6 @@
             
             // --- Event Handlers ---
             
-            // ✅ NEW: Haptic feedback utility for iOS
-            function triggerHapticFeedback(style = 'medium') {
-                if ('vibrate' in navigator) {
-                    // Simple vibration for Android
-                    navigator.vibrate(10);
-                }
-                
-                // iOS haptic feedback
-                if (window.Taptic && window.Taptic.impact) {
-                    window.Taptic.impact(style);
-                } else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.haptic) {
-                    window.webkit.messageHandlers.haptic.postMessage({ style: style });
-                }
-            }
-            
             // Play/Pause
             const togglePlayPause = () => {
                 if (!isPlayerHealthy(playerId)) {
@@ -3007,10 +3293,8 @@
                 try {
                     if (activePlayer.paused()) {
                         activePlayer.play().catch(() => {});
-                        triggerHapticFeedback('light'); // ✅ NEW
                     } else {
                         activePlayer.pause();
-                        triggerHapticFeedback('light'); // ✅ NEW
                     }
                 } catch (error) {
                     cleanupPlayer(playerId);
@@ -3049,7 +3333,6 @@
                 
                 activePlayer.currentTime(Math.max(0, activePlayer.currentTime() - 10));
                 controlsManager.showGestureIndicator('⏪');
-                triggerHapticFeedback('medium'); // ✅ NEW
             });
             
             controlsManager.elements.skipForward.addEventListener('click', () => {
@@ -3058,7 +3341,6 @@
                 
                 activePlayer.currentTime(Math.min(activePlayer.duration(), activePlayer.currentTime() + 10));
                 controlsManager.showGestureIndicator('⏩');
-                triggerHapticFeedback('medium'); // ✅ NEW
             });
             
             // Volume controls
@@ -3084,6 +3366,7 @@
             // Progress bar seeking
             let isSeeking = false;
             let seekStartTime = 0; // ✅ NEW: Track seek start time
+            let touchMoved = false;
 
             const handleProgressClick = (e) => {
                 const activePlayer = getSafePlayer();
@@ -3236,6 +3519,11 @@
                 e.stopPropagation();
                 const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
                 controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
+                if (isActive) {
+                    controlsManager.elements.settingsMenu.style.display = 'flex';
+                } else {
+                    controlsManager.elements.settingsMenu.style.display = 'none';
+                }
             });
 
             // ✅ NEW: Mobile-specific touch handler
@@ -3245,6 +3533,11 @@
                     e.stopPropagation();
                     const isActive = controlsManager.elements.settingsMenu.classList.toggle('active');
                     controlsManager.elements.settingsBtn.setAttribute('aria-expanded', isActive);
+                    if (isActive) {
+                        controlsManager.elements.settingsMenu.style.display = 'flex';
+                    } else {
+                        controlsManager.elements.settingsMenu.style.display = 'none';
+                    }
                 }, { passive: false });
             }
             
@@ -3254,6 +3547,7 @@
                     !controlsManager.elements.settingsMenu.contains(e.target) && 
                     !controlsManager.elements.settingsBtn.contains(e.target)) {
                     controlsManager.elements.settingsMenu.classList.remove('active');
+                    controlsManager.elements.settingsMenu.style.display = 'none';
                     controlsManager.elements.settingsBtn.setAttribute('aria-expanded', 'false');
                 }
             };
@@ -3273,11 +3567,13 @@
                     qualities.forEach(quality => {
                         const option = document.createElement('div');
                         option.className = 'premium-settings-item';
+                        option.style.cssText = "padding:8px; cursor:pointer; color:white; border-radius:4px;";
                         option.textContent = quality === 'auto' ? 'Auto' : `${quality}p`;
                         option.dataset.quality = quality;
                         
                         if (quality === qualityManager.currentQuality) {
                             option.classList.add('active');
+                            option.style.background = '#007aff';
                         }
                         
                         option.addEventListener('click', () => {
@@ -3290,14 +3586,17 @@
                             // Update active state
                             controlsManager.elements.qualityOptions.querySelectorAll('.premium-settings-item').forEach(item => {
                                 item.classList.remove('active');
+                                item.style.background = 'transparent';
                             });
                             option.classList.add('active');
+                            option.style.background = '#007aff';
                             
                             // Show indicator
                             controlsManager.showChangeIndicator(`Quality: ${qualityManager.getCurrentQualityLabel()}`);
                             
                             // Close menu
                             controlsManager.elements.settingsMenu.classList.remove('active');
+                            controlsManager.elements.settingsMenu.style.display = 'none';
                         });
                         
                         controlsManager.elements.qualityOptions.appendChild(option);
@@ -3312,11 +3611,13 @@
                     speeds.forEach(speed => {
                         const option = document.createElement('div');
                         option.className = 'premium-settings-item';
+                        option.style.cssText = "padding:8px; cursor:pointer; color:white; border-radius:4px;";
                         option.textContent = speed === 1 ? 'Normal' : `${speed}x`;
                         option.dataset.speed = speed;
                         
                         if (speed === speedManager.currentSpeed) {
                             option.classList.add('active');
+                            option.style.background = '#007aff';
                         }
                         
                         option.addEventListener('click', () => {
@@ -3329,14 +3630,17 @@
                             // Update active state
                             controlsManager.elements.speedOptions.querySelectorAll('.premium-settings-item').forEach(item => {
                                 item.classList.remove('active');
+                                item.style.background = 'transparent';
                             });
                             option.classList.add('active');
+                            option.style.background = '#007aff';
                             
                             // Show indicator
                             controlsManager.showChangeIndicator(`Speed: ${speedManager.getCurrentSpeedLabel()}`);
                             
                             // Close menu
                             controlsManager.elements.settingsMenu.classList.remove('active');
+                            controlsManager.elements.settingsMenu.style.display = 'none';
                         });
                         
                         controlsManager.elements.speedOptions.appendChild(option);
@@ -3462,6 +3766,7 @@
                     controlsManager.elements.settingsMenu.classList.contains('active')) {
                     if (e.key === 'Escape') {
                         controlsManager.elements.settingsMenu.classList.remove('active');
+                        controlsManager.elements.settingsMenu.style.display = 'none';
                         e.preventDefault();
                     }
                     return;
@@ -3518,8 +3823,8 @@
             
             // Error handling
             controlsManager.elements.retryBtn.addEventListener('click', () => {
-                controlsManager.showErrorOverlay(false);
-                controlsManager.showLoadingOverlay(true);
+                controlsManager.elements.errorOverlay.style.display = 'none';
+                controlsManager.elements.loadingOverlay.style.display = 'flex';
                 const activePlayer = getSafePlayer();
                 if (activePlayer) {
                     activePlayer.src({
@@ -3533,19 +3838,19 @@
             // --- Video.js Event Listeners ---
             
             player.on('loadstart', () => {
-                controlsManager.showLoadingOverlay(true);
+                controlsManager.elements.loadingOverlay.style.display = 'flex';
             });
             
             player.on('canplay', () => {
-                controlsManager.showLoadingOverlay(false);
+                controlsManager.elements.loadingOverlay.style.display = 'none';
             });
             
             player.on('waiting', () => {
-                controlsManager.showLoadingOverlay(true);
+                controlsManager.elements.loadingOverlay.style.display = 'flex';
             });
             
             player.on('playing', () => {
-                controlsManager.showLoadingOverlay(false);
+                controlsManager.elements.loadingOverlay.style.display = 'none';
             });
             
             player.on('play', () => {
@@ -3651,7 +3956,7 @@
             
             player.on('error', (e) => {
                 stateManager.isError = true;
-                controlsManager.showLoadingOverlay(false);
+                controlsManager.elements.loadingOverlay.style.display = 'none';
                 
                 const error = player.error();
                 let errorMessage = 'We\'re having trouble playing this video. Please try again.';
@@ -3673,7 +3978,8 @@
                     }
                 }
                 
-                controlsManager.showErrorOverlay(true, errorMessage);
+                controlsManager.elements.errorMessage.textContent = errorMessage;
+                controlsManager.elements.errorOverlay.style.display = 'flex';
                 analyticsTracker.trackEvent(videoId, 'error', player, tierId);
             });
 
@@ -3726,7 +4032,6 @@
             let touchStartY = 0;
             let touchStartTime = 0;
             let isSwiping = false;
-            let touchMoved = false; // ✅ NEW: Track if touch moved significantly
             let preventNextClick = false; // ✅ NEW: Flag to prevent ghost clicks
 
             modal.addEventListener('touchstart', (e) => {
@@ -3805,7 +4110,7 @@
                         const direction = deltaX > 0 ? '⏩' : '⏪';
                         const seconds = Math.abs(Math.round(seekAmount));
                         controlsManager.elements.gestureIndicator.textContent = `${direction} ${seconds}s`;
-                        controlsManager.elements.gestureIndicator.classList.add('show');
+                        controlsManager.elements.gestureIndicator.style.opacity = '1';
                     }
                 }
             }, { passive: false }); // passive: false only because we need conditional preventDefault
@@ -3816,7 +4121,7 @@
                 if (!activePlayer) return;
                 
                 if (controlsManager.elements.gestureIndicator) {
-                    controlsManager.elements.gestureIndicator.classList.remove('show');
+                    controlsManager.elements.gestureIndicator.style.opacity = '0';
                 }
                 
                 const controlElements = [
@@ -3920,12 +4225,10 @@
                         // Left side - rewind
                         activePlayer.currentTime(Math.max(0, activePlayer.currentTime() - 10));
                         controlsManager.showGestureIndicator('⏪ 10s');
-                        triggerHapticFeedback('medium');
                     } else if (tapX > rightZoneStart) {
                         // Right side - forward
                         activePlayer.currentTime(Math.min(activePlayer.duration(), activePlayer.currentTime() + 10));
                         controlsManager.showGestureIndicator('⏩ 10s');
-                        triggerHapticFeedback('medium');
                     } else if (tapX >= centerZoneStart && tapX <= centerZoneEnd) {
                         // Center - toggle play/pause
                         togglePlayPause();
@@ -4011,6 +4314,13 @@
             activePlayers.clear();
             tokenRefreshManager.stopAll();
         }
+        
+        // CSS Animation for spinner
+        const styleSheet = document.createElement("style");
+        styleSheet.innerText = `
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        `;
+        document.head.appendChild(styleSheet);
 
         document.addEventListener('DOMContentLoaded', () => {
             window.appRouter.navigate();
