@@ -1,14 +1,64 @@
 // Configuration - IMPORTANT: This MUST match your live backend URL
 const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
 
-// --- State and Data Store ---
-let allPlatformsData = [];
-let allTiersData = {};
-let currentContentData = null;
-let currentFilterState = { view: 'All', type: 'All', query: '' };
-let searchScope = 'platforms'; // Tracks search scope: 'platforms', 'tiers', or 'content'
-let userInfo = null;
-let userSubscriptions = [];
+// ============================================================================
+// PHASE 1: MODULAR ARCHITECTURE
+// ============================================================================
+
+class AppState {
+    constructor() {
+        this.platforms = [];
+        this.tiers = {};
+        this.currentContent = null;
+        this.filterState = { view: 'All', type: 'All', query: '' };
+        this.searchScope = 'platforms';
+        this.userInfo = null;
+        this.subscriptions = [];
+    }
+    
+    reset() {
+        this.platforms = [];
+        this.tiers = {};
+        this.currentContent = null;
+        this.filterState = { view: 'All', type: 'All', query: '' };
+        this.userInfo = null;
+        this.subscriptions = [];
+    }
+}
+
+class AuthManager {
+    constructor() {
+        this.tokenKey = 'lustroom_jwt';
+        this.expiresInKey = 'lustroom_jwt_expires_in';
+        this.obtainedAtKey = 'lustroom_jwt_obtained_at';
+    }
+    
+    isValid() {
+        const token = localStorage.getItem(this.tokenKey);
+        const obtainedAt = parseInt(localStorage.getItem(this.obtainedAtKey), 10);
+        const expiresIn = parseInt(localStorage.getItem(this.expiresInKey), 10);
+        
+        if (!token || isNaN(obtainedAt) || isNaN(expiresIn)) return false;
+        
+        const nowInSeconds = Math.floor(Date.now() / 1000);
+        return (obtainedAt + expiresIn - 60) > nowInSeconds;
+    }
+    
+    logout() {
+        localStorage.clear();
+        window.location.href = 'index.html';
+    }
+    
+    getToken() {
+        return localStorage.getItem(this.tokenKey);
+    }
+}
+
+// Global instances (initialized after DOM ready)
+let appState = null;
+let authManager = null;
+
+// State now managed by AppState class (see top of file)
 
 // --- NEW: Active Video Players Registry ---
 const activePlayers = new Map(); // playerId -> {player, modal}
@@ -800,13 +850,13 @@ class AnnouncementSlider {
 // --- NEW: Load user data from localStorage ---
 function loadUserData() {
     try {
-        userInfo = JSON.parse(localStorage.getItem('user_info') || 'null');
-        userSubscriptions = JSON.parse(localStorage.getItem('user_subscriptions') || '[]');
+        appState.userInfo = JSON.parse(localStorage.getItem('user_info') || 'null');
+        appState.subscriptions = JSON.parse(localStorage.getItem('user_subscriptions') || '[]');
         return true;
     } catch (error) {
         // Silently handle error without logging to console
-        userInfo = null;
-        userSubscriptions = [];
+        appState.userInfo = null;
+        appState.subscriptions = [];
         return false;
     }
 }
@@ -817,7 +867,7 @@ function renderSubscriptionStatus() {
     const subscriptionStatusDiv = document.getElementById('subscriptionStatus');
     if (!subscriptionStatusDiv) return;
 
-    if (!userSubscriptions || userSubscriptions.length === 0) {
+    if (!appState.subscriptions || appState.subscriptions.length === 0) {
         subscriptionStatusDiv.style.display = 'none';
         return;
     }
@@ -831,7 +881,7 @@ function renderSubscriptionStatus() {
         subscriptionStatusDiv.style.alignItems = 'center';
 
         // Render each subscription as a badge
-        userSubscriptions.forEach(sub => {
+        appState.subscriptions.forEach(sub => {
             const daysRemaining = sub.days_remaining;
             let statusText, statusClass;
             
@@ -871,10 +921,10 @@ function renderRenewalBanner() {
         existingBanner.remove();
     }
 
-    if (!userSubscriptions || userSubscriptions.length === 0) return;
+    if (!appState.subscriptions || appState.subscriptions.length === 0) return;
 
     // Find ALL expiring subscriptions first
-    const expiringSubscriptions = userSubscriptions.filter(sub => {
+    const expiringSubscriptions = appState.subscriptions.filter(sub => {
         if (!sub.end_date) return false;
         const expiryDate = new Date(sub.end_date);
         const now = new Date();
@@ -919,14 +969,14 @@ function renderRenewalBanner() {
 async function renderHeaderActions() {
     // --- 1. Handle Support Link with Priority Logic ---
     let supportUrl = null;
-    if (userSubscriptions.length > 0) {
+    if (appState.subscriptions.length > 0) {
         // ✅ PRIORITY LOGIC: Try to find Echo Chamber support URL first
-        const echoChamberSub = userSubscriptions.find(sub => sub.platform_name === 'Echo Chamber' && sub.support_url);
+        const echoChamberSub = appState.subscriptions.find(sub => sub.platform_name === 'Echo Chamber' && sub.support_url);
         if (echoChamberSub) {
             supportUrl = echoChamberSub.support_url;
         } else {
             // Fallback: find the first subscription that has a support URL
-            const fallbackSub = userSubscriptions.find(sub => sub.support_url);
+            const fallbackSub = appState.subscriptions.find(sub => sub.support_url);
             if (fallbackSub) {
                 supportUrl = fallbackSub.support_url;
             }
@@ -1094,6 +1144,10 @@ if (document.getElementById('loginForm')) {
 
 // --- Logic for links.html (The main application view) ---
 if (document.getElementById('appContainer')) {
+    // ✅ PHASE 1: Initialize modular architecture
+    appState = new AppState();
+    authManager = new AuthManager();
+
     const mainContent = document.getElementById('mainContent');
     const logoutButton = document.getElementById('logoutButton');
     const searchContainer = document.getElementById('searchContainer');
@@ -1103,15 +1157,6 @@ if (document.getElementById('appContainer')) {
     const announcementSlider = new AnnouncementSlider('#announcementSliderContainer');
 
     // --- Utility Functions ---
-    function isTokenValid() {
-        const token = localStorage.getItem('lustroom_jwt');
-        const obtainedAt = parseInt(localStorage.getItem('lustroom_jwt_obtained_at'), 10);
-        const expiresIn = parseInt(localStorage.getItem('lustroom_jwt_expires_in'), 10);
-        if (!token || isNaN(obtainedAt) || isNaN(expiresIn)) return false;
-        const nowInSeconds = Math.floor(Date.now() / 1000);
-        return (obtainedAt + expiresIn - 60) > nowInSeconds;
-    }
-
     function displayError(message, container = mainContent) {
         container.innerHTML = `<div class="error-message">${message}</div>`;
     }
@@ -1200,14 +1245,14 @@ if (document.getElementById('appContainer')) {
     // --- Handle search input ---
     function handleSearchInput(event) {
         const query = event.target.value.toLowerCase().trim();
-        currentFilterState.query = query;
+        appState.filterState.query = query;
 
         const emptyMessage = document.getElementById('searchEmptyMessage');
         if (emptyMessage && query === '') {
             emptyMessage.remove();
         }
 
-        if (searchScope === 'tiers') {
+        if (appState.searchScope === 'tiers') {
             handleTierLevelSearch(query);
         } else {
             applyFilters();
@@ -1262,24 +1307,24 @@ if (document.getElementById('appContainer')) {
 
     // --- Async Guard Functions for Data Caching ---
     async function ensurePlatformsData() {
-        if (allPlatformsData.length > 0) {
-            return Promise.resolve(allPlatformsData);
+        if (appState.platforms.length > 0) {
+            return Promise.resolve(appState.platforms);
         }
 
         const response = await fetch(`${API_BASE_URL}/platforms`);
         const data = await response.json();
 
         if (response.ok && data.status === 'success' && data.platforms) {
-            allPlatformsData = data.platforms;
-            return allPlatformsData;
+            appState.platforms = data.platforms;
+            return appState.platforms;
         } else {
             throw new Error(data.message || "Failed to fetch platforms.");
         }
     }
 
     async function ensureTiersData(platformId) {
-        if (allTiersData[platformId]) {
-            return Promise.resolve(allTiersData[platformId]);
+        if (appState.tiers[platformId]) {
+            return Promise.resolve(appState.tiers[platformId]);
         }
 
         const token = localStorage.getItem('lustroom_jwt');
@@ -1289,8 +1334,8 @@ if (document.getElementById('appContainer')) {
         const data = await response.json();
 
         if (response.ok && data.status === 'success' && data.tiers) {
-            allTiersData[platformId] = data.tiers;
-            return allTiersData[platformId];
+            appState.tiers[platformId] = data.tiers;
+            return appState.tiers[platformId];
         } else {
             throw new Error(data.message || "Failed to fetch tiers.");
         }
@@ -1420,14 +1465,14 @@ if (document.getElementById('appContainer')) {
         let platformsHTML = '<div class="platforms-grid">';
         platforms.forEach(platform => {
             // Check if user has any subscription to this platform
-            const hasSubscription = userSubscriptions.some(sub => sub.platform_id === platform.id);
+            const hasSubscription = appState.subscriptions.some(sub => sub.platform_id === platform.id);
             platformsHTML += `<div class="platform-card ${!hasSubscription ? 'locked' : ''}" data-platform-id="${platform.id}"><div class="platform-thumbnail" style="background-image: url('${platform.thumbnail_url || ''}')"></div><div class="platform-name">${platform.name}</div>${!hasSubscription ? '<div class="lock-icon">🔒</div>' : ''}</div>`;
         });
         platformsHTML += '</div>';
 
         let welcomeHTML = '';
-        if (userInfo && userInfo.name) {
-            welcomeHTML = `<div class="welcome-message">Welcome back, ${userInfo.name}!</div>`;
+        if (appState.userInfo && appState.userInfo.name) {
+            welcomeHTML = `<div class="welcome-message">Welcome back, ${appState.userInfo.name}!</div>`;
         }
 
         mainContent.innerHTML = welcomeHTML + '<h2>Platforms</h2>' + platformsHTML;
@@ -1460,7 +1505,7 @@ if (document.getElementById('appContainer')) {
         searchContainer.style.display = 'block';
         searchInput.placeholder = `Search in ${platformName || 'Tiers'}`;
         searchInput.value = '';
-        currentFilterState.query = '';
+        appState.filterState.query = '';
         const existingMessage = document.getElementById('tierSearchMessage');
         if (existingMessage) existingMessage.remove();
         mainContent.querySelector('.tiers-grid').addEventListener('click', (e) => handleTierClick(e, platformId));
@@ -1468,8 +1513,8 @@ if (document.getElementById('appContainer')) {
     }
 
     function fetchAndDisplayTiers(platformId, platformName) {
-        searchScope = 'tiers';
-        const tiersData = allTiersData[platformId];
+        appState.searchScope = 'tiers';
+        const tiersData = appState.tiers[platformId];
 
         if (!tiersData || !Array.isArray(tiersData)) {
             // Silently handle error without logging to console
@@ -1482,7 +1527,7 @@ if (document.getElementById('appContainer')) {
 
     // --- Content View Logic ---
     async function fetchAndDisplayContent(platformId, tierId, tierName, platformName) {
-        searchScope = 'content';
+        appState.searchScope = 'content';
         renderContentSkeleton(tierName, platformName);
         try {
             const token = localStorage.getItem('lustroom_jwt');
@@ -1492,8 +1537,8 @@ if (document.getElementById('appContainer')) {
             const data = await response.json();
             
             if (response.ok && data.status === 'success' && data.content) {
-                currentContentData = data.content;
-                currentFilterState = { view: 'All', type: 'All', query: '' };
+                appState.currentContent = data.content;
+                appState.filterState = { view: 'All', type: 'All', query: '' };
 
                 mainContent.innerHTML = `
                     <div class="view-header">
@@ -1748,10 +1793,10 @@ if (document.getElementById('appContainer')) {
         const filterType = event.target.dataset.filterType;
 
         if (filterType === 'view') {
-            currentFilterState.view = filterValue;
+            appState.filterState.view = filterValue;
             document.querySelectorAll('.view-filter').forEach(btn => btn.classList.remove('active'));
         } else if (filterType === 'type') {
-            currentFilterState.type = filterValue;
+            appState.filterState.type = filterValue;
             document.querySelectorAll('.type-filter').forEach(btn => btn.classList.remove('active'));
         }
 
@@ -1761,7 +1806,7 @@ if (document.getElementById('appContainer')) {
 
     // --- Apply filters with search support ---
     function applyFilters() {
-        const { view, type, query } = currentFilterState;
+        const { view, type, query } = appState.filterState;
 
         let hasVisibleContent = false;
         const emptyMessage = document.getElementById('searchEmptyMessage');
@@ -1812,7 +1857,7 @@ if (document.getElementById('appContainer')) {
         const card = event.target.closest('.platform-card');
         if (!card) return;
         const platformId = card.dataset.platformId;
-        const platformData = allPlatformsData.find(p => p.id.toString() === platformId);
+        const platformData = appState.platforms.find(p => p.id.toString() === platformId);
 
         if (card.classList.contains('locked')) {
             showPlatformModal(platformData);
@@ -2355,7 +2400,8 @@ if (document.getElementById('appContainer')) {
         `;
         
         document.body.appendChild(modal);
-        document.body.style.overflow = 'hidden';
+        // ✅ SAFE UX: Use CSS class instead of inline style
+        document.body.classList.add('player-active');
         
         const playerId = `premiumPlayer_${videoId}`;
         
@@ -3249,7 +3295,7 @@ if (document.getElementById('appContainer')) {
             }
             
             // Restore body overflow
-            document.body.style.overflow = '';
+            document.body.classList.remove('player-active');
         };
 
         controlsManager.elements.closeBtn.addEventListener('click', (e) => {
@@ -3581,10 +3627,15 @@ if (document.getElementById('appContainer')) {
             }
         }, { passive: true });
         
-        // Replace touchmove handler
+        // ✅ SAFE UX: Only prevent touchmove when actively seeking
         modal.addEventListener('touchmove', (e) => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
+            
+            // CRITICAL: Only preventDefault if user is actively interacting with progress bar
+            if (isSeeking) {
+                e.preventDefault(); // This is safe because it's scoped to seek gesture
+            }
             
             const controlElements = [
                 '.premium-controls-wrapper',
@@ -3607,14 +3658,14 @@ if (document.getElementById('appContainer')) {
             const deltaX = touchCurrentX - touchStartX;
             const deltaY = touchCurrentY - touchStartY;
             
-            // ✅ NEW: Mark as moved if threshold exceeded
             if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
                 touchMoved = true;
             }
             
             if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
                 isSwiping = true;
-                preventNextClick = true; // ✅ NEW: Prevent click after swipe
+                preventNextClick = true;
+                // ✅ Only prevent default for horizontal swipes (seek gesture)
                 e.preventDefault();
                 
                 const seekAmount = (deltaX / window.innerWidth) * 30;
@@ -3627,7 +3678,7 @@ if (document.getElementById('appContainer')) {
                     controlsManager.elements.gestureIndicator.classList.add('show');
                 }
             }
-        }, { passive: false });
+        }, { passive: false }); // passive: false only because we need conditional preventDefault
         
         // Replace touchend handler
         modal.addEventListener('touchend', (e) => {
@@ -3867,7 +3918,7 @@ if (document.getElementById('appContainer')) {
         renderRenewalBanner();
         await renderHeaderActions();
 
-        if (!isTokenValid()) {
+        if (!authManager.isValid()) {
             window.location.href = 'login.html';
             return;
         }
@@ -3901,20 +3952,20 @@ if (document.getElementById('appContainer')) {
                 await ensureTiersData(platformId);
             }
 
-            const platformData = allPlatformsData.find(p => p.id.toString() === platformId);
+            const platformData = appState.platforms.find(p => p.id.toString() === platformId);
             const platformName = platformData?.name;
-            const tierData = allTiersData[platformId]?.find(t => t.id.toString() === tierId);
+            const tierData = appState.tiers[platformId]?.find(t => t.id.toString() === tierId);
             const tierName = tierData?.name;
 
             if (view === 'content' && platformId && tierId) {
-                searchScope = 'content';
+                appState.searchScope = 'content';
                 fetchAndDisplayContent(platformId, tierId, tierName, platformName);
             } else if (view === 'tiers' && platformId) {
-                searchScope = 'tiers';
+                appState.searchScope = 'tiers';
                 renderTierSkeleton(platformName);
                 fetchAndDisplayTiers(platformId, platformName);
             } else {
-                searchScope = 'platforms';
+                appState.searchScope = 'platforms';
                 renderPlatformSkeleton();
                 const platformsData = await ensurePlatformsData();
                 renderPlatforms(platformsData);
@@ -3922,7 +3973,7 @@ if (document.getElementById('appContainer')) {
 
             if (searchInput) {
                 searchInput.value = '';
-                currentFilterState.query = '';
+                appState.filterState.query = '';
             }
 
             renderSubscriptionStatus();
@@ -3946,8 +3997,7 @@ if (document.getElementById('appContainer')) {
 
     logoutButton.addEventListener('click', () => {
         cleanupAllVideoPlayers();
-        localStorage.clear();
-        window.location.href = 'index.html';
+        authManager.logout();
     });
     
     // Add cleanup on page unload
