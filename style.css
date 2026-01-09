@@ -3045,13 +3045,12 @@ body.theme-dark .announcement-error {
     }
 }
 
-/* ✅ NEW: Prevent video download on long-press (Android) */
+/* ✅ SAFE UX: Prevent video download on long-press (Android) */
 .premium-player-modal video {
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
-    /* ✅ SAFE UX: Let video handle its own touch events */
-    touch-action: none; /* Only for video element, handled by player */
+    /* ✅ SAFE: Let video handle its own touch events without blocking scroll */
 }
 
 /* ✅ NEW: Force hardware acceleration for smooth playback */
@@ -3480,6 +3479,8 @@ body.theme-dark .announcement-error {
 
 /* ============================================================================
    SAFE UX: Body scroll lock (only when player is active)
+   This is intentional - prevents background scroll while video modal is open.
+   Removed on modal close via classList.remove('player-active')
    ============================================================================ */
 body.player-active {
     overflow: hidden;
