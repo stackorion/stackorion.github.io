@@ -854,7 +854,6 @@ function loadUserData() {
         appState.subscriptions = JSON.parse(localStorage.getItem('user_subscriptions') || '[]');
         return true;
     } catch (error) {
-        // Silently handle error without logging to console
         appState.userInfo = null;
         appState.subscriptions = [];
         return false;
@@ -1142,11 +1141,137 @@ if (document.getElementById('loginForm')) {
     }
 }
 
+// ============================================================================
+// ROUTER CLASS - Handles navigation and view rendering
+// ============================================================================
+
+class Router {
+    constructor(appState, authManager) {
+        this.appState = appState;
+        this.authManager = authManager;
+        this.mainContent = document.getElementById('mainContent');
+        this.searchContainer = document.getElementById('searchContainer');
+        this.searchInput = document.getElementById('searchInput');
+    }
+    
+    async navigate() {
+        // Clean up any existing video players before loading new content
+        cleanupAllVideoPlayers();
+        
+        // Load user data at the start of navigation
+        loadUserData();
+        
+        // Handle app loader visibility
+        const appLoader = document.getElementById('app-loader');
+        const appContainer = document.getElementById('appContainer');
+        
+        const hideAppLoader = () => {
+            if (appLoader && appContainer) {
+                appLoader.style.opacity = '0';
+                appContainer.style.display = 'block';
+                setTimeout(() => {
+                    appLoader.remove();
+                }, 400);
+            }
+        };
+        
+        // Start session refresh manager
+        if (!sessionRefreshManager.refreshTimer) {
+            sessionRefreshManager.start();
+        }
+        
+        // Load and display announcements
+        const announcementsData = JSON.parse(localStorage.getItem('global_announcements') || '[]');
+        announcementSlider.showAnnouncements(announcementsData);
+        
+        // Render renewal banner and header actions
+        renderRenewalBanner();
+        await renderHeaderActions();
+
+        if (!this.authManager.isValid()) {
+            window.location.href = 'login.html';
+            return;
+        }
+
+        try {
+            const urlParams = new URLSearchParams(window.location.search);
+            const view = urlParams.get('view');
+            const platformId = urlParams.get('platform_id');
+            const tierId = urlParams.get('tier_id');
+            const slug = urlParams.get('slug');
+
+            // Handle gallery view
+            if (view === 'gallery' && slug) {
+                await fetchAndDisplayGallery(slug);
+                renderSubscriptionStatus();
+                hideAppLoader();
+                return;
+            }
+
+            if (view === 'tiers' || view === 'content') {
+                await ensurePlatformsData();
+            }
+
+            if (view === 'tiers' && platformId) {
+                await ensureTiersData(platformId);
+            }
+
+            if (view === 'content') {
+                await ensureTiersData(platformId);
+            }
+
+            const platformData = this.appState.platforms.find(p => p.id.toString() === platformId);
+            const platformName = platformData?.name;
+            const tierData = this.appState.tiers[platformId]?.find(t => t.id.toString() === tierId);
+            const tierName = tierData?.name;
+
+            if (view === 'content' && platformId && tierId) {
+                this.appState.searchScope = 'content';
+                fetchAndDisplayContent(platformId, tierId, tierName, platformName);
+            } else if (view === 'tiers' && platformId) {
+                this.appState.searchScope = 'tiers';
+                renderTierSkeleton(platformName);
+                fetchAndDisplayTiers(platformId, platformName);
+            } else {
+                this.appState.searchScope = 'platforms';
+                renderPlatformSkeleton();
+                const platformsData = await ensurePlatformsData();
+                renderPlatforms(platformsData);
+            }
+
+            if (this.searchInput) {
+                this.searchInput.value = '';
+                this.appState.filterState.query = '';
+            }
+
+            renderSubscriptionStatus();
+            hideAppLoader();
+        } catch (error) {
+            displayError("An error occurred while loading the page. Please try again.");
+            hideAppLoader();
+        }
+    }
+    
+    handlePopState() {
+        this.navigate();
+    }
+}
+
+// Keep the old router function as a wrapper (for backward compatibility)
+async function router() {
+    if (window.appRouter) {
+        await window.appRouter.navigate();
+    }
+}
+
 // --- Logic for links.html (The main application view) ---
 if (document.getElementById('appContainer')) {
     // ✅ PHASE 1: Initialize modular architecture
     appState = new AppState();
     authManager = new AuthManager();
+    
+    // ✅ Initialize Router
+    window.appRouter = new Router(appState, authManager);
 
     const mainContent = document.getElementById('mainContent');
     const logoutButton = document.getElementById('logoutButton');
@@ -1863,7 +1988,7 @@ if (document.getElementById('appContainer')) {
             showPlatformModal(platformData);
         } else {
             history.pushState({view: 'tiers', platformId}, '', `?view=tiers&platform_id=${platformId}`);
-            router();
+            window.appRouter.navigate();
         }
     }
 
@@ -1874,7 +1999,7 @@ if (document.getElementById('appContainer')) {
         const tierId = card.dataset.tierId;
 
         history.pushState({view: 'content', platformId, tierId}, '', `?view=content&platform_id=${platformId}&tier_id=${tierId}`);
-        router();
+        window.appRouter.navigate();
     }
 
     function addBackButtonListener(backTo, platformId = null) {
@@ -1883,10 +2008,10 @@ if (document.getElementById('appContainer')) {
         backButton.onclick = () => {
             if (backTo === 'tiers') {
                 history.pushState({view: 'tiers', platformId}, '', `?view=tiers&platform_id=${platformId}`);
-                router();
+                window.appRouter.navigate();
             } else if (backTo === 'platforms') {
                 history.pushState({view: 'platforms'}, '', `links.html`);
-                router();
+                window.appRouter.navigate();
             } else if (backTo === 'history') {
                 // Use history.back() for gallery view
                 history.back();
@@ -2316,7 +2441,7 @@ if (document.getElementById('appContainer')) {
                         <!-- Skip Forward 10s -->
                         <button class="premium-control-btn premium-skip-forward premium-skip-btn" aria-label="Forward 10 seconds">
                             <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 5V2.21c0-.45.54-.67.85-.35l3.8 3.79c.2.2.2.51 0 .71l-3.79 3.79c-.32.31-.86.09-.86-.36V7c-3.73 0-6.68 3.42-5.86 7.29.47 2.27 2.31 4.1 4.57 4.57 3.57.75 6.75-1.7 7.23-5.01.07-.48.49-.85.98-.85.6 0 1.08.53-1 1.13-.62 4.39-4.8 7.64-9.53 6.72-3.12-.61-5.63-3.12-6.24-6.24C3.16 9.48 7.06 5 12 5z"/>
+                                <path d="M12 5V2.21c0-.45-.54-.67-.85-.35l-3.8 3.79c-.2.2-.2.51 0 .71l-3.79 3.79c-.32.31-.86.09-.86-.36V7c-3.73 0-6.68 3.42-5.86 7.29.47 2.27 2.31 4.1 4.57 4.57 3.57.75 6.75-1.7 7.23-5.01.07-.48.49-.85.98-.85.6 0 1.08.53-1 1.13-.62 4.39-4.8 7.64-9.53 6.72-3.12-.61-5.63-3.12-6.24-6.24C3.16 9.48 7.06 5 12 5z"/>
                                 <text x="12" y="16" text-anchor="middle" font-size="8" font-weight="bold" fill="currentColor">10</text>
                             </svg>
                         </button>
@@ -3694,8 +3819,7 @@ if (document.getElementById('appContainer')) {
                 '.premium-player-header',
                 '.premium-progress-bar',
                 '.premium-control-btn',
-                '.premium-settings-menu',
-                '.premium-volume-slider'
+                '.premium-settings-menu'
             ];
             
             if (controlElements.some(selector => e.target.closest(selector))) {
@@ -3883,117 +4007,13 @@ if (document.getElementById('appContainer')) {
         tokenRefreshManager.stopAll();
     }
 
-    // --- Main Application Router ---
-    async function router() {
-        // Clean up any existing video players before loading new content
-        cleanupAllVideoPlayers();
-        
-        // Load user data at the start of router
-        loadUserData();
-        
-        // 🎯 NEW: Hide app loader after first successful load
-        const appLoader = document.getElementById('app-loader');
-        const appContainer = document.getElementById('appContainer');
-        
-        function hideAppLoader() {
-            if (appLoader && appContainer) {
-                appLoader.style.opacity = '0';
-                appContainer.style.display = 'block';
-                setTimeout(() => {
-                    appLoader.remove();
-                }, 400);
-            }
-        }
-        
-        // ⚡ NEW: Start session refresh manager
-        if (!sessionRefreshManager.refreshTimer) {
-            sessionRefreshManager.start();
-        }
-        
-        // NEW (V2): Load and display multiple announcements
-        const announcementsData = JSON.parse(localStorage.getItem('global_announcements') || '[]');
-        announcementSlider.showAnnouncements(announcementsData);
-        
-        // Render renewal banner and header actions
-        renderRenewalBanner();
-        await renderHeaderActions();
-
-        if (!authManager.isValid()) {
-            window.location.href = 'login.html';
-            return;
-        }
-
-        try {
-            const urlParams = new URLSearchParams(window.location.search);
-            const view = urlParams.get('view');
-            const platformId = urlParams.get('platform_id');
-            const tierId = urlParams.get('tier_id');
-            const slug = urlParams.get('slug');
-
-            // Handle gallery view
-            if (view === 'gallery' && slug) {
-                await fetchAndDisplayGallery(slug);
-                renderSubscriptionStatus();
-                
-                // 🎯 NEW: Hide loader after content is ready
-                hideAppLoader();
-                return;
-            }
-
-            if (view === 'tiers' || view === 'content') {
-                await ensurePlatformsData();
-            }
-
-            if (view === 'tiers' && platformId) {
-                await ensureTiersData(platformId);
-            }
-
-            if (view === 'content') {
-                await ensureTiersData(platformId);
-            }
-
-            const platformData = appState.platforms.find(p => p.id.toString() === platformId);
-            const platformName = platformData?.name;
-            const tierData = appState.tiers[platformId]?.find(t => t.id.toString() === tierId);
-            const tierName = tierData?.name;
-
-            if (view === 'content' && platformId && tierId) {
-                appState.searchScope = 'content';
-                fetchAndDisplayContent(platformId, tierId, tierName, platformName);
-            } else if (view === 'tiers' && platformId) {
-                appState.searchScope = 'tiers';
-                renderTierSkeleton(platformName);
-                fetchAndDisplayTiers(platformId, platformName);
-            } else {
-                appState.searchScope = 'platforms';
-                renderPlatformSkeleton();
-                const platformsData = await ensurePlatformsData();
-                renderPlatforms(platformsData);
-            }
-
-            if (searchInput) {
-                searchInput.value = '';
-                appState.filterState.query = '';
-            }
-
-            renderSubscriptionStatus();
-            
-            // 🎯 NEW: Hide loader after content is ready
-            hideAppLoader();
-        } catch (error) {
-            // Silently handle error without logging to console
-            displayError("An error occurred while loading the page. Please try again.");
-            hideAppLoader(); // Hide loader even on error
-        }
-    }
-
     document.addEventListener('DOMContentLoaded', () => {
-        router();
+        window.appRouter.navigate();
         if (searchInput) {
             searchInput.addEventListener('input', debounce(handleSearchInput, 300));
         }
     });
-    window.onpopstate = router;
+    window.onpopstate = () => window.appRouter.handlePopState();
 
     logoutButton.addEventListener('click', () => {
         cleanupAllVideoPlayers();
