@@ -1607,11 +1607,11 @@
 
                 if (view === 'content' && platformId && tierId) {
                     this.appState.searchScope = 'content';
-                    fetchAndDisplayContent(platformId, tierId, tierName, platformName);
+                    await this.fetchAndDisplayContent(platformId, tierId, tierName, platformName);
                 } else if (view === 'tiers' && platformId) {
                     this.appState.searchScope = 'tiers';
                     this.uiManager.renderTierSkeleton(platformName);
-                    fetchAndDisplayTiers(platformId, platformName);
+                    this.fetchAndDisplayTiers(platformId, platformName);
                 } else {
                     this.appState.searchScope = 'platforms';
                     this.uiManager.renderPlatformSkeleton();
@@ -1714,6 +1714,86 @@
             
             history.pushState({view: 'content', platformId, tierId}, '', `?view=content&platform_id=${platformId}&tier_id=${tierId}`);
             this.navigate();
+        }
+
+        // ✅ NEW: Content fetching method
+        async fetchAndDisplayContent(platformId, tierId, tierName, platformName) {
+            this.appState.searchScope = 'content';
+            this.uiManager.renderContentSkeleton(tierName, platformName);
+            
+            try {
+                const token = this.authManager.getToken();
+                const response = await fetch(`${API_BASE_URL}/get_patron_links?tier_id=${tierId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                
+                if (response.ok && data.status === 'success' && data.content) {
+                    this.appState.currentContent = data.content;
+                    this.appState.filterState = { view: 'All', type: 'All', query: '' };
+
+                    // Build content HTML
+                    this.mainContent.innerHTML = `
+                        <div class="view-header">
+                            <button id="backButton" class="back-button">← Back to Tiers</button>
+                            <h2>${tierName} <span class="header-breadcrumb">/ ${platformName}</span></h2>
+                        </div>
+                        <div id="filterContainer" class="filter-container"></div>
+                        <div id="linksContentContainer"></div>`;
+
+                    this.searchContainer.style.display = 'block';
+                    this.searchInput.placeholder = `Search in ${tierName || 'Content'}`;
+                    this.searchInput.value = '';
+                    
+                    // Attach back button listener
+                    const backButton = document.getElementById('backButton');
+                    if (backButton) {
+                        backButton.addEventListener('click', () => {
+                            history.pushState({view: 'tiers', platformId}, '', `?view=tiers&platform_id=${platformId}`);
+                            this.navigate();
+                        });
+                    }
+                    
+                    // Render content
+                    renderContent(data.content, platformId);
+                    
+                    // Setup filters
+                    setupFilters(data.content);
+                    
+                    // Setup copy buttons
+                    setupCopyButtonDelegation();
+                    
+                } else if (response.status === 401 || response.status === 403) {
+                    localStorage.clear();
+                    window.location.href = 'login.html';
+                } else {
+                    this.uiManager.showError(data.message || "Failed to fetch content.");
+                }
+            } catch (error) {
+                console.error("Content fetch error:", error);
+                this.uiManager.showError("An error occurred while fetching content.");
+            }
+        }
+        
+        // ✅ NEW: Tiers display method
+        fetchAndDisplayTiers(platformId, platformName) {
+            this.appState.searchScope = 'tiers';
+            
+            // Ensure tiers are loaded
+            if (!this.appState.tiers[platformId]) {
+                console.error("Tiers not loaded for platform:", platformId);
+                this.uiManager.showError("Unable to load tiers. Please try again.");
+                return;
+            }
+            
+            const tiersData = this.appState.tiers[platformId];
+
+            if (!tiersData || !Array.isArray(tiersData)) {
+                this.uiManager.showError("Unable to load tiers for this platform.");
+                return;
+            }
+
+            this.uiManager.renderTiers(tiersData, platformId, platformName);
         }
     }  // <-- End of Router class
 
@@ -2101,61 +2181,29 @@
             }
         };
 
-        function fetchAndDisplayTiers(platformId, platformName) {
-            appState.searchScope = 'tiers';
-            const tiersData = appState.tiers[platformId];
-
-            // ✅ FIX: Ensure tiers are loaded before accessing
-            if (!tiersData || !Array.isArray(tiersData)) {
-                console.error("Tiers not loaded for platform:", platformId);
-                window.appRouter.uiManager.showError("Unable to load tiers. Please try again.");
-                return;
-            }
-
-            window.appRouter.uiManager.renderTiers(tiersData, platformId, platformName);
-        }
-
         // --- Content View Logic ---
-        async function fetchAndDisplayContent(platformId, tierId, tierName, platformName) {
-            appState.searchScope = 'content';
-            window.appRouter.uiManager.renderContentSkeleton(tierName, platformName);
+        async function fetchAndDisplayGallery(slug) {
+            window.appRouter.uiManager.renderGallerySkeleton();
             try {
                 const token = localStorage.getItem('lustroom_jwt');
-                const response = await fetch(`${API_BASE_URL}/get_patron_links?tier_id=${tierId}`, {
+                const response = await fetch(`${API_BASE_URL}/gallery/${slug}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await response.json();
                 
-                if (response.ok && data.status === 'success' && data.content) {
-                    appState.currentContent = data.content;
-                    appState.filterState = { view: 'All', type: 'All', query: '' };
-
-                    mainContent.innerHTML = `
-                        <div class="view-header">
-                            <button id="backButton" class="back-button">← Back to Tiers</button>
-                            <h2>${tierName} <span class="header-breadcrumb">/ ${platformName}</span></h2>
-                        </div>
-                        <div id="filterContainer" class="filter-container"></div>
-                        <div id="linksContentContainer"></div>`;
-
-                    const linksContentContainer = document.getElementById('linksContentContainer');
-                    searchContainer.style.display = 'block';
-                    searchInput.placeholder = `Search in ${tierName || 'Content'}`;
-                    searchInput.value = '';
-                    searchInput.addEventListener('input', debounce(handleSearchInput, 300));
-                    addBackButtonListener('tiers', platformId);
-                    renderContent(data.content, platformId);
-                    setupFilters(data.content);
-                    setupCopyButtonDelegation();
+                // Removed console.log that was exposing backend details
+                
+                if (response.ok && data.status === 'success' && data.gallery) {
+                    renderGallery(data.gallery);
                 } else if (response.status === 401 || response.status === 403) {
                     localStorage.clear();
                     window.location.href = 'login.html';
                 } else {
-                    window.appRouter.uiManager.showError(data.message || "Failed to fetch content.");
+                    window.appRouter.uiManager.showError(data.message || "Failed to fetch gallery.");
                 }
             } catch (error) {
                 // Silently handle error without logging to console
-                window.appRouter.uiManager.showError("An error occurred while fetching content.");
+                window.appRouter.uiManager.showError("An error occurred while fetching the gallery.");
             }
         }
 
@@ -2468,31 +2516,6 @@
         }
 
         // --- Gallery Functions ---
-        async function fetchAndDisplayGallery(slug) {
-            window.appRouter.uiManager.renderGallerySkeleton();
-            try {
-                const token = localStorage.getItem('lustroom_jwt');
-                const response = await fetch(`${API_BASE_URL}/gallery/${slug}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await response.json();
-                
-                // Removed console.log that was exposing backend details
-                
-                if (response.ok && data.status === 'success' && data.gallery) {
-                    renderGallery(data.gallery);
-                } else if (response.status === 401 || response.status === 403) {
-                    localStorage.clear();
-                    window.location.href = 'login.html';
-                } else {
-                    window.appRouter.uiManager.showError(data.message || "Failed to fetch gallery.");
-                }
-            } catch (error) {
-                // Silently handle error without logging to console
-                window.appRouter.uiManager.showError("An error occurred while fetching the gallery.");
-            }
-        }
-
         function renderGallery(galleryData) {
             // Removed console.log that was exposing backend details
             
