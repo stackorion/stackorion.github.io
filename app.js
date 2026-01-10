@@ -1,4 +1,3 @@
-
     // Configuration - IMPORTANT: This MUST match your live backend URL
     const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
 
@@ -1590,15 +1589,15 @@
                 }
 
                 if (view === 'tiers' || view === 'content') {
-                    await ensurePlatformsData();
+                    await this.ensurePlatformsData();
                 }
 
                 if (view === 'tiers' && platformId) {
-                    await ensureTiersData(platformId);
+                    await this.ensureTiersData(platformId);
                 }
 
                 if (view === 'content') {
-                    await ensureTiersData(platformId);
+                    await this.ensureTiersData(platformId);
                 }
 
                 const platformData = this.appState.platforms.find(p => p.id.toString() === platformId);
@@ -1616,7 +1615,7 @@
                 } else {
                     this.appState.searchScope = 'platforms';
                     this.uiManager.renderPlatformSkeleton();
-                    const platformsData = await ensurePlatformsData();
+                    const platformsData = await this.ensurePlatformsData();
                     this.uiManager.renderPlatforms(platformsData);
                 }
 
@@ -1639,6 +1638,42 @@
         
         handlePopState() {
             this.navigate();
+        }
+
+        // ✅ NEW: Data fetching methods moved into Router class
+        async ensurePlatformsData() {
+            if (this.appState.platforms.length > 0) {
+                return Promise.resolve(this.appState.platforms);
+            }
+
+            const response = await fetch(`${API_BASE_URL}/platforms`);
+            const data = await response.json();
+
+            if (response.ok && data.status === 'success' && data.platforms) {
+                this.appState.platforms = data.platforms;
+                return this.appState.platforms;
+            } else {
+                throw new Error(data.message || "Failed to fetch platforms.");
+            }
+        }
+
+        async ensureTiersData(platformId) {
+            if (this.appState.tiers[platformId]) {
+                return Promise.resolve(this.appState.tiers[platformId]);
+            }
+
+            const token = this.authManager.getToken();
+            const response = await fetch(`${API_BASE_URL}/platforms/${platformId}/tiers`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+
+            if (response.ok && data.status === 'success' && data.tiers) {
+                this.appState.tiers[platformId] = data.tiers;
+                return this.appState.tiers[platformId];
+            } else {
+                throw new Error(data.message || "Failed to fetch tiers.");
+            }
         }
     }
 
@@ -1941,42 +1976,6 @@
             tiersGrid.parentNode.insertBefore(messageDiv, tiersGrid);
         }
 
-        // --- Async Guard Functions for Data Caching ---
-        async function ensurePlatformsData() {
-            if (appState.platforms.length > 0) {
-                return Promise.resolve(appState.platforms);
-            }
-
-            const response = await fetch(`${API_BASE_URL}/platforms`);
-            const data = await response.json();
-
-            if (response.ok && data.status === 'success' && data.platforms) {
-                appState.platforms = data.platforms;
-                return appState.platforms;
-            } else {
-                throw new Error(data.message || "Failed to fetch platforms.");
-            }
-        }
-
-        async function ensureTiersData(platformId) {
-            if (appState.tiers[platformId]) {
-                return Promise.resolve(appState.tiers[platformId]);
-            }
-
-            const token = localStorage.getItem('lustroom_jwt');
-            const response = await fetch(`${API_BASE_URL}/platforms/${platformId}/tiers`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await response.json();
-
-            if (response.ok && data.status === 'success' && data.tiers) {
-                appState.tiers[platformId] = data.tiers;
-                return appState.tiers[platformId];
-            } else {
-                throw new Error(data.message || "Failed to fetch tiers.");
-            }
-        }
-
         // --- Modal Logic ---
         const platformModal = document.getElementById('platformModal');
 
@@ -2035,8 +2034,10 @@
             appState.searchScope = 'tiers';
             const tiersData = appState.tiers[platformId];
 
+            // ✅ FIX: Ensure tiers are loaded before accessing
             if (!tiersData || !Array.isArray(tiersData)) {
-                window.appRouter.uiManager.showError("Unable to load tiers for this platform.");
+                console.error("Tiers not loaded for platform:", platformId);
+                window.appRouter.uiManager.showError("Unable to load tiers. Please try again.");
                 return;
             }
 
@@ -2379,6 +2380,13 @@
             const card = event.target.closest('.platform-card');
             if (!card) return;
             const platformId = card.dataset.platformId;
+
+            // ✅ FIX: Safety check for platforms data
+            if (!appState.platforms || appState.platforms.length === 0) {
+                console.error("Platforms data not loaded");
+                return;
+            }
+
             const platformData = appState.platforms.find(p => p.id.toString() === platformId);
 
             if (card.classList.contains('locked')) {
