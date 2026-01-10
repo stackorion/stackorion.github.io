@@ -1,4 +1,3 @@
-
     // Configuration - IMPORTANT: This MUST match your live backend URL
     const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
 
@@ -126,7 +125,7 @@
     // --- Video Token Refresh Manager ---
     class VideoTokenRefreshManager {
         constructor() {
-            this.activeVideos = new Map(); // videoId -> { player, tierId, libraryId, timer }
+            this.activeVideos = new Map(); // videoId -> { player, tierId, libraryId, timer, playerType }
             this.refreshInterval = 90000; // 90 seconds (refresh before 120s expiry)
         }
 
@@ -136,23 +135,37 @@
                 clearInterval(this.activeVideos.get(videoId).timer);
             }
 
+            // ✅ FIX: Detect player type
+            const isVideoJS = player && typeof player.el === 'function';
+            const isNativePlayer = player && player.videoElement !== undefined;
+            const playerType = isVideoJS ? 'videojs' : (isNativePlayer ? 'native' : 'unknown');
+
             // Start refresh timer
             const timer = setInterval(() => {
-                this.refreshVideoToken(videoId, tierId, libraryId, player);
+                this.refreshVideoToken(videoId, tierId, libraryId, player, playerType);
             }, this.refreshInterval);
 
-            this.activeVideos.set(videoId, { player, tierId, libraryId, timer });
+            this.activeVideos.set(videoId, { player, tierId, libraryId, timer, playerType });
         }
 
-        async refreshVideoToken(videoId, tierId, libraryId, player) {
+        async refreshVideoToken(videoId, tierId, libraryId, player, playerType) {
             try {
-                // ✅ NEW: Check if player is still valid before refreshing
-                // Note: player might be a video.js instance or a simple object { currentTime: fn } for native player
-                const isVideoJS = player && typeof player.el === 'function';
-                const isDisposed = isVideoJS ? player.isDisposed() : false;
-                const hasElement = isVideoJS ? (player.el() !== null) : (document.getElementById(`nativeVideo_${videoId}`) !== null);
-
-                if (!player || isDisposed || !hasElement) {
+                // ✅ FIX: Validate player based on type
+                if (playerType === 'videojs') {
+                    const isDisposed = player.isDisposed();
+                    const hasElement = player.el() !== null;
+                    if (!player || isDisposed || !hasElement) {
+                        this.stopRefresh(videoId);
+                        return;
+                    }
+                } else if (playerType === 'native') {
+                    const hasVideoElement = player.videoElement && document.body.contains(player.videoElement);
+                    if (!player || !hasVideoElement) {
+                        this.stopRefresh(videoId);
+                        return;
+                    }
+                } else {
+                    // Unknown player type - stop refresh
                     this.stopRefresh(videoId);
                     return;
                 }
@@ -178,17 +191,15 @@
                 const data = await response.json();
 
                 if (response.ok && data.status === 'success') {
-                    // ✅ FIXED: Double-check player validity before updating source
-                    const isDisposed2 = isVideoJS ? player.isDisposed() : false;
-                    const hasElement2 = isVideoJS ? (player.el() !== null) : (document.getElementById(`nativeVideo_${videoId}`) !== null);
+                    // ✅ FIX: Double-check player validity before updating source
+                    if (playerType === 'videojs') {
+                        const isDisposed2 = player.isDisposed();
+                        const hasElement2 = player.el() !== null;
+                        if (!player || isDisposed2 || !hasElement2) {
+                            this.stopRefresh(videoId);
+                            return;
+                        }
 
-                    if (!player || isDisposed2 || !hasElement2) {
-                        this.stopRefresh(videoId);
-                        return;
-                    }
-
-                    // Update player source with new URL
-                    if (isVideoJS) {
                         // Video.js Logic
                         const currentTime = player.currentTime();
                         const wasPaused = player.paused();
@@ -209,47 +220,44 @@
                                 });
                             }
                         });
-                    } else {
-                        // Native Mobile Player Logic
-                        // We need access to the actual video element, which is passed in the 'player' object in NativeMobilePlayer.register
-                        // However, NativeMobilePlayer registers 'this' as the player object context.
-                        // The implementation in NativeMobilePlayer passes an object: { currentTime: () => this.videoElement?.currentTime || 0 }
-                        // This is insufficient for updating src. 
-                        // IMPROVEMENT: NativeMobilePlayer should register 'this' directly, and we handle it here.
-                        
-                        // Let's assume the 'player' argument IS the NativeMobilePlayer instance for this fix
-                        if (player.videoElement) {
-                            const currentTime = player.videoElement.currentTime;
-                            const wasPaused = player.videoElement.paused;
-
-                            if (DeviceDetector.isIOS()) {
-                                player.videoElement.src = data.url;
-                            } else if (player.hlsInstance) {
-                                player.hlsInstance.loadSource(data.url);
-                            } else {
-                                player.videoElement.src = data.url;
-                            }
-
-                            player.videoElement.addEventListener('loadedmetadata', () => {
-                                player.videoElement.currentTime = currentTime;
-                                if (!wasPaused) player.videoElement.play();
-                            }, { once: true });
+                    } else if (playerType === 'native') {
+                        // ✅ FIX: Verify native player is still valid
+                        const hasVideoElement = player.videoElement && document.body.contains(player.videoElement);
+                        if (!player || !hasVideoElement) {
+                            this.stopRefresh(videoId);
+                            return;
                         }
+
+                        const currentTime = player.videoElement.currentTime;
+                        const wasPaused = player.videoElement.paused;
+
+                        if (DeviceDetector.isIOS()) {
+                            player.videoElement.src = data.url;
+                        } else if (player.hlsInstance) {
+                            player.hlsInstance.loadSource(data.url);
+                        } else {
+                            player.videoElement.src = data.url;
+                        }
+
+                        player.videoElement.addEventListener('loadedmetadata', () => {
+                            if (!player.videoElement || !document.body.contains(player.videoElement)) return;
+                            player.videoElement.currentTime = currentTime;
+                            if (!wasPaused) player.videoElement.play().catch(() => {});
+                        }, { once: true });
                     }
 
                 } else if (response.status === 403) {
                     // Subscription expired
                     this.stopRefresh(videoId);
-                    if (isVideoJS) {
+                    if (playerType === 'videojs') {
                         player.pause();
                         player.error({
                             code: 4,
                             message: 'Your subscription has expired. Please renew to continue.'
                         });
-                    } else {
-                        // Native handling
+                    } else if (playerType === 'native') {
                         alert('Your subscription has expired. Please renew to continue.');
-                        if(player.close) player.close();
+                        if (player.close) player.close();
                     }
                 }
             } catch (error) {
@@ -389,16 +397,21 @@
         }
 
         trackEvent(videoId, event, player, tierName) {
-            // ✅ FIX: Get numeric tier ID from cache or use default
-            const numericTierId = this.tierIdCache.get(videoId) || 1;
-            const sessionId = this.getSessionId(videoId);  // ✅ NEW: Get session ID
+            // ✅ FIX: Validate numeric tier ID exists
+            const numericTierId = this.tierIdCache.get(videoId);
+            if (!numericTierId) {
+                console.warn(`Analytics: No tier ID mapping found for video ${videoId}. Skipping event: ${event}`);
+                return; // Don't send analytics without valid tier ID
+            }
+            
+            const sessionId = this.getSessionId(videoId);
             
             const eventData = {
                 event: event,
                 video_id: videoId,
-                session_id: sessionId,  // ✅ NEW: Include session ID
-                tier_id: numericTierId,  // ✅ NOW: Numeric tier ID
-                current_time: player ? (player.currentTime ? player.currentTime() : (player.currentTime ? player.currentTime() : 0)) : 0, // Handle both VideoJS and Native object
+                session_id: sessionId,
+                tier_id: numericTierId,
+                current_time: player ? (player.currentTime ? player.currentTime() : (player.currentTime ? player.currentTime() : 0)) : 0,
                 duration: player ? (player.duration ? player.duration() : 0) : 0,
                 quality: player ? this.getCurrentQuality(player) : 'auto'
             };
@@ -532,6 +545,14 @@
             // Setup video
             this.setupVideo();
             
+            // ✅ FIX: Register in active players map for proper cleanup
+            const playerId = `nativePlayer_${this.videoId}`;
+            activePlayers.set(playerId, { 
+                player: this, 
+                modal: this.modal,
+                playerType: 'native'
+            });
+            
             // Register token refresh
             tokenRefreshManager.registerVideo(
                 this.videoId, 
@@ -604,6 +625,13 @@
                 
                 this.hlsInstance.on(Hls.Events.ERROR, (event, data) => {
                     if (data.fatal) {
+                        // ✅ FIX: Check for authentication errors
+                        if (data.response && data.response.code === 403) {
+                            this.showError('Your subscription has expired. Please renew to continue.');
+                            setTimeout(() => this.close(), 3000);
+                            return;
+                        }
+
                         switch(data.type) {
                             case Hls.ErrorTypes.NETWORK_ERROR:
                                 this.hlsInstance.startLoad();
@@ -621,6 +649,15 @@
                 // Fallback: Try native playback
                 this.videoElement.src = this.link.url;
             }
+            
+            // ✅ FIX: Add error listener for native playback too
+            this.videoElement.addEventListener('error', (e) => {
+                const error = this.videoElement.error;
+                if (error && error.code === 4) {
+                    // MEDIA_ERR_SRC_NOT_SUPPORTED - could be expired token
+                    this.showError('Unable to load video. Your session may have expired.');
+                }
+            });
             
             // Attach analytics events
             this.attachAnalytics();
@@ -674,10 +711,19 @@
             // Stop token refresh
             tokenRefreshManager.stopRefresh(this.videoId);
             
+            // ✅ FIX: Remove from active players registry
+            const playerId = `nativePlayer_${this.videoId}`;
+            activePlayers.delete(playerId);
+            
             // Cleanup HLS
             if (this.hlsInstance) {
                 this.hlsInstance.destroy();
                 this.hlsInstance = null;
+            }
+            
+            // ✅ FIX: Remove error listeners
+            if (this.videoElement) {
+                this.videoElement.removeEventListener('error', null);
             }
             
             // Remove modal
@@ -2755,7 +2801,7 @@
                             <!-- Skip Forward 10s -->
                             <button class="premium-control-btn premium-skip-forward premium-skip-btn" aria-label="Forward 10 seconds">
                                 <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-                                    <path d="M12 5V2.21c0-.45-.54-.67-.85-.35l-3.8 3.79c-.2.2-.2.51 0 .71l-3.79 3.79c-.32.31-.86.09-.86-.36V7c-3.73 0-6.68 3.42-5.86 7.29.47 2.27 2.31 4.1 4.57 4.57 3.57.75 6.75-1.7 7.23-5.01.07-.48.49-.85.98-.85.6 0 1.08.53-1 1.13-.62 4.39-4.8 7.64-9.53 6.72-3.12-.61-5.63-3.12-6.24-6.24C3.16 9.48 7.06 5 12 5z"/>
+                                    <path d="M12 5V2.21c0-.45-.54-.67-.85-.35l-3.8 3.79c-.2.2-.2.51 0 .71l-3.79 3.79c-.32.31-.86.09-.86-.36V7c-3.73 0-6.68 3.42-5.86 7.29.47 2.27 2.31 4.1 4.57 4.57 3.57.75 6.75-1.7 7.23-5.01.07-.48-.49-.85-.98-.85.6 0 1.08.53-1 1.13-.62 4.39-4.8 7.64-9.53 6.72-3.12-.61-5.63-3.12-6.24-6.24C3.16 9.48 7.06 5 12 5z"/>
                                     <text x="12" y="16" text-anchor="middle" font-size="8" font-weight="bold" fill="currentColor">10</text>
                                 </svg>
                             </button>
@@ -2844,40 +2890,10 @@
             
             const playerId = `premiumPlayer_${videoId}`;
             
-            // ✅ FIXED: Always request fullscreen on modal open
-            const requestFullscreen = () => {
-                const elem = modal;
-                
-                // Try standard fullscreen API first
-                if (elem.requestFullscreen) {
-                    elem.requestFullscreen().catch(() => {
-                        // Fullscreen failed - continue anyway
-                    });
-                } else if (elem.webkitRequestFullscreen) {
-                    elem.webkitRequestFullscreen();
-                } else if (elem.mozRequestFullScreen) {
-                    elem.mozRequestFullScreen();
-                } else if (elem.msRequestFullscreen) {
-                    elem.msRequestFullscreen();
-                }
-                
-                // For iOS, also try video element fullscreen as fallback
-                if (isIOS) {
-                    setTimeout(() => {
-                        const videoElement = player.el().querySelector('video');
-                        if (videoElement && videoElement.webkitEnterFullscreen && !document.fullscreenElement) {
-                            try {
-                                videoElement.webkitEnterFullscreen();
-                            } catch (err) {
-                                // Fullscreen not supported or blocked
-                            }
-                        }
-                    }, 100);
-                }
-            };
-            
-            setTimeout(requestFullscreen, 50);
-            
+            // ✅ FIX 6: Removed Auto-Fullscreen Request
+            // ✅ UX IMPROVEMENT: Removed auto-fullscreen request to comply with browser policies
+            // Users can manually enter fullscreen using the F key or fullscreen button
+
             // ✅ FIX 2: Initialize Video.js with mobile optimizations (Issue 2)
             const player = videojs(playerId, {
                 controls: false,
