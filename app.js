@@ -1675,7 +1675,47 @@
                 throw new Error(data.message || "Failed to fetch tiers.");
             }
         }
-    }
+        
+        // ✅ NEW: Click handler methods
+        handlePlatformClick(event) {
+            const card = event.target.closest('.platform-card');
+            if (!card) return;
+            
+            // Safety check
+            if (!this.appState.platforms || this.appState.platforms.length === 0) {
+                console.error("Platforms data not loaded");
+                return;
+            }
+
+            const platformId = card.dataset.platformId;
+            const platformData = this.appState.platforms.find(p => p.id.toString() === platformId);
+
+            if (card.classList.contains('locked')) {
+                // Show modal for locked platforms
+                showPlatformModal(platformData);
+            } else {
+                // Navigate to tiers
+                history.pushState({view: 'tiers', platformId}, '', `?view=tiers&platform_id=${platformId}`);
+                this.navigate();
+            }
+        }
+
+        handleTierClick(event, platformId) {
+            const card = event.target.closest('.tier-card');
+            if (!card) return;
+            
+            const tierId = card.dataset.tierId;
+            
+            // Check if tier is locked
+            if (card.classList.contains('locked')) {
+                // Don't navigate if locked
+                return;
+            }
+            
+            history.pushState({view: 'content', platformId, tierId}, '', `?view=content&platform_id=${platformId}&tier_id=${tierId}`);
+            this.navigate();
+        }
+    }  // <-- End of Router class
 
     // ============================================================================
     // UI MANAGER CLASS - Handles all rendering logic
@@ -1766,6 +1806,16 @@
 
             this.mainContent.innerHTML = welcomeHTML + '<h2>Platforms</h2>' + platformsHTML;
             this.searchContainer.style.display = 'none';
+            
+            // ✅ NEW: Attach click listener to platforms grid
+            const platformsGrid = this.mainContent.querySelector('.platforms-grid');
+            if (platformsGrid) {
+                platformsGrid.addEventListener('click', (e) => {
+                    if (window.appRouter) {
+                        window.appRouter.handlePlatformClick(e);
+                    }
+                });
+            }
         }
         
         renderTiers(tiers, platformId, platformName) {
@@ -1790,6 +1840,27 @@
             tiersHTML += '</div>';
             this.mainContent.innerHTML = tiersHTML;
             this.searchContainer.style.display = 'block';
+            
+            // ✅ NEW: Attach click listener to tiers grid
+            const tiersGrid = this.mainContent.querySelector('.tiers-grid');
+            if (tiersGrid) {
+                tiersGrid.addEventListener('click', (e) => {
+                    if (window.appRouter) {
+                        window.appRouter.handleTierClick(e, platformId);
+                    }
+                });
+            }
+            
+            // ✅ NEW: Attach back button listener
+            const backButton = document.getElementById('backButton');
+            if (backButton) {
+                backButton.addEventListener('click', () => {
+                    history.pushState({view: 'platforms'}, '', 'links.html');
+                    if (window.appRouter) {
+                        window.appRouter.navigate();
+                    }
+                });
+            }
         }
     }
 
@@ -2375,37 +2446,9 @@
             }
         }
 
-        // --- Navigation Handlers ---
-        function handlePlatformClick(event) {
-            const card = event.target.closest('.platform-card');
-            if (!card) return;
-            const platformId = card.dataset.platformId;
-
-            // ✅ FIX: Safety check for platforms data
-            if (!appState.platforms || appState.platforms.length === 0) {
-                console.error("Platforms data not loaded");
-                return;
-            }
-
-            const platformData = appState.platforms.find(p => p.id.toString() === platformId);
-
-            if (card.classList.contains('locked')) {
-                showPlatformModal(platformData);
-            } else {
-                history.pushState({view: 'tiers', platformId}, '', `?view=tiers&platform_id=${platformId}`);
-                window.appRouter.navigate();
-            }
-        }
-
-        function handleTierClick(event, platformId) {
-            const card = event.target.closest('.tier-card');
-            if (!card) return;
-            
-            const tierId = card.dataset.tierId;
-
-            history.pushState({view: 'content', platformId, tierId}, '', `?view=content&platform_id=${platformId}&tier_id=${tierId}`);
-            window.appRouter.navigate();
-        }
+        // ✅ DELETED: Old global click handlers (moved to Router class)
+        // function handlePlatformClick(...) { ... }
+        // function handleTierClick(...) { ... }
 
         function addBackButtonListener(backTo, platformId = null) {
             const backButton = document.getElementById('backButton');
