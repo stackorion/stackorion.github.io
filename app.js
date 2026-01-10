@@ -1582,7 +1582,7 @@
 
                 // Handle gallery view
                 if (view === 'gallery' && slug) {
-                    await fetchAndDisplayGallery(slug);
+                    await this.fetchAndDisplayGallery(slug);
                     renderSubscriptionStatus();
                     hideAppLoader();
                     return;
@@ -1795,6 +1795,31 @@
 
             this.uiManager.renderTiers(tiersData, platformId, platformName);
         }
+
+        // ✅ NEW: Gallery fetching method
+        async fetchAndDisplayGallery(slug) {
+            this.uiManager.renderGallerySkeleton();
+            
+            try {
+                const token = this.authManager.getToken();
+                const response = await fetch(`${API_BASE_URL}/gallery/${slug}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                
+                if (response.ok && data.status === 'success' && data.gallery) {
+                    this.uiManager.renderGallery(data.gallery);
+                } else if (response.status === 401 || response.status === 403) {
+                    localStorage.clear();
+                    window.location.href = 'login.html';
+                } else {
+                    this.uiManager.showError(data.message || "Failed to fetch gallery.");
+                }
+            } catch (error) {
+                console.error("Gallery fetch error:", error);
+                this.uiManager.showError("An error occurred while fetching the gallery.");
+            }
+        }
     }  // <-- End of Router class
 
     // ============================================================================
@@ -1940,6 +1965,248 @@
                         window.appRouter.navigate();
                     }
                 });
+            }
+        }
+
+        renderGallery(galleryData) {
+            this.mainContent.innerHTML = `
+                <div class="view-header">
+                    <button id="backButton" class="back-button">← Back</button>
+                    <h2>${galleryData.title} <span class="header-breadcrumb">/ ${galleryData.platform_name}</span></h2>
+                </div>
+                <div class="gallery-container">
+                    <div class="gallery-info" style="margin-bottom: 20px;">
+                        <h3>${galleryData.title}</h3>
+                        <p>${galleryData.description || ''}</p>
+                    </div>
+                    <div class="gallery-grid pswp-gallery" id="galleryGrid"></div>
+                </div>
+            `;
+            
+            const galleryGrid = document.getElementById('galleryGrid');
+            
+            galleryData.images.forEach((image, index) => {
+                const item = document.createElement('div');
+                item.className = 'gallery-item';
+                
+                // Create a temporary image to get actual dimensions
+                const tempImg = new Image();
+                const linkElement = document.createElement('a');
+                linkElement.href = image.url;
+                linkElement.setAttribute('data-pswp-width', '1920');
+                linkElement.setAttribute('data-pswp-height', '1080');
+                linkElement.target = '_blank';
+                
+                // Load actual dimensions when image loads
+                tempImg.onload = function() {
+                    linkElement.setAttribute('data-pswp-width', this.naturalWidth.toString());
+                    linkElement.setAttribute('data-pswp-height', this.naturalHeight.toString());
+                };
+                tempImg.src = image.url;
+                
+                const img = document.createElement('img');
+                img.src = image.url;
+                img.alt = image.title || `Image ${index + 1}`;
+                img.loading = 'lazy';
+                
+                const caption = document.createElement('div');
+                caption.className = 'gallery-caption';
+                caption.style.display = 'none';
+                caption.textContent = image.title || `Image ${index + 1}`;
+                
+                linkElement.appendChild(img);
+                linkElement.appendChild(caption);
+                item.appendChild(linkElement);
+                galleryGrid.appendChild(item);
+            });
+            
+            // Initialize PhotoSwipe after DOM is ready
+            setTimeout(() => {
+                this.initPhotoSwipe(galleryData);
+            }, 500);
+            
+            // Add back button listener
+            const backButton = document.getElementById('backButton');
+            if (backButton) {
+                backButton.addEventListener('click', () => {
+                    history.back();
+                });
+            }
+        }
+
+        initPhotoSwipe(galleryData) {
+            // Check if PhotoSwipe is loaded
+            if (typeof PhotoSwipeLightbox === 'undefined') {
+                console.error('PhotoSwipe library not loaded');
+                return;
+            }
+            
+            try {
+                const lightbox = new PhotoSwipeLightbox({
+                    gallery: '#galleryGrid',
+                    children: 'a',
+                    pswpModule: PhotoSwipe,
+                    bgOpacity: 1,
+                    spacing: 0.05,
+                    allowPanToNext: true,
+                    loop: true,
+                    pinchToClose: true,
+                    closeOnVerticalDrag: true,
+                    showHideAnimationType: 'fade',
+                    zoomAnimationDuration: 300,
+                    initialZoomLevel: 'fit',
+                    secondaryZoomLevel: 1.5,
+                    maxZoomLevel: 3,
+                    paddingFn: (viewportSize) => {
+                        return { top: 20, bottom: 20, left: 20, right: 20 };
+                    },
+                    arrowKeys: true,
+                    preload: [1, 2]
+                });
+                
+                // Track which images are viewed
+                let viewedImageIndexes = new Set();
+                let gallerySlugForTracking = null;
+                
+                // Get slug from URL
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.get('view') === 'gallery') {
+                    gallerySlugForTracking = urlParams.get('slug');
+                }
+
+                // Track image views
+                lightbox.on('change', () => {
+                    if (lightbox.pswp) {
+                        const currentIndex = lightbox.pswp.currIndex;
+                        viewedImageIndexes.add(currentIndex);
+                    }
+                });
+
+                // Send tracking data when gallery is closed
+                lightbox.on('close', () => {
+                    const totalUniqueViews = viewedImageIndexes.size;
+
+                    if (totalUniqueViews > 0 && gallerySlugForTracking) {
+                        const token = localStorage.getItem('lustroom_jwt');
+                        if (token) {
+                            const payload = {
+                                gallery_slug: gallerySlugForTracking,
+                                images_viewed_count: totalUniqueViews
+                            };
+
+                            fetch(`${API_BASE_URL}/gallery/log_view`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${token}`
+                                },
+                                body: JSON.stringify(payload)
+                            }).catch(() => {
+                                // Silently handle errors
+                            });
+                        }
+                    }
+                    
+                    viewedImageIndexes.clear();
+                    gallerySlugForTracking = null;
+                });
+                
+                // Auto-hide UI on mouse idle
+                let uiHideTimeout;
+                let isUIVisible = true;
+                
+                lightbox.on('afterInit', function() {
+                    const pswpElement = lightbox.pswp.element;
+                    
+                    const showUI = () => {
+                        isUIVisible = true;
+                        pswpElement.classList.add('pswp--ui-visible');
+                        pswpElement.classList.remove('pswp--ui-hidden');
+                        
+                        if (uiHideTimeout) {
+                            clearTimeout(uiHideTimeout);
+                        }
+                        
+                        uiHideTimeout = setTimeout(() => {
+                            isUIVisible = false;
+                            pswpElement.classList.remove('pswp--ui-visible');
+                            pswpElement.classList.add('pswp--ui-hidden');
+                        }, 3000);
+                    };
+                    
+                    pswpElement.addEventListener('mousemove', showUI);
+                    pswpElement.addEventListener('click', showUI);
+                    showUI();
+                });
+                
+                lightbox.on('uiRegister', function() {
+                    // Fullscreen button
+                    lightbox.pswp.ui.registerElement({
+                        name: 'fullscreen-button',
+                        order: 9,
+                        isButton: true,
+                        html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
+                        onClick: (event, el) => {
+                            if (!document.fullscreenElement) {
+                                lightbox.pswp.element.requestFullscreen();
+                            } else {
+                                document.exitFullscreen();
+                            }
+                        }
+                    });
+                    
+                    // Download button
+                    lightbox.pswp.ui.registerElement({
+                        name: 'download-button',
+                        order: 8,
+                        isButton: true,
+                        html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>',
+                        onClick: (event, el) => {
+                            const currentSlide = lightbox.pswp.currSlide;
+                            const link = document.createElement('a');
+                            link.href = currentSlide.data.src;
+                            link.download = `image-${lightbox.pswp.currIndex + 1}.jpg`;
+                            link.click();
+                        }
+                    });
+                });
+                
+                // Slideshow functionality
+                let slideshowInterval = null;
+                let isPlaying = false;
+                
+                lightbox.on('uiRegister', function() {
+                    lightbox.pswp.ui.registerElement({
+                        name: 'play-button',
+                        order: 7,
+                        isButton: true,
+                        html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>',
+                        onClick: (event, el) => {
+                            if (!isPlaying) {
+                                isPlaying = true;
+                                el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
+                                slideshowInterval = setInterval(() => {
+                                    lightbox.pswp.next();
+                                }, 3000);
+                            } else {
+                                isPlaying = false;
+                                el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
+                                clearInterval(slideshowInterval);
+                            }
+                        }
+                    });
+                });
+                
+                lightbox.on('close', function() {
+                    if (slideshowInterval) {
+                        clearInterval(slideshowInterval);
+                        isPlaying = false;
+                    }
+                });
+                
+                lightbox.init();
+            } catch (error) {
+                console.error('PhotoSwipe initialization error:', error);
             }
         }
     }
@@ -2181,32 +2448,6 @@
             }
         };
 
-        // --- Content View Logic ---
-        async function fetchAndDisplayGallery(slug) {
-            window.appRouter.uiManager.renderGallerySkeleton();
-            try {
-                const token = localStorage.getItem('lustroom_jwt');
-                const response = await fetch(`${API_BASE_URL}/gallery/${slug}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await response.json();
-                
-                // Removed console.log that was exposing backend details
-                
-                if (response.ok && data.status === 'success' && data.gallery) {
-                    renderGallery(data.gallery);
-                } else if (response.status === 401 || response.status === 403) {
-                    localStorage.clear();
-                    window.location.href = 'login.html';
-                } else {
-                    window.appRouter.uiManager.showError(data.message || "Failed to fetch gallery.");
-                }
-            } catch (error) {
-                // Silently handle error without logging to console
-                window.appRouter.uiManager.showError("An error occurred while fetching the gallery.");
-            }
-        }
-
         function renderContent(contentData, platformId) {
             const linksContentContainer = document.getElementById('linksContentContainer');
             if (!linksContentContainer) return;
@@ -2223,14 +2464,12 @@
                 tierGroup.className = 'tier-group';
                 links.forEach(link => {
                     const isRecentContent = isRecent(link.added_at);
-                    // Removed console.log that was exposing backend details
 
                     const card = document.createElement('div');
                     card.className = 'link-card';
                     if (link.locked) card.classList.add('locked');
                     if (isRecentContent) {
                         card.classList.add('is-new');
-                        // Removed console.log that was exposing backend details
                     }
                     card.dataset.contentType = link.content_type || 'Video';
                     card.dataset.recentStatus = isRecentContent ? 'true' : 'false';
@@ -2264,7 +2503,6 @@
                             newBadge.className = 'new-badge';
                             newBadge.textContent = `New! (${getDaysAgo(link.added_at)})`;
                             thumbnailContainer.appendChild(newBadge);
-                            // Removed console.log that was exposing backend details
                         }
                         const thumbnailImage = document.createElement('img');
                         thumbnailImage.src = link.thumbnail_url;
@@ -2306,7 +2544,6 @@
                         newBadgeText.style.cssText = "background: #ff3b30; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; margin-left: 8px;";
                         newBadgeText.textContent = `New! (${getDaysAgo(link.added_at)})`;
                         title.appendChild(newBadgeText);
-                        // Removed console.log that was exposing backend details
                     }
                     cardContent.appendChild(title);
 
@@ -2467,14 +2704,11 @@
 
                 if (view === 'Recent' && isRecentContent) {
                     card.classList.add('recent-highlight');
-                    const badge = card.querySelector('.new-badge') || card.querySelector('.new-badge-text');
-                    // Removed console.log that was exposing backend details
                 } else {
                     card.classList.remove('recent-highlight');
                 }
 
                 if (shouldShow) hasVisibleContent = true;
-                // Removed console.log that was exposing backend details
             });
 
             document.querySelectorAll('.tier-group').forEach(group => {
@@ -2494,10 +2728,6 @@
             }
         }
 
-        // ✅ DELETED: Old global click handlers (moved to Router class)
-        // function handlePlatformClick(...) { ... }
-        // function handleTierClick(...) { ... }
-
         function addBackButtonListener(backTo, platformId = null) {
             const backButton = document.getElementById('backButton');
             if (!backButton) return;
@@ -2513,269 +2743,6 @@
                     history.back();
                 }
             };
-        }
-
-        // --- Gallery Functions ---
-        function renderGallery(galleryData) {
-            // Removed console.log that was exposing backend details
-            
-            mainContent.innerHTML = `
-                <div class="view-header">
-                    <button id="backButton" class="back-button">← Back</button>
-                    <h2>${galleryData.title} <span class="header-breadcrumb">/ ${galleryData.platform_name}</span></h2>
-                </div>
-                <div class="gallery-container">
-                    <div class="gallery-info" style="margin-bottom: 20px;">
-                        <h3>${galleryData.title}</h3>
-                        <p>${galleryData.description || ''}</p>
-                    </div>
-                    <div class="gallery-grid pswp-gallery" id="galleryGrid"></div>
-                </div>
-            `;
-            
-            const galleryGrid = document.getElementById('galleryGrid');
-            
-            // Removed console.log that was exposing backend details
-            
-            galleryData.images.forEach((image, index) => {
-                // Removed console.log that was exposing backend details
-                
-                const item = document.createElement('div');
-                item.className = 'gallery-item';
-                
-                // Create a temporary image to get actual dimensions
-                const tempImg = new Image();
-                const linkElement = document.createElement('a');
-                linkElement.href = image.url;
-                linkElement.setAttribute('data-pswp-width', '1920');
-                linkElement.setAttribute('data-pswp-height', '1080');
-                linkElement.target = '_blank';
-                
-                // Load actual dimensions when image loads
-                tempImg.onload = function() {
-                    linkElement.setAttribute('data-pswp-width', this.naturalWidth.toString());
-                    linkElement.setAttribute('data-pswp-height', this.naturalHeight.toString());
-                    // Removed console.log that was exposing backend details
-                };
-                tempImg.src = image.url;
-                
-                const img = document.createElement('img');
-                img.src = image.url;
-                img.alt = image.title || `Image ${index + 1}`;
-                img.loading = 'lazy';
-                
-                const caption = document.createElement('div');
-                caption.className = 'gallery-caption';
-                caption.style.display = 'none'; // Hidden by default as per many pswp implementations
-                caption.textContent = image.title || `Image ${index + 1}`;
-                
-                linkElement.appendChild(img);
-                linkElement.appendChild(caption);
-                item.appendChild(linkElement);
-                galleryGrid.appendChild(item);
-            });
-            
-            // Initialize PhotoSwipe after DOM is ready and images have dimensions
-            setTimeout(() => {
-                initPhotoSwipe();
-            }, 500);
-            
-            // Add back button listener using history.back()
-            addBackButtonListener('history');
-        }
-
-        function initPhotoSwipe() {
-            // Removed console.log that was exposing backend details
-            
-            // Check if PhotoSwipe is loaded
-            if (typeof PhotoSwipeLightbox === 'undefined') {
-                // Silently handle error without logging to console
-                return;
-            }
-            
-            try {
-                const lightbox = new PhotoSwipeLightbox({
-                    gallery: '#galleryGrid',
-                    children: 'a',
-                    pswpModule: PhotoSwipe,
-                    bgOpacity: 1,
-                    spacing: 0.05,
-                    allowPanToNext: true,
-                    loop: true,
-                    pinchToClose: true,
-                    closeOnVerticalDrag: true,
-                    showHideAnimationType: 'fade',
-                    zoomAnimationDuration: 300,
-                    initialZoomLevel: 'fit',
-                    secondaryZoomLevel: 1.5,
-                    maxZoomLevel: 3,
-                    paddingFn: (viewportSize) => {
-                        return { top: 20, bottom: 20, left: 20, right: 20 };
-                    },
-                    arrowKeys: true,
-                    preload: [1, 2]
-                });
-                
-                // --- 🎯 NEW TRACKING LOGIC ---
-                let viewedImageIndexes = new Set();
-                let gallerySlugForTracking = null;
-                
-                // Get slug from URL
-                const urlParams = new URLSearchParams(window.location.search);
-                if (urlParams.get('view') === 'gallery') {
-                    gallerySlugForTracking = urlParams.get('slug');
-                }
-
-                // Track which images are viewed as user navigates
-                lightbox.on('change', () => {
-                    if (lightbox.pswp) {
-                        const currentIndex = lightbox.pswp.currIndex;
-                        viewedImageIndexes.add(currentIndex);
-                        // Removed console.log that was exposing backend details
-                    }
-                });
-
-                // Send tracking data when gallery is closed
-                lightbox.on('close', () => {
-                    const totalUniqueViews = viewedImageIndexes.size;
-                    // Removed console.log that was exposing backend details
-
-                    if (totalUniqueViews > 0 && gallerySlugForTracking) {
-                        const token = localStorage.getItem('lustroom_jwt');
-                        if (token) {
-                            const payload = {
-                                gallery_slug: gallerySlugForTracking,
-                                images_viewed_count: totalUniqueViews
-                            };
-
-                            // Fire-and-forget tracking request
-                            fetch(`${API_BASE_URL}/gallery/log_view`, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'Authorization': `Bearer ${token}`
-                                },
-                                body: JSON.stringify(payload)
-                            })
-                            .then(response => {
-                                if (response.ok) {
-                                    // Removed console.log that was exposing backend details
-                                } else {
-                                    // Removed console.log that was exposing backend details
-                                }
-                            })
-                            .catch(error => {
-                                // Silently handle error without logging to console
-                            });
-                        }
-                    }
-                    
-                    // Clear the tracking data for next session
-                    viewedImageIndexes.clear();
-                    gallerySlugForTracking = null;
-                });
-                // --- END TRACKING LOGIC ---
-                
-                // Auto-hide UI on mouse idle
-                let uiHideTimeout;
-                let isUIVisible = true;
-                
-                lightbox.on('afterInit', function() {
-                    const pswpElement = lightbox.pswp.element;
-                    
-                    const showUI = () => {
-                        isUIVisible = true;
-                        pswpElement.classList.add('pswp--ui-visible');
-                        pswpElement.classList.remove('pswp--ui-hidden');
-                        
-                        if (uiHideTimeout) {
-                            clearTimeout(uiHideTimeout);
-                        }
-                        
-                        uiHideTimeout = setTimeout(() => {
-                            isUIVisible = false;
-                            pswpElement.classList.remove('pswp--ui-visible');
-                            pswpElement.classList.add('pswp--ui-hidden');
-                        }, 3000);
-                    };
-                    
-                    pswpElement.addEventListener('mousemove', showUI);
-                    pswpElement.addEventListener('click', showUI);
-                    showUI();
-                });
-                
-                lightbox.on('uiRegister', function() {
-                    // Removed console.log that was exposing backend details
-                    
-                    // Fullscreen button
-                    lightbox.pswp.ui.registerElement({
-                        name: 'fullscreen-button',
-                        order: 9,
-                        isButton: true,
-                        html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
-                        onClick: (event, el) => {
-                            if (!document.fullscreenElement) {
-                                lightbox.pswp.element.requestFullscreen();
-                            } else {
-                                document.exitFullscreen();
-                            }
-                        }
-                    });
-                    
-                    // Download button
-                    lightbox.pswp.ui.registerElement({
-                        name: 'download-button',
-                        order: 8,
-                        isButton: true,
-                        html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>',
-                        onClick: (event, el) => {
-                            const currentSlide = lightbox.pswp.currSlide;
-                            const link = document.createElement('a');
-                            link.href = currentSlide.data.src;
-                            link.download = `image-${lightbox.pswp.currIndex + 1}.jpg`;
-                            link.click();
-                        }
-                    });
-                });
-                
-                // Slideshow functionality
-                let slideshowInterval = null;
-                let isPlaying = false;
-                
-                lightbox.on('uiRegister', function() {
-                    lightbox.pswp.ui.registerElement({
-                        name: 'play-button',
-                        order: 7,
-                        isButton: true,
-                        html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>',
-                        onClick: (event, el) => {
-                            if (!isPlaying) {
-                                isPlaying = true;
-                                el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
-                                slideshowInterval = setInterval(() => {
-                                    lightbox.pswp.next();
-                                }, 3000);
-                            } else {
-                                isPlaying = false;
-                                el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
-                                clearInterval(slideshowInterval);
-                            }
-                        }
-                    });
-                });
-                
-                lightbox.on('close', function() {
-                    if (slideshowInterval) {
-                        clearInterval(slideshowInterval);
-                        isPlaying = false;
-                    }
-                });
-                
-                lightbox.init();
-                // Removed console.log that was exposing backend details
-            } catch (error) {
-                // Silently handle error without logging to console
-            }
         }
 
         // --- PREMIUM VIDEO PLAYER (PRODUCTION v2.1 MOBILE FIX) ---
