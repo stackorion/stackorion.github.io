@@ -1986,6 +1986,7 @@ class UIManager {
         }
     }
 
+    // 📦 DELIVERABLE 2: Updated renderGallery() Method
     renderGallery(galleryData) {
         this.mainContent.innerHTML = `
             <div class="view-header">
@@ -2006,6 +2007,7 @@ class UIManager {
         galleryData.images.forEach((image, index) => {
             const item = document.createElement('div');
             item.className = 'gallery-item';
+            item.dataset.index = index;
             
             // Create a temporary image to get actual dimensions
             const tempImg = new Image();
@@ -2025,7 +2027,7 @@ class UIManager {
             const img = document.createElement('img');
             img.src = image.url;
             img.alt = image.title || `Image ${index + 1}`;
-            img.loading = 'lazy';
+            img.loading = index < 3 ? 'eager' : 'lazy'; // Eager load first 3 images
             
             const caption = document.createElement('div');
             caption.className = 'gallery-caption';
@@ -2038,10 +2040,20 @@ class UIManager {
             galleryGrid.appendChild(item);
         });
         
-        // Initialize PhotoSwipe after DOM is ready
-        setTimeout(() => {
-            this.initPhotoSwipe(galleryData);
-        }, 500);
+        // ✅ NEW: Detect mobile and use native gallery
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        if (isMobile) {
+            // Initialize native mobile gallery
+            setTimeout(() => {
+                this.initNativeMobileGallery(galleryData);
+            }, 100);
+        } else {
+            // Initialize PhotoSwipe for desktop
+            setTimeout(() => {
+                this.initPhotoSwipe(galleryData);
+            }, 500);
+        }
         
         // Add back button listener
         const backButton = document.getElementById('backButton');
@@ -2052,15 +2064,109 @@ class UIManager {
         }
     }
 
+    // 📦 DELIVERABLE 3: New Native Mobile Gallery Method
+    initNativeMobileGallery(galleryData) {
+        const galleryGrid = document.getElementById('galleryGrid');
+        if (!galleryGrid) return;
+        
+        // Show captions on mobile
+        galleryGrid.querySelectorAll('.gallery-caption').forEach(caption => {
+            caption.style.display = 'block';
+        });
+        
+        // Add counter overlay
+        const counter = document.createElement('div');
+        counter.className = 'mobile-gallery-counter';
+        counter.textContent = `1 / ${galleryData.images.length}`;
+        document.body.appendChild(counter);
+        
+        // Add swipe hint (shows once for 3 seconds)
+        const hint = document.createElement('div');
+        hint.className = 'mobile-gallery-hint';
+        hint.textContent = '← Swipe to browse →';
+        document.body.appendChild(hint);
+        
+        // Remove hint after animation
+        setTimeout(() => {
+            if (hint.parentNode) hint.remove();
+        }, 3000);
+        
+        // ✅ Use IntersectionObserver to track which image is visible
+        const observerOptions = {
+            root: galleryGrid,
+            threshold: 0.5 // Image must be 50% visible to count
+        };
+        
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const index = parseInt(entry.target.dataset.index) + 1;
+                    counter.textContent = `${index} / ${galleryData.images.length}`;
+                }
+            });
+        }, observerOptions);
+        
+        // Observe all gallery items
+        galleryGrid.querySelectorAll('.gallery-item').forEach(item => {
+            observer.observe(item);
+        });
+        
+        // ✅ Tap to enter fullscreen zoom mode
+        galleryGrid.querySelectorAll('.gallery-item img').forEach((img, index) => {
+            img.style.pointerEvents = 'auto'; // Re-enable pointer events for tapping
+            img.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.openMobileFullscreen(galleryData.images[index]);
+            });
+        });
+        
+        // Cleanup on navigation
+        window.addEventListener('popstate', () => {
+            if (counter.parentNode) counter.remove();
+            observer.disconnect();
+        }, { once: true });
+    }
+
+    // 📦 DELIVERABLE 3: Helper for Native Mobile Gallery
+    openMobileFullscreen(image) {
+        // Create fullscreen modal
+        const modal = document.createElement('div');
+        modal.className = 'mobile-gallery-fullscreen active';
+        modal.innerHTML = `
+            <button class="mobile-fullscreen-close" aria-label="Close fullscreen">×</button>
+            <img src="${image.url}" alt="${image.title || 'Image'}" />
+        `;
+        
+        document.body.appendChild(modal);
+        document.body.style.overflow = 'hidden';
+        
+        // Close button
+        const closeBtn = modal.querySelector('.mobile-fullscreen-close');
+        closeBtn.addEventListener('click', () => {
+            modal.remove();
+            document.body.style.overflow = '';
+        });
+        
+        // Tap outside image to close
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                document.body.style.overflow = '';
+            }
+        });
+    }
+
+    // 📦 DELIVERABLE 4: Update initPhotoSwipe() - Desktop Only
     initPhotoSwipe(galleryData) {
+        // ✅ SKIP PhotoSwipe on mobile - native gallery handles it
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        if (isMobile) return;
+
         // Check if PhotoSwipe is loaded
         if (typeof PhotoSwipeLightbox === 'undefined') {
             console.error('PhotoSwipe library not loaded');
             return;
         }
-        
-        // ✅ Detect mobile
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
         
         try {
             const lightbox = new PhotoSwipeLightbox({
@@ -2130,55 +2236,28 @@ class UIManager {
                 gallerySlugForTracking = null;
             });
             
-            // ✅ MOBILE: Tap to toggle UI (no auto-hide timer)
-            // ✅ DESKTOP: Auto-hide on mouse idle
-            if (isMobile) {
-                // Mobile: Show UI, tap anywhere to toggle
-                let isUIVisible = true;
+            // Desktop: Auto-hide on mouse idle
+            let uiHideTimeout;
+            
+            lightbox.on('afterInit', function() {
+                const pswpElement = lightbox.pswp.element;
                 
-                lightbox.on('afterInit', function() {
-                    const pswpElement = lightbox.pswp.element;
+                const showUI = () => {
                     pswpElement.classList.add('pswp--ui-visible');
+                    pswpElement.classList.remove('pswp--ui-hidden');
                     
-                    // Tap to toggle
-                    pswpElement.addEventListener('click', (e) => {
-                        // Don't toggle if clicking buttons
-                        if (e.target.closest('.pswp__button')) return;
-                        
-                        isUIVisible = !isUIVisible;
-                        if (isUIVisible) {
-                            pswpElement.classList.add('pswp--ui-visible');
-                            pswpElement.classList.remove('pswp--ui-hidden');
-                        } else {
-                            pswpElement.classList.remove('pswp--ui-visible');
-                            pswpElement.classList.add('pswp--ui-hidden');
-                        }
-                    });
-                });
-            } else {
-                // Desktop: Auto-hide on mouse idle
-                let uiHideTimeout;
+                    if (uiHideTimeout) clearTimeout(uiHideTimeout);
+                    
+                    uiHideTimeout = setTimeout(() => {
+                        pswpElement.classList.remove('pswp--ui-visible');
+                        pswpElement.classList.add('pswp--ui-hidden');
+                    }, 3000);
+                };
                 
-                lightbox.on('afterInit', function() {
-                    const pswpElement = lightbox.pswp.element;
-                    
-                    const showUI = () => {
-                        pswpElement.classList.add('pswp--ui-visible');
-                        pswpElement.classList.remove('pswp--ui-hidden');
-                        
-                        if (uiHideTimeout) clearTimeout(uiHideTimeout);
-                        
-                        uiHideTimeout = setTimeout(() => {
-                            pswpElement.classList.remove('pswp--ui-visible');
-                            pswpElement.classList.add('pswp--ui-hidden');
-                        }, 3000);
-                    };
-                    
-                    pswpElement.addEventListener('mousemove', showUI);
-                    pswpElement.addEventListener('click', showUI);
-                    showUI();
-                });
-            }
+                pswpElement.addEventListener('mousemove', showUI);
+                pswpElement.addEventListener('click', showUI);
+                showUI();
+            });
             
             lightbox.on('uiRegister', function() {
                 // Fullscreen button
@@ -2212,37 +2291,35 @@ class UIManager {
                 });
                 
                 // ✅ Only show play button on desktop
-                if (!isMobile) {
-                    let slideshowInterval = null;
-                    let isPlaying = false;
-                    
-                    lightbox.pswp.ui.registerElement({
-                        name: 'play-button',
-                        order: 7,
-                        isButton: true,
-                        html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>',
-                        onClick: (event, el) => {
-                            if (!isPlaying) {
-                                isPlaying = true;
-                                el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
-                                slideshowInterval = setInterval(() => {
-                                    lightbox.pswp.next();
-                                }, 3000);
-                            } else {
-                                isPlaying = false;
-                                el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
-                                clearInterval(slideshowInterval);
-                            }
-                        }
-                    });
-                    
-                    lightbox.on('close', function() {
-                        if (slideshowInterval) {
-                            clearInterval(slideshowInterval);
+                let slideshowInterval = null;
+                let isPlaying = false;
+                
+                lightbox.pswp.ui.registerElement({
+                    name: 'play-button',
+                    order: 7,
+                    isButton: true,
+                    html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>',
+                    onClick: (event, el) => {
+                        if (!isPlaying) {
+                            isPlaying = true;
+                            el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
+                            slideshowInterval = setInterval(() => {
+                                lightbox.pswp.next();
+                            }, 3000);
+                        } else {
                             isPlaying = false;
+                            el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
+                            clearInterval(slideshowInterval);
                         }
-                    });
-                }
+                    }
+                });
+                
+                lightbox.on('close', function() {
+                    if (slideshowInterval) {
+                        clearInterval(slideshowInterval);
+                        isPlaying = false;
+                    }
+                });
             });
             
             lightbox.init();
