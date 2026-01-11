@@ -2370,39 +2370,25 @@ body.theme-dark .announcement-error {
     gap: 8px;
 }
 
-/* ==========================================
-   FIX 1: DESKTOP VOLUME SLIDER (Updated)
-   ========================================== */
+/* FIX 4 START */
 .premium-volume-slider-wrapper {
-    width: 0;
-    overflow: hidden;
-    transition: width 0.3s ease;
+    width: 80px; /* ✅ Always visible on desktop */
+    overflow: visible;
+    transition: opacity 0.3s ease;
     display: flex;
     align-items: center;
+    opacity: 1;
 }
 
-/* ✅ DESKTOP ONLY: Show volume slider on hover */
-@media (min-width: 769px) {
-    .premium-volume-group:hover .premium-volume-slider-wrapper {
-        width: 100px !important;
-        margin-left: 8px;
-    }
-    
-    .premium-volume-slider {
-        width: 100% !important;
-        display: block !important;
-    }
-}
-
-/* Keep hidden on mobile */
+/* ✅ Hide on mobile only */
 @media (max-width: 768px) {
-    .premium-volume-group {
-        display: none !important;
+    .premium-volume-slider-wrapper {
+        width: 0 !important;
+        opacity: 0 !important;
+        pointer-events: none;
     }
 }
-/* ==========================================
-   END FIX 1
-   ========================================== */
+/* FIX 4 END */
 
 .premium-volume-slider {
     width: 100%;
@@ -2434,27 +2420,37 @@ body.theme-dark .announcement-error {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
+/* FIX 5 START */
+/* ✅ FIXED: Default state - show high volume icon */
 .premium-volume-btn .volume-low,
 .premium-volume-btn .volume-mute {
-    display: none;
+    display: none !important;
 }
 
-.premium-volume-btn.low .volume-high {
-    display: none;
+.premium-volume-btn .volume-high {
+    display: block !important;
+}
+
+/* ✅ Low volume state */
+.premium-volume-btn.low .volume-high,
+.premium-volume-btn.low .volume-mute {
+    display: none !important;
 }
 
 .premium-volume-btn.low .volume-low {
-    display: block;
+    display: block !important;
 }
 
+/* ✅ Muted state */
 .premium-volume-btn.mute .volume-high,
 .premium-volume-btn.mute .volume-low {
-    display: none;
+    display: none !important;
 }
 
 .premium-volume-btn.mute .volume-mute {
-    display: block;
+    display: block !important;
 }
+/* FIX 5 END */
 
 /* Time Display */
 .premium-time-display {
@@ -3361,8 +3357,16 @@ body.theme-dark .announcement-error {
     .premium-time-display {
         font-size: 0.85rem;
     }
+    
+    .premium-volume-slider-wrapper {
+        display: none;
+        pointer-events: none; /* ✅ FIXED: Prevent ghost interactions */
+    }
 
-    /* Volume slider already hidden by Fix 1 CSS */
+    /* ✅ NEW: Hide entire volume group on mobile */
+    .premium-volume-group {
+        display: none !important;
+    }
     
     .premium-settings-menu {
         right: -10px;
@@ -3630,184 +3634,34 @@ body.player-active {
 }
 
 /* ============================================================================
-   FIX 2: iOS GALLERY BUTTONS - ADD at end of file
+   DESKTOP FULLSCREEN - HIDE BROWSER UI
    ============================================================================ */
 
-/* ✅ iOS GALLERY FIX: Make buttons clickable */
-.pswp__button {
-    -webkit-tap-highlight-color: rgba(255, 255, 255, 0.2);
-    touch-action: manipulation;
-    pointer-events: auto !important;
-    z-index: 10002 !important;
+/* ✅ Force true fullscreen - hide browser chrome */
+.premium-player-modal:-webkit-full-screen,
+.premium-player-modal:-moz-full-screen,
+.premium-player-modal:-ms-fullscreen,
+.premium-player-modal:fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }
 
-/* Ensure buttons are above everything */
-.pswp__top-bar {
-    z-index: 10001 !important;
-    pointer-events: none !important; /* Don't block clicks */
+.premium-player-content:-webkit-full-screen,
+.premium-player-content:-moz-full-screen,
+.premium-player-content:-ms-fullscreen,
+.premium-player-content:fullscreen {
+    width: 100vw !important;
+    height: 100vh !important;
 }
 
-.pswp__top-bar > * {
-    pointer-events: auto !important; /* But allow button clicks */
-}
-
-/* iOS-specific touch target improvements */
-@supports (-webkit-touch-callout: none) {
-    /* This targets iOS Safari */
-    .pswp__button {
-        min-width: 48px !important;
-        min-height: 48px !important;
-        padding: 12px !important;
-        background: rgba(0, 0, 0, 0.8) !important;
-        border: 1px solid rgba(255, 255, 255, 0.3) !important;
-    }
-    
-    .pswp__button:active {
-        background: rgba(0, 0, 0, 0.95) !important;
-        transform: scale(0.95);
-    }
-}
-
-/* ============================================================================
-   FIX 3: Android GALLERY BUTTONS - ADD at end of file
-   ============================================================================ */
-
-/* ✅ ANDROID GALLERY FIX: Button visibility and positioning */
-
-/* Detect Android */
-@supports (-webkit-appearance: none) {
-    /* This helps target Android Chrome/WebView */
-    
-    @media (max-width: 768px) {
-        /* Ensure top bar is always visible with safe spacing */
-        .pswp__top-bar {
-            background: linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.7) 80%, transparent 100%) !important;
-            padding: 20px 16px 40px !important;
-            min-height: 80px !important;
-        }
-        
-        /* Counter - keep it visible and left-aligned */
-        .pswp__counter {
-            position: relative !important;
-            grid-column: 1 !important;
-            background: rgba(0, 0, 0, 0.9) !important;
-            padding: 8px 14px !important;
-            border-radius: 20px !important;
-            font-size: 14px !important;
-            border: 1px solid rgba(255, 255, 255, 0.3) !important;
-            margin: 0 !important;
-            min-width: 60px !important;
-            text-align: center !important;
-        }
-        
-        /* Button container - ensure it's visible */
-        .pswp__top-bar > div:last-child {
-            display: flex !important;
-            gap: 8px !important;
-            flex-wrap: nowrap !important;
-            justify-content: flex-end !important;
-        }
-        
-        /* All buttons - larger, more visible */
-        .pswp__button {
-            width: 48px !important;
-            height: 48px !important;
-            min-width: 48px !important;
-            min-height: 48px !important;
-            background: rgba(0, 0, 0, 0.9) !important;
-            border: 1px solid rgba(255, 255, 255, 0.3) !important;
-            border-radius: 50% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            flex-shrink: 0 !important;
-        }
-        
-        /* Ensure SVG icons are centered and visible */
-        .pswp__button svg {
-            width: 24px !important;
-            height: 24px !important;
-            fill: white !important;
-        }
-        
-        /* Navigation arrows */
-        .pswp__button--arrow {
-            width: 56px !important;
-            height: 56px !important;
-            background: rgba(0, 0, 0, 0.9) !important;
-            top: 50% !important;
-            transform: translateY(-50%) !important;
-        }
-        
-        .pswp__button--arrow--prev {
-            left: 16px !important;
-        }
-        
-        .pswp__button--arrow--next {
-            right: 16px !important;
-        }
-    }
-    
-    /* Extra small Android screens */
-    @media (max-width: 480px) {
-        .pswp__top-bar {
-            padding: 16px 12px 32px !important;
-        }
-        
-        .pswp__button {
-            width: 44px !important;
-            height: 44px !important;
-            min-width: 44px !important;
-            min-height: 44px !important;
-        }
-        
-        .pswp__button svg {
-            width: 20px !important;
-            height: 20px !important;
-        }
-        
-        .pswp__counter {
-            font-size: 12px !important;
-            padding: 6px 12px !important;
-        }
-        
-        /* Stack buttons vertically if too cramped */
-        .pswp__top-bar {
-            grid-template-columns: 1fr !important;
-            grid-template-rows: auto auto !important;
-            gap: 12px !important;
-        }
-        
-        .pswp__counter {
-            grid-column: 1 !important;
-            grid-row: 1 !important;
-            justify-self: start !important;
-        }
-        
-        .pswp__top-bar > div:last-child {
-            grid-column: 1 !important;
-            grid-row: 2 !important;
-            justify-content: center !important;
-        }
-    }
-}
-
-/* Android WebView specific */
-@media (max-width: 768px) {
-    .pswp {
-        /* Ensure proper z-indexing */
-        z-index: 999999 !important;
-    }
-    
-    .pswp__ui {
-        z-index: 10001 !important;
-    }
-    
-    /* Force buttons above image */
-    .pswp__top-bar,
-    .pswp__button--arrow {
-        z-index: 10002 !important;
-    }
+/* ✅ Ensure video takes full screen space */
+.premium-player-modal:-webkit-full-screen .premium-video-wrapper,
+.premium-player-modal:-moz-full-screen .premium-video-wrapper,
+.premium-player-modal:fullscreen .premium-video-wrapper {
+    width: 100% !important;
+    height: 100% !important;
 }

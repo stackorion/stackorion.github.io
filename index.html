@@ -16,8 +16,6 @@
             left: 0;
             width: 100%;
             height: 100%;
-            /* ✅ iOS FIX: Use dvh for proper viewport height */
-            height: 100dvh;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             display: flex;
             flex-direction: column;
@@ -25,12 +23,8 @@
             justify-content: center;
             z-index: 999999;
             transition: opacity 0.4s ease;
-            /* ✅ iOS FIX: Prevent bounce scrolling */
-            overflow: hidden;
-            -webkit-overflow-scrolling: touch;
         }
         
-        /* ✅ PRESERVED: Required for JS logic */
         #instant-gate.fade-out {
             opacity: 0;
             pointer-events: none;
@@ -43,9 +37,6 @@
             border-top-color: #fff;
             border-radius: 50%;
             animation: gate-spin 0.8s linear infinite;
-            /* ✅ iOS FIX: Hardware acceleration */
-            transform: translateZ(0);
-            -webkit-transform: translateZ(0);
         }
         
         @keyframes gate-spin {
@@ -58,10 +49,6 @@
             font-weight: 700;
             margin-top: 30px;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            /* ✅ iOS FIX: Prevent text scaling */
-            -webkit-text-size-adjust: 100%;
-            text-align: center;
-            padding: 0 20px;
         }
         
         .gate-message {
@@ -70,15 +57,11 @@
             margin-top: 12px;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             animation: gate-pulse 2s ease-in-out infinite;
-            text-align: center;
-            padding: 0 20px;
-            /* ✅ iOS FIX: Prevent text scaling */
-            -webkit-text-size-adjust: 100%;
         }
         
         @keyframes gate-pulse {
-            0%, 100% { opacity: 0.9; }
-            50% { opacity: 0.6; }
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
         }
         
         .gate-subtext {
@@ -86,41 +69,6 @@
             font-size: 13px;
             margin-top: 8px;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            text-align: center;
-            padding: 0 20px;
-            /* ✅ iOS FIX: Prevent text scaling */
-            -webkit-text-size-adjust: 100%;
-        }
-        
-        /* ✅ iOS FIX: Handle notch/safe areas */
-        @supports (padding: env(safe-area-inset-top)) {
-            #instant-gate {
-                padding-top: env(safe-area-inset-top);
-                padding-bottom: env(safe-area-inset-bottom);
-            }
-        }
-        
-        /* ✅ iOS FIX: Responsive sizing */
-        @media (max-width: 480px) {
-            .gate-spinner {
-                width: 60px;
-                height: 60px;
-                border-width: 4px;
-            }
-            
-            .gate-title {
-                font-size: 24px;
-                margin-top: 24px;
-            }
-            
-            .gate-message {
-                font-size: 14px;
-                margin-top: 10px;
-            }
-            
-            .gate-subtext {
-                font-size: 12px;
-            }
         }
     </style>
 </head>

@@ -1,3 +1,4 @@
+
     // Configuration - IMPORTANT: This MUST match your live backend URL
     const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
 
@@ -977,22 +978,20 @@
         updatePlayButton(isPlaying) {
             try {
                 if (this.elements.playBtn) {
-                    const playIcon = this.elements.playBtn.querySelector('.play-icon');
-                    const pauseIcon = this.elements.playBtn.querySelector('.pause-icon');
-                    
                     if (isPlaying) {
-                        // Show pause icon, hide play icon
-                        if (playIcon) playIcon.style.display = 'none';
-                        if (pauseIcon) pauseIcon.style.display = 'block';
+                        this.elements.playBtn.classList.add('playing');
                         this.elements.playBtn.setAttribute('aria-label', 'Pause');
                     } else {
-                        // Show play icon, hide pause icon
-                        if (playIcon) playIcon.style.display = 'block';
-                        if (pauseIcon) pauseIcon.style.display = 'none';
+                        this.elements.playBtn.classList.remove('playing');
                         this.elements.playBtn.setAttribute('aria-label', 'Play');
                     }
+                    
+                    // ✅ FIX: Always keep bottom play button visible
+                    this.elements.playBtn.style.opacity = '1';
+                    this.elements.playBtn.style.pointerEvents = 'auto';
                 }
                 
+                // ✅ FIX: Center play button - only show when paused
                 if (this.elements.centerPlayBtn) {
                     if (!isPlaying) {
                         this.elements.centerPlayBtn.classList.add('show');
@@ -1008,26 +1007,15 @@
         updateVolumeButton(volume, muted) {
             if (!this.elements.volumeBtn) return;
             
-            const volumeHigh = this.elements.volumeBtn.querySelector('.volume-high');
-            const volumeLow = this.elements.volumeBtn.querySelector('.volume-low');
-            const volumeMute = this.elements.volumeBtn.querySelector('.volume-mute');
-            
-            // Hide all icons first
-            if (volumeHigh) volumeHigh.style.display = 'none';
-            if (volumeLow) volumeLow.style.display = 'none';
-            if (volumeMute) volumeMute.style.display = 'none';
+            this.elements.volumeBtn.classList.remove('low', 'mute');
             
             if (muted || volume === 0) {
-                // Show mute icon
-                if (volumeMute) volumeMute.style.display = 'block';
+                this.elements.volumeBtn.classList.add('mute');
                 this.elements.volumeBtn.setAttribute('aria-label', 'Unmute');
             } else if (volume < 0.5) {
-                // Show low volume icon
-                if (volumeLow) volumeLow.style.display = 'block';
+                this.elements.volumeBtn.classList.add('low');
                 this.elements.volumeBtn.setAttribute('aria-label', 'Mute');
             } else {
-                // Show high volume icon
-                if (volumeHigh) volumeHigh.style.display = 'block';
                 this.elements.volumeBtn.setAttribute('aria-label', 'Mute');
             }
         }
@@ -3328,19 +3316,6 @@
                         videoElement.load();
                     }
                 }
-                
-                // ✅ NEW: Auto-fullscreen on DESKTOP only
-                if (!isMobile) {
-                    // Small delay to ensure modal is fully rendered
-                    setTimeout(() => {
-                        if (modal && !modal.isDisposed) {
-                            modal.requestFullscreen().catch(err => {
-                                console.log('Auto-fullscreen not allowed:', err);
-                                // Fallback: show message to click fullscreen button
-                            });
-                        }
-                    }, 300);
-                }
             });
 
             // ✅ OPTIMIZATION 2: Add Network State Monitoring (Opt 2)
@@ -3503,12 +3478,22 @@
                 controlsManager.showGestureIndicator('⏩');
             });
             
-            // Volume controls
+            // Volume controls - FIXED for desktop
             const toggleMute = () => {
                 const activePlayer = getSafePlayer();
                 if (!activePlayer) return;
                 
-                activePlayer.muted(!activePlayer.muted());
+                const currentVolume = activePlayer.volume();
+                const isMuted = activePlayer.muted();
+                
+                if (isMuted) {
+                    // Unmute and restore volume
+                    activePlayer.muted(false);
+                    activePlayer.volume(currentVolume || 1);
+                } else {
+                    // Mute
+                    activePlayer.muted(true);
+                }
             };
             
             controlsManager.elements.volumeBtn.addEventListener('click', toggleMute);
@@ -3521,6 +3506,20 @@
                 activePlayer.volume(volume);
                 activePlayer.muted(volume === 0);
             });
+            
+            // ✅ FIX: Keep volume slider visible on desktop
+            const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            if (!isMobileDevice) {
+                const volumeGroup = controlsManager.elements.volumeBtn.closest('.premium-volume-group');
+                if (volumeGroup) {
+                    // Force slider to be visible on desktop
+                    const sliderWrapper = volumeGroup.querySelector('.premium-volume-slider-wrapper');
+                    if (sliderWrapper) {
+                        sliderWrapper.style.width = '80px';
+                        sliderWrapper.style.opacity = '1';
+                    }
+                }
+            }
             
             // ✅ FIXED: Progress bar seeking with better mobile support
             // Progress bar seeking
@@ -3807,21 +3806,6 @@
                     });
                 }
             }
-
-            // ✅ NEW: Fullscreen Button Listener (Fix 5)
-            const fullscreenBtn = modal.querySelector('.premium-fullscreen-btn');
-            if (fullscreenBtn) {
-                fullscreenBtn.addEventListener('click', () => {
-                    if (!document.fullscreenElement) {
-                        // Request fullscreen on the MODAL, not just video
-                        modal.requestFullscreen().catch(err => {
-                            console.error('Fullscreen error:', err);
-                        });
-                    } else {
-                        document.exitFullscreen();
-                    }
-                });
-            }
             
             // ✅ FIXED: Better fullscreen handling
             const handleFullscreenChange = () => {
@@ -3976,11 +3960,7 @@
                         break;
                     case 'f':
                         e.preventDefault();
-                        if (!document.fullscreenElement) {
-                            modal.requestFullscreen().catch(() => {});
-                        } else {
-                            document.exitFullscreen();
-                        }
+                        // F key does nothing since we auto-enter fullscreen
                         break;
                     case '?':
                         e.preventDefault();
@@ -4191,14 +4171,51 @@
                 });
             }
             
-            // Click on video area to toggle play/pause
-            const videoArea = controlsManager.elements.progressBar.parentElement.parentElement;
-            if (videoArea) {
+            // ✅ FIX: Desktop - Click video to enter fullscreen AND play
+            const videoArea = modal.querySelector('.premium-video-wrapper');
+            if (videoArea && !isMobile) {
+                let hasEnteredFullscreen = false;
+                
                 videoArea.addEventListener('click', (e) => {
-                    // Only toggle if clicking on video area, not on controls
+                    // Only handle clicks on video area, not on controls
                     if (e.target.closest('.premium-controls-row') || 
                         e.target.closest('.premium-progress-container') ||
-                        e.target.closest('.premium-settings-menu')) {
+                        e.target.closest('.premium-settings-menu') ||
+                        e.target.closest('.premium-player-header')) {
+                        return;
+                    }
+                    
+                    // ✅ First click: Enter fullscreen AND play
+                    if (!hasEnteredFullscreen && !document.fullscreenElement) {
+                        hasEnteredFullscreen = true;
+                        
+                        // Request fullscreen
+                        const modalElement = modal.querySelector('.premium-player-content') || modal;
+                        if (modalElement.requestFullscreen) {
+                            modalElement.requestFullscreen().catch(() => {});
+                        } else if (modalElement.webkitRequestFullscreen) {
+                            modalElement.webkitRequestFullscreen();
+                        }
+                        
+                        // Auto-play
+                        const activePlayer = getSafePlayer();
+                        if (activePlayer && activePlayer.paused()) {
+                            activePlayer.play().catch(() => {});
+                        }
+                    } else {
+                        // Subsequent clicks: Toggle play/pause
+                        togglePlayPause();
+                    }
+                });
+            }
+            
+            // Mobile: Just toggle play/pause
+            if (videoArea && isMobile) {
+                videoArea.addEventListener('click', (e) => {
+                    if (e.target.closest('.premium-controls-row') || 
+                        e.target.closest('.premium-progress-container') ||
+                        e.target.closest('.premium-settings-menu') ||
+                        e.target.closest('.premium-player-header')) {
                         return;
                     }
                     togglePlayPause();
