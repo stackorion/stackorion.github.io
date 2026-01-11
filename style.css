@@ -2370,6 +2370,9 @@ body.theme-dark .announcement-error {
     gap: 8px;
 }
 
+/* ==========================================
+   FIX 1: DESKTOP VOLUME SLIDER (Updated)
+   ========================================== */
 .premium-volume-slider-wrapper {
     width: 0;
     overflow: hidden;
@@ -2378,13 +2381,28 @@ body.theme-dark .announcement-error {
     align-items: center;
 }
 
-/* ✅ FIX: Show slider on hover - DESKTOP ONLY */
+/* ✅ DESKTOP ONLY: Show volume slider on hover */
 @media (min-width: 769px) {
-    .premium-volume-group:hover .premium-volume-slider-wrapper,
-    .premium-volume-slider-wrapper:focus-within {
+    .premium-volume-group:hover .premium-volume-slider-wrapper {
         width: 100px !important;
+        margin-left: 8px;
+    }
+    
+    .premium-volume-slider {
+        width: 100% !important;
+        display: block !important;
     }
 }
+
+/* Keep hidden on mobile */
+@media (max-width: 768px) {
+    .premium-volume-group {
+        display: none !important;
+    }
+}
+/* ==========================================
+   END FIX 1
+   ========================================== */
 
 .premium-volume-slider {
     width: 100%;
@@ -2394,36 +2412,26 @@ body.theme-dark .announcement-error {
     border-radius: 3px;
     outline: none;
     cursor: pointer;
-    margin: 0 8px;
 }
 
 .premium-volume-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
-    appearance: none;
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
+    width: 14px;
+    height: 14px;
     background: #fff;
+    border-radius: 50%;
     cursor: pointer;
-    transition: transform 0.2s ease;
-}
-
-.premium-volume-slider::-webkit-slider-thumb:hover {
-    transform: scale(1.2);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 .premium-volume-slider::-moz-range-thumb {
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
+    width: 14px;
+    height: 14px;
     background: #fff;
+    border-radius: 50%;
     cursor: pointer;
     border: none;
-    transition: transform 0.2s ease;
-}
-
-.premium-volume-slider::-moz-range-thumb:hover {
-    transform: scale(1.2);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 .premium-volume-btn .volume-low,
@@ -2900,9 +2908,7 @@ body.theme-dark .announcement-error {
     top: 0;
     left: 0;
     width: 100%;
-    /* ✅ Use 100vh for iOS compatibility */
-    height: 100vh;
-    height: 100dvh; /* Dynamic viewport height for iOS */
+    height: 100%;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     display: flex;
     flex-direction: column;
@@ -2910,10 +2916,6 @@ body.theme-dark .announcement-error {
     justify-content: center;
     z-index: 100000;
     transition: opacity 0.4s ease;
-    
-    /* ✅ iOS safe area */
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
 }
 
 .app-loader-spinner {
@@ -2925,14 +2927,18 @@ body.theme-dark .announcement-error {
     animation: app-loader-spin 0.8s linear infinite;
 }
 
+@keyframes app-loader-spin {
+    to { 
+        transform: rotate(360deg); 
+    }
+}
+
 .app-loader-title {
     color: white;
     font-size: 32px;
     font-weight: 700;
     margin-top: 30px;
     letter-spacing: 2px;
-    text-align: center;
-    padding: 0 20px;
 }
 
 .app-loader-message {
@@ -2940,48 +2946,15 @@ body.theme-dark .announcement-error {
     font-size: 16px;
     margin-top: 12px;
     animation: app-loader-pulse 2s ease-in-out infinite;
-    text-align: center;
-    padding: 0 20px;
-}
-
-/* ✅ iOS-specific adjustments */
-@supports (-webkit-touch-callout: none) {
-    #app-loader {
-        /* iOS Safari specific */
-        height: -webkit-fill-available;
-    }
-    
-    .app-loader-title {
-        font-size: 28px;
-    }
-}
-
-/* Mobile adjustments */
-@media (max-width: 480px) {
-    .app-loader-spinner {
-        width: 60px;
-        height: 60px;
-        border-width: 4px;
-    }
-    
-    .app-loader-title {
-        font-size: 24px;
-        margin-top: 24px;
-    }
-    
-    .app-loader-message {
-        font-size: 14px;
-    }
-}
-
-@keyframes app-loader-spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
 }
 
 @keyframes app-loader-pulse {
-    0%, 100% { opacity: 0.6; }
-    50% { opacity: 1; }
+    0%, 100% { 
+        opacity: 0.7; 
+    }
+    50% { 
+        opacity: 1; 
+    }
 }
 
 /* Smooth fade-in for app container */
@@ -3388,16 +3361,8 @@ body.theme-dark .announcement-error {
     .premium-time-display {
         font-size: 0.85rem;
     }
-    
-    .premium-volume-slider-wrapper {
-        display: none;
-        pointer-events: none; /* ✅ FIXED: Prevent ghost interactions */
-    }
 
-    /* ✅ NEW: Hide entire volume group on mobile */
-    .premium-volume-group {
-        display: none !important;
-    }
+    /* Volume slider already hidden by Fix 1 CSS */
     
     .premium-settings-menu {
         right: -10px;
@@ -3664,192 +3629,185 @@ body.player-active {
     }
 }
 
-/* ========================================
-   ✅ ANDROID & MOBILE GALLERY FIXES
-   ======================================== */
+/* ============================================================================
+   FIX 2: iOS GALLERY BUTTONS - ADD at end of file
+   ============================================================================ */
 
+/* ✅ iOS GALLERY FIX: Make buttons clickable */
+.pswp__button {
+    -webkit-tap-highlight-color: rgba(255, 255, 255, 0.2);
+    touch-action: manipulation;
+    pointer-events: auto !important;
+    z-index: 10002 !important;
+}
+
+/* Ensure buttons are above everything */
+.pswp__top-bar {
+    z-index: 10001 !important;
+    pointer-events: none !important; /* Don't block clicks */
+}
+
+.pswp__top-bar > * {
+    pointer-events: auto !important; /* But allow button clicks */
+}
+
+/* iOS-specific touch target improvements */
+@supports (-webkit-touch-callout: none) {
+    /* This targets iOS Safari */
+    .pswp__button {
+        min-width: 48px !important;
+        min-height: 48px !important;
+        padding: 12px !important;
+        background: rgba(0, 0, 0, 0.8) !important;
+        border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    }
+    
+    .pswp__button:active {
+        background: rgba(0, 0, 0, 0.95) !important;
+        transform: scale(0.95);
+    }
+}
+
+/* ============================================================================
+   FIX 3: Android GALLERY BUTTONS - ADD at end of file
+   ============================================================================ */
+
+/* ✅ ANDROID GALLERY FIX: Button visibility and positioning */
+
+/* Detect Android */
+@supports (-webkit-appearance: none) {
+    /* This helps target Android Chrome/WebView */
+    
+    @media (max-width: 768px) {
+        /* Ensure top bar is always visible with safe spacing */
+        .pswp__top-bar {
+            background: linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.7) 80%, transparent 100%) !important;
+            padding: 20px 16px 40px !important;
+            min-height: 80px !important;
+        }
+        
+        /* Counter - keep it visible and left-aligned */
+        .pswp__counter {
+            position: relative !important;
+            grid-column: 1 !important;
+            background: rgba(0, 0, 0, 0.9) !important;
+            padding: 8px 14px !important;
+            border-radius: 20px !important;
+            font-size: 14px !important;
+            border: 1px solid rgba(255, 255, 255, 0.3) !important;
+            margin: 0 !important;
+            min-width: 60px !important;
+            text-align: center !important;
+        }
+        
+        /* Button container - ensure it's visible */
+        .pswp__top-bar > div:last-child {
+            display: flex !important;
+            gap: 8px !important;
+            flex-wrap: nowrap !important;
+            justify-content: flex-end !important;
+        }
+        
+        /* All buttons - larger, more visible */
+        .pswp__button {
+            width: 48px !important;
+            height: 48px !important;
+            min-width: 48px !important;
+            min-height: 48px !important;
+            background: rgba(0, 0, 0, 0.9) !important;
+            border: 1px solid rgba(255, 255, 255, 0.3) !important;
+            border-radius: 50% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            flex-shrink: 0 !important;
+        }
+        
+        /* Ensure SVG icons are centered and visible */
+        .pswp__button svg {
+            width: 24px !important;
+            height: 24px !important;
+            fill: white !important;
+        }
+        
+        /* Navigation arrows */
+        .pswp__button--arrow {
+            width: 56px !important;
+            height: 56px !important;
+            background: rgba(0, 0, 0, 0.9) !important;
+            top: 50% !important;
+            transform: translateY(-50%) !important;
+        }
+        
+        .pswp__button--arrow--prev {
+            left: 16px !important;
+        }
+        
+        .pswp__button--arrow--next {
+            right: 16px !important;
+        }
+    }
+    
+    /* Extra small Android screens */
+    @media (max-width: 480px) {
+        .pswp__top-bar {
+            padding: 16px 12px 32px !important;
+        }
+        
+        .pswp__button {
+            width: 44px !important;
+            height: 44px !important;
+            min-width: 44px !important;
+            min-height: 44px !important;
+        }
+        
+        .pswp__button svg {
+            width: 20px !important;
+            height: 20px !important;
+        }
+        
+        .pswp__counter {
+            font-size: 12px !important;
+            padding: 6px 12px !important;
+        }
+        
+        /* Stack buttons vertically if too cramped */
+        .pswp__top-bar {
+            grid-template-columns: 1fr !important;
+            grid-template-rows: auto auto !important;
+            gap: 12px !important;
+        }
+        
+        .pswp__counter {
+            grid-column: 1 !important;
+            grid-row: 1 !important;
+            justify-self: start !important;
+        }
+        
+        .pswp__top-bar > div:last-child {
+            grid-column: 1 !important;
+            grid-row: 2 !important;
+            justify-content: center !important;
+        }
+    }
+}
+
+/* Android WebView specific */
 @media (max-width: 768px) {
-    /* Better button positioning for Android */
-    .pswp__top-bar {
-        padding: 16px 8px 12px !important;
-        background: linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 80%, transparent 100%) !important;
-        gap: 6px !important;
-    }
-    
-    /* Counter - always visible */
-    .pswp__counter {
-        position: static !important;
-        background: rgba(0, 0, 0, 0.8) !important;
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        padding: 8px 14px !important;
-        border-radius: 20px !important;
-        font-size: 13px !important;
-        font-weight: 600 !important;
-        border: 1px solid rgba(255, 255, 255, 0.25) !important;
-        margin: 0 !important;
-        order: 1;
-        color: #fff !important;
-    }
-    
-    /* Buttons container */
-    .pswp__top-bar > div:last-child {
-        display: flex !important;
-        gap: 6px !important;
-        order: 2;
-        flex-wrap: nowrap !important;
-    }
-    
-    /* All buttons - consistent sizing */
-    .pswp__button {
-        width: 44px !important;
-        height: 44px !important;
-        background: rgba(0, 0, 0, 0.8) !important;
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.25) !important;
-        border-radius: 50% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        flex-shrink: 0 !important;
-    }
-    
-    /* Navigation arrows - better positioning */
-    .pswp__button--arrow {
-        width: 50px !important;
-        height: 50px !important;
-        top: 50% !important;
-        transform: translateY(-50%) !important;
-        background: rgba(0, 0, 0, 0.8) !important;
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.25) !important;
-    }
-    
-    .pswp__button--arrow--prev {
-        left: 12px !important;
-    }
-    
-    .pswp__button--arrow--next {
-        right: 12px !important;
-    }
-    
-    /* Remove download on mobile to reduce clutter */
-    .pswp__button[aria-label*="download"],
-    .pswp__button[aria-label*="Download"] {
-        display: none !important;
-    }
-}
-
-/* Extra small Android devices */
-@media (max-width: 480px) {
-    .pswp__counter {
-        font-size: 12px !important;
-        padding: 6px 12px !important;
-    }
-    
-    .pswp__button {
-        width: 40px !important;
-        height: 40px !important;
-    }
-    
-    .pswp__button--arrow {
-        width: 46px !important;
-        height: 46px !important;
-    }
-    
-    /* Hide play button on very small screens */
-    .pswp__button[aria-label*="play"],
-    .pswp__button[aria-label*="Play"] {
-        display: none !important;
-    }
-}
-
-/* Landscape mode adjustments */
-@media (max-width: 926px) and (orientation: landscape) {
-    .pswp__top-bar {
-        padding: 8px !important;
-    }
-    
-    .pswp__counter {
-        padding: 6px 12px !important;
-        font-size: 12px !important;
-    }
-    
-    .pswp__button {
-        width: 38px !important;
-        height: 38px !important;
-    }
-}
-
-/* ========================================
-   ✅ ANDROID ZOOM FIX
-   ======================================== */
-
-@media (max-width: 768px) {
-    /* Prevent body zoom conflicts */
-    body {
-        touch-action: pan-y pinch-zoom;
-    }
-    
-    /* Allow zoom on images */
-    img {
-        touch-action: pinch-zoom;
-    }
-    
-    /* Gallery images should be zoomable */
-    .gallery-grid img,
-    .pswp img {
-        touch-action: pinch-zoom;
-        user-select: none;
-        -webkit-user-select: none;
-    }
-    
-    /* Prevent scroll blocking zoom */
     .pswp {
-        touch-action: pinch-zoom pan-x pan-y;
+        /* Ensure proper z-indexing */
+        z-index: 999999 !important;
     }
     
-    .pswp__img {
-        touch-action: pinch-zoom;
+    .pswp__ui {
+        z-index: 10001 !important;
     }
-}
-
-/* ========================================
-   ✅ GALLERY IMAGE LOADING STATES
-   ======================================== */
-
-.gallery-item img {
-    width: 100%;
-    height: 280px;
-    object-fit: cover;
-    display: block;
-    min-width: 100% !important;
-    min-height: 280px !important;
-    background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
-    transition: opacity 0.3s ease;
-}
-
-.gallery-item img:not([src]),
-.gallery-item img[src=""] {
-    opacity: 0.5;
-}
-
-.gallery-item img[src]:not([src=""]) {
-    opacity: 1;
-}
-
-/* Prevent shrinking on slow network */
-@media (max-width: 768px) {
-    .gallery-item img {
-        height: 200px;
-        min-height: 200px !important;
-    }
-}
-
-@media (max-width: 480px) {
-    .gallery-item img {
-        height: 150px;
-        min-height: 150px !important;
+    
+    /* Force buttons above image */
+    .pswp__top-bar,
+    .pswp__button--arrow {
+        z-index: 10002 !important;
     }
 }
