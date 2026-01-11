@@ -974,15 +974,26 @@
             }, hideDelay);
         }
 
+        // ============================================
+        // DESKTOP PLAYER FIXES - Volume & Play Button
+        // ============================================
+        // REPLACED with logic from prompt
         updatePlayButton(isPlaying) {
             try {
                 if (this.elements.playBtn) {
+                    const playIcon = this.elements.playBtn.querySelector('.play-icon');
+                    const pauseIcon = this.elements.playBtn.querySelector('.pause-icon');
+                    
                     if (isPlaying) {
                         this.elements.playBtn.classList.add('playing');
                         this.elements.playBtn.setAttribute('aria-label', 'Pause');
+                        if (playIcon) playIcon.style.display = 'none';
+                        if (pauseIcon) pauseIcon.style.display = 'block';
                     } else {
                         this.elements.playBtn.classList.remove('playing');
                         this.elements.playBtn.setAttribute('aria-label', 'Play');
+                        if (playIcon) playIcon.style.display = 'block';
+                        if (pauseIcon) pauseIcon.style.display = 'none';
                     }
                 }
                 
@@ -994,25 +1005,40 @@
                     }
                 }
             } catch (error) {
-                // Silently handle errors
+                console.error('Update play button error:', error);
             }
-        }
+        };
 
+        // REPLACED with logic from prompt
         updateVolumeButton(volume, muted) {
             if (!this.elements.volumeBtn) return;
             
-            this.elements.volumeBtn.classList.remove('low', 'mute');
+            const volumeHigh = this.elements.volumeBtn.querySelector('.volume-high');
+            const volumeLow = this.elements.volumeBtn.querySelector('.volume-low');
+            const volumeMute = this.elements.volumeBtn.querySelector('.volume-mute');
             
+            // Hide all first
+            if (volumeHigh) volumeHigh.style.display = 'none';
+            if (volumeLow) volumeLow.style.display = 'none';
+            if (volumeMute) volumeMute.style.display = 'none';
+            
+            // Show appropriate icon
             if (muted || volume === 0) {
                 this.elements.volumeBtn.classList.add('mute');
+                this.elements.volumeBtn.classList.remove('low');
+                if (volumeMute) volumeMute.style.display = 'block';
                 this.elements.volumeBtn.setAttribute('aria-label', 'Unmute');
             } else if (volume < 0.5) {
                 this.elements.volumeBtn.classList.add('low');
+                this.elements.volumeBtn.classList.remove('mute');
+                if (volumeLow) volumeLow.style.display = 'block';
                 this.elements.volumeBtn.setAttribute('aria-label', 'Mute');
             } else {
+                this.elements.volumeBtn.classList.remove('low', 'mute');
+                if (volumeHigh) volumeHigh.style.display = 'block';
                 this.elements.volumeBtn.setAttribute('aria-label', 'Mute');
             }
-        }
+        };
 
         updateTimeDisplay(current, duration) {
             if (!this.elements.timeDisplay) return;
@@ -1968,6 +1994,10 @@
             }
         }
 
+        // ============================================
+        // ANDROID IMAGE SIZE & iOS GALLERY FIXES
+        // ============================================
+
         renderGallery(galleryData) {
             this.mainContent.innerHTML = `
                 <div class="view-header">
@@ -1989,25 +2019,36 @@
                 const item = document.createElement('div');
                 item.className = 'gallery-item';
                 
-                // Create a temporary image to get actual dimensions
-                const tempImg = new Image();
                 const linkElement = document.createElement('a');
                 linkElement.href = image.url;
                 linkElement.setAttribute('data-pswp-width', '1920');
                 linkElement.setAttribute('data-pswp-height', '1080');
                 linkElement.target = '_blank';
                 
-                // Load actual dimensions when image loads
+                const img = document.createElement('img');
+                img.alt = image.title || `Image ${index + 1}`;
+                img.loading = 'lazy';
+                
+                // ✅ FIX: Prevent size reduction on slow network
+                img.style.minWidth = '100%';
+                img.style.minHeight = '280px';
+                img.style.objectFit = 'cover';
+                img.style.backgroundColor = '#1a1a1a'; // Placeholder while loading
+                
+                // ✅ Load actual dimensions asynchronously
+                const tempImg = new Image();
                 tempImg.onload = function() {
                     linkElement.setAttribute('data-pswp-width', this.naturalWidth.toString());
                     linkElement.setAttribute('data-pswp-height', this.naturalHeight.toString());
+                    img.src = image.url; // Set src only after dimensions are known
                 };
-                tempImg.src = image.url;
                 
-                const img = document.createElement('img');
-                img.src = image.url;
-                img.alt = image.title || `Image ${index + 1}`;
-                img.loading = 'lazy';
+                tempImg.onerror = function() {
+                    // Fallback if image fails to load
+                    img.src = image.url;
+                };
+                
+                tempImg.src = image.url;
                 
                 const caption = document.createElement('div');
                 caption.className = 'gallery-caption';
@@ -2020,12 +2061,12 @@
                 galleryGrid.appendChild(item);
             });
             
-            // Initialize PhotoSwipe after DOM is ready
+            // Initialize PhotoSwipe
             setTimeout(() => {
                 this.initPhotoSwipe(galleryData);
             }, 500);
             
-            // Add back button listener
+            // Back button
             const backButton = document.getElementById('backButton');
             if (backButton) {
                 backButton.addEventListener('click', () => {
@@ -2034,203 +2075,117 @@
             }
         }
 
+        // ============================================
+        // iOS GALLERY FULLSCREEN & SMOOTH SWIPING
+        // ============================================
+
         initPhotoSwipe(galleryData) {
-            // Check if PhotoSwipe is loaded
-            if (typeof PhotoSwipeLightbox === 'undefined') {
-                console.error('PhotoSwipe library not loaded');
-                return;
+            // Destroy existing instance if any
+            if (this.lightbox) {
+                this.lightbox.destroy();
+                this.lightbox = null;
             }
-            
-            // ✅ Detect mobile
-            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-            
-            try {
-                const lightbox = new PhotoSwipeLightbox({
-                    gallery: '#galleryGrid',
-                    children: 'a',
-                    pswpModule: PhotoSwipe,
-                    bgOpacity: 1,
-                    spacing: 0.05,
-                    allowPanToNext: true,
-                    loop: true,
-                    pinchToClose: true,
-                    closeOnVerticalDrag: true,
-                    showHideAnimationType: 'fade',
-                    zoomAnimationDuration: 300,
-                    initialZoomLevel: 'fit',
-                    secondaryZoomLevel: 1.5,
-                    maxZoomLevel: 3,
-                    paddingFn: (viewportSize) => {
-                        return { top: 20, bottom: 20, left: 20, right: 20 };
-                    },
-                    arrowKeys: true,
-                    preload: [1, 2]
-                });
+
+            const env_safe_area_inset_top = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sat') || '0');
+            const env_safe_area_inset_bottom = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sab') || '0');
+
+            const lightbox = new PhotoSwipeLightbox({
+                gallery: '#galleryGrid',
+                children: 'a',
+                pswpModule: PhotoSwipe,
+                bgOpacity: 1,
+                spacing: 0.12, // ✅ INCREASED from 0.05 for better separation
+                allowPanToNext: true,
+                loop: true,
+                pinchToClose: true,
+                closeOnVerticalDrag: true,
+                showHideAnimationType: 'fade',
+                zoomAnimationDuration: 300,
+                initialZoomLevel: 'fit',
+                secondaryZoomLevel: 1.5,
+                maxZoomLevel: 3,
                 
-                // Track which images are viewed
-                let viewedImageIndexes = new Set();
-                let gallerySlugForTracking = null;
-                
-                // Get slug from URL
-                const urlParams = new URLSearchParams(window.location.search);
-                if (urlParams.get('view') === 'gallery') {
-                    gallerySlugForTracking = urlParams.get('slug');
-                }
-
-                // Track image views
-                lightbox.on('change', () => {
-                    if (lightbox.pswp) {
-                        const currentIndex = lightbox.pswp.currIndex;
-                        viewedImageIndexes.add(currentIndex);
-                    }
-                });
-
-                // Send tracking data when gallery is closed
-                lightbox.on('close', () => {
-                    const totalUniqueViews = viewedImageIndexes.size;
-
-                    if (totalUniqueViews > 0 && gallerySlugForTracking) {
-                        const token = localStorage.getItem('lustroom_jwt');
-                        if (token) {
-                            const payload = {
-                                gallery_slug: gallerySlugForTracking,
-                                images_viewed_count: totalUniqueViews
-                            };
-
-                            fetch(`${API_BASE_URL}/gallery/log_view`, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'Authorization': `Bearer ${token}`
-                                },
-                                body: JSON.stringify(payload)
-                            }).catch(() => {});
-                        }
-                    }
-                    
-                    viewedImageIndexes.clear();
-                    gallerySlugForTracking = null;
-                });
-                
-                // ✅ MOBILE: Tap to toggle UI (no auto-hide timer)
-                // ✅ DESKTOP: Auto-hide on mouse idle
-                if (isMobile) {
-                    // Mobile: Show UI, tap anywhere to toggle
-                    let isUIVisible = true;
-                    
-                    lightbox.on('afterInit', function() {
-                        const pswpElement = lightbox.pswp.element;
-                        pswpElement.classList.add('pswp--ui-visible');
-                        
-                        // Tap to toggle
-                        pswpElement.addEventListener('click', (e) => {
-                            // Don't toggle if clicking buttons
-                            if (e.target.closest('.pswp__button')) return;
-                            
-                            isUIVisible = !isUIVisible;
-                            if (isUIVisible) {
-                                pswpElement.classList.add('pswp--ui-visible');
-                                pswpElement.classList.remove('pswp--ui-hidden');
-                            } else {
-                                pswpElement.classList.remove('pswp--ui-visible');
-                                pswpElement.classList.add('pswp--ui-hidden');
-                            }
-                        });
-                    });
-                } else {
-                    // Desktop: Auto-hide on mouse idle
-                    let uiHideTimeout;
-                    
-                    lightbox.on('afterInit', function() {
-                        const pswpElement = lightbox.pswp.element;
-                        
-                        const showUI = () => {
-                            pswpElement.classList.add('pswp--ui-visible');
-                            pswpElement.classList.remove('pswp--ui-hidden');
-                            
-                            if (uiHideTimeout) clearTimeout(uiHideTimeout);
-                            
-                            uiHideTimeout = setTimeout(() => {
-                                pswpElement.classList.remove('pswp--ui-visible');
-                                pswpElement.classList.add('pswp--ui-hidden');
-                            }, 3000);
+                // ✅ NEW: Better padding for iOS
+                paddingFn: (viewportSize) => {
+                    const isMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+                    if (isMobile) {
+                        return { 
+                            top: Math.max(env_safe_area_inset_top || 40, 40), 
+                            bottom: Math.max(env_safe_area_inset_bottom || 20, 20), 
+                            left: 10, 
+                            right: 10 
                         };
-                        
-                        pswpElement.addEventListener('mousemove', showUI);
-                        pswpElement.addEventListener('click', showUI);
-                        showUI();
-                    });
-                }
+                    }
+                    return { top: 20, bottom: 20, left: 20, right: 20 };
+                },
                 
-                lightbox.on('uiRegister', function() {
-                    // Fullscreen button
-                    lightbox.pswp.ui.registerElement({
-                        name: 'fullscreen-button',
-                        order: 9,
-                        isButton: true,
-                        html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
-                        onClick: (event, el) => {
-                            if (!document.fullscreenElement) {
-                                lightbox.pswp.element.requestFullscreen();
+                arrowKeys: true,
+                preload: [1, 2],
+                
+                // ✅ NEW: Prevent fragment visibility during swipe
+                hideAnimationDuration: 333,
+                showAnimationDuration: 333,
+                easing: 'cubic-bezier(0.4, 0, 0.22, 1)'
+            });
+
+            // Fullscreen button with iOS support
+            lightbox.pswp.ui.registerElement({
+                name: 'fullscreen-button',
+                order: 9,
+                isButton: true,
+                html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
+                onClick: (event, el) => {
+                    const pswpElement = lightbox.pswp.element;
+                    
+                    // ✅ iOS-specific fullscreen handling
+                    if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+                        // iOS uses webkit fullscreen
+                        if (!document.webkitFullscreenElement) {
+                            if (pswpElement.webkitRequestFullscreen) {
+                                pswpElement.webkitRequestFullscreen();
+                            }
+                        } else {
+                            if (document.webkitExitFullscreen) {
+                                document.webkitExitFullscreen();
+                            }
+                        }
+                    } else {
+                        // Standard fullscreen
+                        if (!document.fullscreenElement) {
+                            pswpElement.requestFullscreen().catch(err => {
+                                console.error('Fullscreen error:', err);
+                            });
+                        } else {
+                            document.exitFullscreen();
+                        }
+                    }
+                }
+            });
+
+            lightbox.on('uiRegister', () => {
+                lightbox.pswp.ui.registerElement({
+                    name: 'custom-caption',
+                    order: 9,
+                    isButton: false,
+                    appendTo: 'root',
+                    html: '<div class="pswp__custom-caption"></div>',
+                    onInit: (el, pswp) => {
+                        lightbox.pswp.on('change', () => {
+                            const currSlide = lightbox.pswp.currSlide;
+                            if (currSlide && currSlide.data) {
+                                const caption = currSlide.data.title || currSlide.data.alt || '';
+                                el.firstElementChild.textContent = caption;
+                                el.style.display = caption ? 'block' : 'none';
                             } else {
-                                document.exitFullscreen();
-                            }
-                        }
-                    });
-                    
-                    // Download button
-                    lightbox.pswp.ui.registerElement({
-                        name: 'download-button',
-                        order: 8,
-                        isButton: true,
-                        html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>',
-                        onClick: (event, el) => {
-                            const currentSlide = lightbox.pswp.currSlide;
-                            const link = document.createElement('a');
-                            link.href = currentSlide.data.src;
-                            link.download = `image-${lightbox.pswp.currIndex + 1}.jpg`;
-                            link.click();
-                        }
-                    });
-                    
-                    // ✅ Only show play button on desktop
-                    if (!isMobile) {
-                        let slideshowInterval = null;
-                        let isPlaying = false;
-                        
-                        lightbox.pswp.ui.registerElement({
-                            name: 'play-button',
-                            order: 7,
-                            isButton: true,
-                            html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>',
-                            onClick: (event, el) => {
-                                if (!isPlaying) {
-                                    isPlaying = true;
-                                    el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
-                                    slideshowInterval = setInterval(() => {
-                                        lightbox.pswp.next();
-                                    }, 3000);
-                                } else {
-                                    isPlaying = false;
-                                    el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
-                                    clearInterval(slideshowInterval);
-                                }
-                            }
-                        });
-                        
-                        lightbox.on('close', function() {
-                            if (slideshowInterval) {
-                                clearInterval(slideshowInterval);
-                                isPlaying = false;
+                                el.style.display = 'none';
                             }
                         });
                     }
                 });
-                
-                lightbox.init();
-            } catch (error) {
-                console.error('PhotoSwipe initialization error:', error);
-            }
+            });
+
+            lightbox.init();
+            this.lightbox = lightbox;
         }
     }
 

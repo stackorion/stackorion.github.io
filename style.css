@@ -2374,10 +2374,16 @@ body.theme-dark .announcement-error {
     width: 0;
     overflow: hidden;
     transition: width 0.3s ease;
+    display: flex;
+    align-items: center;
 }
 
-.premium-volume-group:hover .premium-volume-slider-wrapper {
-    width: 80px;
+/* ✅ FIX: Show slider on hover - DESKTOP ONLY */
+@media (min-width: 769px) {
+    .premium-volume-group:hover .premium-volume-slider-wrapper,
+    .premium-volume-slider-wrapper:focus-within {
+        width: 100px !important;
+    }
 }
 
 .premium-volume-slider {
@@ -2388,26 +2394,36 @@ body.theme-dark .announcement-error {
     border-radius: 3px;
     outline: none;
     cursor: pointer;
+    margin: 0 8px;
 }
 
 .premium-volume-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 14px;
-    height: 14px;
-    background: #fff;
+    appearance: none;
+    width: 15px;
+    height: 15px;
     border-radius: 50%;
+    background: #fff;
     cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s ease;
+}
+
+.premium-volume-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
 }
 
 .premium-volume-slider::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
-    background: #fff;
+    width: 15px;
+    height: 15px;
     border-radius: 50%;
+    background: #fff;
     cursor: pointer;
     border: none;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s ease;
+}
+
+.premium-volume-slider::-moz-range-thumb:hover {
+    transform: scale(1.2);
 }
 
 .premium-volume-btn .volume-low,
@@ -2884,7 +2900,9 @@ body.theme-dark .announcement-error {
     top: 0;
     left: 0;
     width: 100%;
-    height: 100%;
+    /* ✅ Use 100vh for iOS compatibility */
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for iOS */
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     display: flex;
     flex-direction: column;
@@ -2892,6 +2910,10 @@ body.theme-dark .announcement-error {
     justify-content: center;
     z-index: 100000;
     transition: opacity 0.4s ease;
+    
+    /* ✅ iOS safe area */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
 }
 
 .app-loader-spinner {
@@ -2903,18 +2925,14 @@ body.theme-dark .announcement-error {
     animation: app-loader-spin 0.8s linear infinite;
 }
 
-@keyframes app-loader-spin {
-    to { 
-        transform: rotate(360deg); 
-    }
-}
-
 .app-loader-title {
     color: white;
     font-size: 32px;
     font-weight: 700;
     margin-top: 30px;
     letter-spacing: 2px;
+    text-align: center;
+    padding: 0 20px;
 }
 
 .app-loader-message {
@@ -2922,15 +2940,48 @@ body.theme-dark .announcement-error {
     font-size: 16px;
     margin-top: 12px;
     animation: app-loader-pulse 2s ease-in-out infinite;
+    text-align: center;
+    padding: 0 20px;
+}
+
+/* ✅ iOS-specific adjustments */
+@supports (-webkit-touch-callout: none) {
+    #app-loader {
+        /* iOS Safari specific */
+        height: -webkit-fill-available;
+    }
+    
+    .app-loader-title {
+        font-size: 28px;
+    }
+}
+
+/* Mobile adjustments */
+@media (max-width: 480px) {
+    .app-loader-spinner {
+        width: 60px;
+        height: 60px;
+        border-width: 4px;
+    }
+    
+    .app-loader-title {
+        font-size: 24px;
+        margin-top: 24px;
+    }
+    
+    .app-loader-message {
+        font-size: 14px;
+    }
+}
+
+@keyframes app-loader-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 @keyframes app-loader-pulse {
-    0%, 100% { 
-        opacity: 0.7; 
-    }
-    50% { 
-        opacity: 1; 
-    }
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
 }
 
 /* Smooth fade-in for app container */
@@ -3610,5 +3661,195 @@ body.player-active {
 @supports (padding: env(safe-area-inset-top)) {
     .native-player-header {
         padding-top: calc(12px + env(safe-area-inset-top));
+    }
+}
+
+/* ========================================
+   ✅ ANDROID & MOBILE GALLERY FIXES
+   ======================================== */
+
+@media (max-width: 768px) {
+    /* Better button positioning for Android */
+    .pswp__top-bar {
+        padding: 16px 8px 12px !important;
+        background: linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 80%, transparent 100%) !important;
+        gap: 6px !important;
+    }
+    
+    /* Counter - always visible */
+    .pswp__counter {
+        position: static !important;
+        background: rgba(0, 0, 0, 0.8) !important;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        padding: 8px 14px !important;
+        border-radius: 20px !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        border: 1px solid rgba(255, 255, 255, 0.25) !important;
+        margin: 0 !important;
+        order: 1;
+        color: #fff !important;
+    }
+    
+    /* Buttons container */
+    .pswp__top-bar > div:last-child {
+        display: flex !important;
+        gap: 6px !important;
+        order: 2;
+        flex-wrap: nowrap !important;
+    }
+    
+    /* All buttons - consistent sizing */
+    .pswp__button {
+        width: 44px !important;
+        height: 44px !important;
+        background: rgba(0, 0, 0, 0.8) !important;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.25) !important;
+        border-radius: 50% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        flex-shrink: 0 !important;
+    }
+    
+    /* Navigation arrows - better positioning */
+    .pswp__button--arrow {
+        width: 50px !important;
+        height: 50px !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        background: rgba(0, 0, 0, 0.8) !important;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    }
+    
+    .pswp__button--arrow--prev {
+        left: 12px !important;
+    }
+    
+    .pswp__button--arrow--next {
+        right: 12px !important;
+    }
+    
+    /* Remove download on mobile to reduce clutter */
+    .pswp__button[aria-label*="download"],
+    .pswp__button[aria-label*="Download"] {
+        display: none !important;
+    }
+}
+
+/* Extra small Android devices */
+@media (max-width: 480px) {
+    .pswp__counter {
+        font-size: 12px !important;
+        padding: 6px 12px !important;
+    }
+    
+    .pswp__button {
+        width: 40px !important;
+        height: 40px !important;
+    }
+    
+    .pswp__button--arrow {
+        width: 46px !important;
+        height: 46px !important;
+    }
+    
+    /* Hide play button on very small screens */
+    .pswp__button[aria-label*="play"],
+    .pswp__button[aria-label*="Play"] {
+        display: none !important;
+    }
+}
+
+/* Landscape mode adjustments */
+@media (max-width: 926px) and (orientation: landscape) {
+    .pswp__top-bar {
+        padding: 8px !important;
+    }
+    
+    .pswp__counter {
+        padding: 6px 12px !important;
+        font-size: 12px !important;
+    }
+    
+    .pswp__button {
+        width: 38px !important;
+        height: 38px !important;
+    }
+}
+
+/* ========================================
+   ✅ ANDROID ZOOM FIX
+   ======================================== */
+
+@media (max-width: 768px) {
+    /* Prevent body zoom conflicts */
+    body {
+        touch-action: pan-y pinch-zoom;
+    }
+    
+    /* Allow zoom on images */
+    img {
+        touch-action: pinch-zoom;
+    }
+    
+    /* Gallery images should be zoomable */
+    .gallery-grid img,
+    .pswp img {
+        touch-action: pinch-zoom;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+    
+    /* Prevent scroll blocking zoom */
+    .pswp {
+        touch-action: pinch-zoom pan-x pan-y;
+    }
+    
+    .pswp__img {
+        touch-action: pinch-zoom;
+    }
+}
+
+/* ========================================
+   ✅ GALLERY IMAGE LOADING STATES
+   ======================================== */
+
+.gallery-item img {
+    width: 100%;
+    height: 280px;
+    object-fit: cover;
+    display: block;
+    min-width: 100% !important;
+    min-height: 280px !important;
+    background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+    transition: opacity 0.3s ease;
+}
+
+.gallery-item img:not([src]),
+.gallery-item img[src=""] {
+    opacity: 0.5;
+}
+
+.gallery-item img[src]:not([src=""]) {
+    opacity: 1;
+}
+
+/* Prevent shrinking on slow network */
+@media (max-width: 768px) {
+    .gallery-item img {
+        height: 200px;
+        min-height: 200px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .gallery-item img {
+        height: 150px;
+        min-height: 150px !important;
     }
 }
