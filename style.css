@@ -1498,59 +1498,64 @@ button:disabled {
     display: none !important;
 }
 
-/* Mobile Optimizations for PhotoSwipe - Preserved as they are library specific */
+/* Mobile Optimizations for PhotoSwipe */
 @media (max-width: 768px) {
+    /* Larger, more accessible buttons */
     .pswp__button {
-        width: 42px !important;
-        height: 42px !important;
+        width: 48px !important;
+        height: 48px !important;
+        margin: 4px !important;
     }
     
+    /* Better positioning - avoid notches and edges */
+    .pswp__top-bar {
+        padding: max(env(safe-area-inset-top), 16px) 12px 12px !important;
+        gap: 8px !important;
+    }
+    
+    /* Counter positioning */
+    .pswp__counter {
+        font-size: 13px !important;
+        padding: 6px 12px !important;
+    }
+    
+    /* Navigation arrows - larger touch targets */
     .pswp__button--arrow {
-        width: 50px !important;
-        height: 50px !important;
+        width: 56px !important;
+        height: 56px !important;
+        margin: 0 8px !important;
     }
     
-    .pswp__counter {
-        font-size: 13px;
-        padding: 7px 14px;
+    .pswp__button--arrow--prev {
+        left: 8px !important;
     }
     
-    .pswp__top-bar {
-        padding: 12px 15px !important;
-        gap: 10px !important;
+    .pswp__button--arrow--next {
+        right: 8px !important;
     }
     
-    .pswp__top-bar > div:last-child {
-        gap: 5px !important;
-    }
-}
-
-@media (max-width: 480px) {
-    .pswp__top-bar {
-        grid-template-columns: auto auto !important;
-    }
-    
-    /* Stack counter and buttons */
-    .pswp__counter {
-        grid-column: 1 !important;
-        font-size: 12px;
-        padding: 6px 12px;
-    }
-    
-    .pswp__top-bar > div:last-child {
-        grid-column: 2 !important;
-        gap: 4px !important;
-    }
-    
-    .pswp__button {
-        width: 38px !important;
-        height: 38px !important;
-    }
-    
-    /* Hide download button on smallest screens */
+    /* Hide download on mobile to reduce clutter */
     .pswp__button[aria-label*="download"],
     .pswp__button[aria-label*="Download"] {
         display: none !important;
+    }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+    .pswp__button {
+        width: 44px !important;
+        height: 44px !important;
+    }
+    
+    .pswp__counter {
+        font-size: 12px !important;
+        padding: 5px 10px !important;
+    }
+    
+    /* Stack buttons if needed */
+    .pswp__top-bar > div:last-child {
+        gap: 4px !important;
     }
 }
 
@@ -1612,27 +1617,33 @@ button:disabled {
    ANNOUNCEMENT SLIDER STYLES (V2 - MULTI-ANNOUNCEMENT SYSTEM)
    ============================================================================== */
 
+/* ✅ FIX: Announcement Banner Overflow & Visibility */
 #announcementSliderContainer {
     max-width: 1200px;
     margin: 0 auto 20px;
     padding: 0 15px;
+    position: relative;
+    z-index: 2000; /* Above header */
+    overflow: visible; /* Don't clip */
 }
 
 .announcement-swiper {
     border-radius: 8px;
-    overflow: hidden;
+    overflow: visible !important; /* Allow buttons to show */
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .announcement-slide {
     padding: 20px 25px;
-    min-height: 80px;
+    min-height: auto; /* Auto height */
+    max-height: none; /* No max height */
     display: flex;
     flex-direction: column;
     gap: 12px;
     position: relative;
     border-left: 4px solid;
     transition: transform 0.3s ease;
+    overflow: visible; /* Show all content */
 }
 
 .announcement-header {
@@ -1812,6 +1823,42 @@ body.theme-dark .announcement-error {
     background: linear-gradient(135deg, #3a1e23 0%, #5a2d35 100%);
     color: #ffb3ba;
     border-left-color: #f44336;
+}
+
+/* ✅ FIX: Mobile adjustments for Announcement Slider */
+@media (max-width: 768px) {
+    #announcementSliderContainer {
+        padding: 0 10px;
+        margin: 0 auto 15px;
+    }
+    
+    .announcement-slide {
+        padding: 15px 20px;
+        font-size: 0.9rem;
+    }
+    
+    .announcement-swiper .swiper-button-next,
+    .announcement-swiper .swiper-button-prev {
+        width: 28px;
+        height: 28px;
+    }
+}
+
+@media (max-width: 480px) {
+    .announcement-slide {
+        padding: 12px 15px;
+        font-size: 0.85rem;
+    }
+    
+    .announcement-title {
+        font-size: 0.95em;
+    }
+    
+    /* Hide navigation arrows on very small screens */
+    .announcement-swiper .swiper-button-next,
+    .announcement-swiper .swiper-button-prev {
+        display: none;
+    }
 }
 
 /* ========================================
@@ -3203,31 +3250,6 @@ body.theme-dark .announcement-error {
         font-size: 22px;
     }
     
-    /* Announcement Slider */
-    .announcement-slide {
-        padding: 15px 20px;
-        min-height: 60px;
-    }
-    
-    .announcement-title {
-        font-size: 1em;
-    }
-    
-    .announcement-content p {
-        font-size: 0.9em;
-    }
-    
-    .announcement-swiper .swiper-button-next,
-    .announcement-swiper .swiper-button-prev {
-        width: 30px;
-        height: 30px;
-    }
-    
-    .announcement-swiper .swiper-button-next:after,
-    .announcement-swiper .swiper-button-prev:after {
-        font-size: 14px;
-    }
-    
     /* Premium Video Player */
     .premium-player-header {
         padding: 16px 20px;
@@ -3450,20 +3472,6 @@ body.theme-dark .announcement-error {
     
     .gallery-info p {
         font-size: 14px;
-    }
-    
-    /* Announcement Slider */
-    #announcementSliderContainer {
-        padding: 0 10px;
-    }
-    
-    .announcement-slide {
-        padding: 12px 15px;
-    }
-    
-    .announcement-swiper .swiper-button-next,
-    .announcement-swiper .swiper-button-prev {
-        display: none;
     }
     
     /* Premium Video Player */

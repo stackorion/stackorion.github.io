@@ -2041,6 +2041,9 @@
                 return;
             }
             
+            // ✅ Detect mobile
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            
             try {
                 const lightbox = new PhotoSwipeLightbox({
                     gallery: '#galleryGrid',
@@ -2101,9 +2104,7 @@
                                     'Authorization': `Bearer ${token}`
                                 },
                                 body: JSON.stringify(payload)
-                            }).catch(() => {
-                                // Silently handle errors
-                            });
+                            }).catch(() => {});
                         }
                     }
                     
@@ -2111,33 +2112,55 @@
                     gallerySlugForTracking = null;
                 });
                 
-                // Auto-hide UI on mouse idle
-                let uiHideTimeout;
-                let isUIVisible = true;
-                
-                lightbox.on('afterInit', function() {
-                    const pswpElement = lightbox.pswp.element;
+                // ✅ MOBILE: Tap to toggle UI (no auto-hide timer)
+                // ✅ DESKTOP: Auto-hide on mouse idle
+                if (isMobile) {
+                    // Mobile: Show UI, tap anywhere to toggle
+                    let isUIVisible = true;
                     
-                    const showUI = () => {
-                        isUIVisible = true;
+                    lightbox.on('afterInit', function() {
+                        const pswpElement = lightbox.pswp.element;
                         pswpElement.classList.add('pswp--ui-visible');
-                        pswpElement.classList.remove('pswp--ui-hidden');
                         
-                        if (uiHideTimeout) {
-                            clearTimeout(uiHideTimeout);
-                        }
-                        
-                        uiHideTimeout = setTimeout(() => {
-                            isUIVisible = false;
-                            pswpElement.classList.remove('pswp--ui-visible');
-                            pswpElement.classList.add('pswp--ui-hidden');
-                        }, 3000);
-                    };
+                        // Tap to toggle
+                        pswpElement.addEventListener('click', (e) => {
+                            // Don't toggle if clicking buttons
+                            if (e.target.closest('.pswp__button')) return;
+                            
+                            isUIVisible = !isUIVisible;
+                            if (isUIVisible) {
+                                pswpElement.classList.add('pswp--ui-visible');
+                                pswpElement.classList.remove('pswp--ui-hidden');
+                            } else {
+                                pswpElement.classList.remove('pswp--ui-visible');
+                                pswpElement.classList.add('pswp--ui-hidden');
+                            }
+                        });
+                    });
+                } else {
+                    // Desktop: Auto-hide on mouse idle
+                    let uiHideTimeout;
                     
-                    pswpElement.addEventListener('mousemove', showUI);
-                    pswpElement.addEventListener('click', showUI);
-                    showUI();
-                });
+                    lightbox.on('afterInit', function() {
+                        const pswpElement = lightbox.pswp.element;
+                        
+                        const showUI = () => {
+                            pswpElement.classList.add('pswp--ui-visible');
+                            pswpElement.classList.remove('pswp--ui-hidden');
+                            
+                            if (uiHideTimeout) clearTimeout(uiHideTimeout);
+                            
+                            uiHideTimeout = setTimeout(() => {
+                                pswpElement.classList.remove('pswp--ui-visible');
+                                pswpElement.classList.add('pswp--ui-hidden');
+                            }, 3000);
+                        };
+                        
+                        pswpElement.addEventListener('mousemove', showUI);
+                        pswpElement.addEventListener('click', showUI);
+                        showUI();
+                    });
+                }
                 
                 lightbox.on('uiRegister', function() {
                     // Fullscreen button
@@ -2169,38 +2192,38 @@
                             link.click();
                         }
                     });
-                });
-                
-                // Slideshow functionality
-                let slideshowInterval = null;
-                let isPlaying = false;
-                
-                lightbox.on('uiRegister', function() {
-                    lightbox.pswp.ui.registerElement({
-                        name: 'play-button',
-                        order: 7,
-                        isButton: true,
-                        html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>',
-                        onClick: (event, el) => {
-                            if (!isPlaying) {
-                                isPlaying = true;
-                                el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
-                                slideshowInterval = setInterval(() => {
-                                    lightbox.pswp.next();
-                                }, 3000);
-                            } else {
-                                isPlaying = false;
-                                el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
-                                clearInterval(slideshowInterval);
+                    
+                    // ✅ Only show play button on desktop
+                    if (!isMobile) {
+                        let slideshowInterval = null;
+                        let isPlaying = false;
+                        
+                        lightbox.pswp.ui.registerElement({
+                            name: 'play-button',
+                            order: 7,
+                            isButton: true,
+                            html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>',
+                            onClick: (event, el) => {
+                                if (!isPlaying) {
+                                    isPlaying = true;
+                                    el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
+                                    slideshowInterval = setInterval(() => {
+                                        lightbox.pswp.next();
+                                    }, 3000);
+                                } else {
+                                    isPlaying = false;
+                                    el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
+                                    clearInterval(slideshowInterval);
+                                }
                             }
-                        }
-                    });
-                });
-                
-                lightbox.on('close', function() {
-                    if (slideshowInterval) {
-                        clearInterval(slideshowInterval);
-                        isPlaying = false;
+                        });
+                        
+                        lightbox.on('close', function() {
+                            if (slideshowInterval) {
+                                clearInterval(slideshowInterval);
+                                isPlaying = false;
+                            }
+                        });
                     }
                 });
                 
@@ -2881,8 +2904,8 @@
                             <!-- Skip Forward 10s -->
                             <button class="premium-control-btn premium-skip-forward premium-skip-btn" aria-label="Forward 10 seconds">
                                 <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-                                    <path d="M12 5V2.21c0-.45-.54-.67-.85-.35l-3.8 3.79c-.2.2-.2.51 0 .71l-3.79 3.79c-.32.31-.86.09-.86-.36V7c-3.73 0-6.68 3.42-5.86 7.29.47 2.27 2.31 4.1 4.57 4.57 3.57.75 6.75-1.7 7.23-5.01.07-.48-.49-.85-.98-.85.6 0 1.08.53-1 1.13-.62 4.39-4.8 7.64-9.53 6.72-3.12-.61-5.63-3.12-6.24-6.24C3.16 9.48 7.06 5 12 5z"/>
-                                    <text x="12" y="16" text-anchor="middle" font-size="8" font-weight="bold" fill="currentColor">10</text>
+                                    <path d="M4 13c0 4.4 3.6 8 8 8s8-3.6 8-8h-2c0 3.3-2.7 6-6 6s-6-2.7-6-6 2.7-6 6-6v4l5-5-5-5v4c-4.4 0-8 3.6-8 8z"/>
+                                    <text x="13" y="15.5" text-anchor="middle" font-size="7" font-weight="bold" fill="currentColor">10</text>
                                 </svg>
                             </button>
                             
@@ -2900,7 +2923,7 @@
                                     </svg>
                                 </button>
                                 <div class="premium-volume-slider-wrapper" style="width:0; overflow:hidden; transition:width 0.3s; display:flex; align-items:center;">
-                                    <input type="range" class="premium-volume-slider" min="0" max="1" step="0.01" value="1" aria-label="Volume" style="width:60px;">
+                                    <input type="range" class="premium-volume-slider" min="0" max="1" step="0.01" value="1" aria-label="Volume" style="width:80px; margin-left:8px;">
                                 </div>
                             </div>
                             
@@ -2928,6 +2951,16 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- ✅ NEW: Fullscreen Button -->
+                            <button class="premium-control-btn premium-fullscreen-btn" aria-label="Fullscreen">
+                                <svg class="enter-fullscreen" viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+                                    <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+                                </svg>
+                                <svg class="exit-fullscreen" viewBox="0 0 24 24" fill="currentColor" width="24" height="24" style="display:none;">
+                                    <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
+                                </svg>
+                            </button>
                         </div>
                     </div>
                     
