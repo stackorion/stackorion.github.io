@@ -2370,25 +2370,15 @@ body.theme-dark .announcement-error {
     gap: 8px;
 }
 
-/* FIX 4 START */
 .premium-volume-slider-wrapper {
-    width: 80px; /* ✅ Always visible on desktop */
-    overflow: visible;
-    transition: opacity 0.3s ease;
-    display: flex;
-    align-items: center;
-    opacity: 1;
+    width: 0;
+    overflow: hidden;
+    transition: width 0.3s ease;
 }
 
-/* ✅ Hide on mobile only */
-@media (max-width: 768px) {
-    .premium-volume-slider-wrapper {
-        width: 0 !important;
-        opacity: 0 !important;
-        pointer-events: none;
-    }
+.premium-volume-group:hover .premium-volume-slider-wrapper {
+    width: 80px;
 }
-/* FIX 4 END */
 
 .premium-volume-slider {
     width: 100%;
@@ -2420,37 +2410,27 @@ body.theme-dark .announcement-error {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
-/* FIX 5 START */
-/* ✅ FIXED: Default state - show high volume icon */
 .premium-volume-btn .volume-low,
 .premium-volume-btn .volume-mute {
-    display: none !important;
+    display: none;
 }
 
-.premium-volume-btn .volume-high {
-    display: block !important;
-}
-
-/* ✅ Low volume state */
-.premium-volume-btn.low .volume-high,
-.premium-volume-btn.low .volume-mute {
-    display: none !important;
+.premium-volume-btn.low .volume-high {
+    display: none;
 }
 
 .premium-volume-btn.low .volume-low {
-    display: block !important;
+    display: block;
 }
 
-/* ✅ Muted state */
 .premium-volume-btn.mute .volume-high,
 .premium-volume-btn.mute .volume-low {
-    display: none !important;
+    display: none;
 }
 
 .premium-volume-btn.mute .volume-mute {
-    display: block !important;
+    display: block;
 }
-/* FIX 5 END */
 
 /* Time Display */
 .premium-time-display {
@@ -3631,37 +3611,4 @@ body.player-active {
     .native-player-header {
         padding-top: calc(12px + env(safe-area-inset-top));
     }
-}
-
-/* ============================================================================
-   DESKTOP FULLSCREEN - HIDE BROWSER UI
-   ============================================================================ */
-
-/* ✅ Force true fullscreen - hide browser chrome */
-.premium-player-modal:-webkit-full-screen,
-.premium-player-modal:-moz-full-screen,
-.premium-player-modal:-ms-fullscreen,
-.premium-player-modal:fullscreen {
-    width: 100vw !important;
-    height: 100vh !important;
-    max-width: 100vw !important;
-    max-height: 100vh !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-.premium-player-content:-webkit-full-screen,
-.premium-player-content:-moz-full-screen,
-.premium-player-content:-ms-fullscreen,
-.premium-player-content:fullscreen {
-    width: 100vw !important;
-    height: 100vh !important;
-}
-
-/* ✅ Ensure video takes full screen space */
-.premium-player-modal:-webkit-full-screen .premium-video-wrapper,
-.premium-player-modal:-moz-full-screen .premium-video-wrapper,
-.premium-player-modal:fullscreen .premium-video-wrapper {
-    width: 100% !important;
-    height: 100% !important;
 }
