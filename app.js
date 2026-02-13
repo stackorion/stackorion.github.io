@@ -1877,12 +1877,13 @@ class Router {
                 data = await response.json();
                 
                 // ✅ CACHE SET: Save to cache if successful
-                if (response.ok && data.status === 'success' && data.content) {
+                // Only cache if we actually made a network request (response exists)
+                if (data && data.status === 'success' && data.content) {
                     cacheManager.setCachedLinks(tierId, data.content);
                 }
             }
             
-            if (response.ok && data.status === 'success' && data.content) {
+            if (data && data.status === 'success' && data.content) {
                 this.appState.currentContent = data.content;
                 this.appState.filterState = { view: 'All', type: 'All', query: '' };
 
@@ -1917,11 +1918,14 @@ class Router {
                 // Setup copy buttons
                 setupCopyButtonDelegation();
                 
-            } else if (response.status === 401 || response.status === 403) {
-                localStorage.clear();
-                window.location.href = 'login.html';
             } else {
-                this.uiManager.showError(data.message || "Failed to fetch content.");
+                // Check if we have a response object (network request was made)
+                if (typeof response !== 'undefined' && (response.status === 401 || response.status === 403)) {
+                    localStorage.clear();
+                    window.location.href = 'login.html';
+                } else {
+                    this.uiManager.showError(data?.message || "Failed to fetch content.");
+                }
             }
         } catch (error) {
             console.error("Content fetch error:", error);
