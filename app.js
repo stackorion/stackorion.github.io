@@ -46,6 +46,9 @@ class AuthManager {
     
     logout() {
         localStorage.clear();
+        if (window.cacheManager) {
+            window.cacheManager.clearAll(); // ✅ Clear session cache
+        }
         window.location.href = 'index.html';
     }
     
@@ -54,9 +57,132 @@ class AuthManager {
     }
 }
 
+// ============================================================================
+// CACHE MANAGER - Prevents Duplicate API Calls
+// ============================================================================
+
+class CacheManager {
+    constructor() {
+        this.cachePrefix = 'lustroom_cache_';
+        this.profileCacheKey = this.cachePrefix + 'profile';
+        this.profileFetchPromise = null; // For deduplication
+        this.isFetchingProfile = false;
+    }
+    
+    // ✅ Cache get_patron_links results per tier
+    getCachedLinks(tierId) {
+        const cacheKey = `${this.cachePrefix}links_tier_${tierId}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        
+        if (!cached) return null;
+        
+        try {
+            const data = JSON.parse(cached);
+            // Check if cache is still valid (5 minutes TTL)
+            const age = Date.now() - (data.timestamp || 0);
+            const FIVE_MINUTES = 5 * 60 * 1000;
+            
+            if (age < FIVE_MINUTES) {
+                console.log(`✅ Cache HIT for tier ${tierId} (age: ${Math.round(age/1000)}s)`);
+                return data.content;
+            } else {
+                console.log(`⏰ Cache EXPIRED for tier ${tierId}`);
+                sessionStorage.removeItem(cacheKey);
+                return null;
+            }
+        } catch (e) {
+            console.error('Cache parse error:', e);
+            sessionStorage.removeItem(cacheKey);
+            return null;
+        }
+    }
+    
+    setCachedLinks(tierId, content) {
+        const cacheKey = `${this.cachePrefix}links_tier_${tierId}`;
+        try {
+            const data = {
+                content: content,
+                timestamp: Date.now()
+            };
+            sessionStorage.setItem(cacheKey, JSON.stringify(data));
+            console.log(`💾 Cached links for tier ${tierId}`);
+        } catch (e) {
+            console.error('Cache set error:', e);
+        }
+    }
+    
+    // ✅ Deduplicated profile fetcher (singleton pattern)
+    async fetchProfile(token) {
+        // If already fetching, return the existing promise
+        if (this.isFetchingProfile && this.profileFetchPromise) {
+            console.log('⚡ Profile fetch in progress, reusing promise...');
+            return this.profileFetchPromise;
+        }
+        
+        // Check cache first
+        const cached = sessionStorage.getItem(this.profileCacheKey);
+        if (cached) {
+            try {
+                const data = JSON.parse(cached);
+                const age = Date.now() - (data.timestamp || 0);
+                const TWO_MINUTES = 2 * 60 * 1000;
+                
+                if (age < TWO_MINUTES) {
+                    console.log(`✅ Profile cache HIT (age: ${Math.round(age/1000)}s)`);
+                    return data.profile;
+                }
+            } catch (e) {
+                sessionStorage.removeItem(this.profileCacheKey);
+            }
+        }
+        
+        // Fetch fresh data
+        console.log('🌐 Fetching fresh profile data...');
+        this.isFetchingProfile = true;
+        
+        this.profileFetchPromise = fetch(`${API_BASE_URL}/profile`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Cache the result
+                try {
+                    sessionStorage.setItem(this.profileCacheKey, JSON.stringify({
+                        profile: data,
+                        timestamp: Date.now()
+                    }));
+                    console.log('💾 Profile cached');
+                } catch (e) {
+                    console.error('Profile cache error:', e);
+                }
+            }
+            return data;
+        })
+        .finally(() => {
+            this.isFetchingProfile = false;
+            this.profileFetchPromise = null;
+        });
+        
+        return this.profileFetchPromise;
+    }
+    
+    // Clear all caches (call on logout)
+    clearAll() {
+        const keys = Object.keys(sessionStorage);
+        keys.forEach(key => {
+            if (key.startsWith(this.cachePrefix)) {
+                sessionStorage.removeItem(key);
+            }
+        });
+        console.log('🗑️ All caches cleared');
+    }
+}
+
 // Global instances (initialized after DOM ready)
 let appState = null;
 let authManager = null;
+let cacheManager = null; // ✅ NEW: Cache manager
 
 // ✅ FIX #5: Make appState accessible via window for debugging and global scope fixes
 if (typeof window !== 'undefined') {
@@ -1389,11 +1515,8 @@ async function renderHeaderActions() {
                 return;
             }
 
-            const response = await fetch(`${API_BASE_URL}/profile`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            
-            const data = await response.json();
+            // ✅ USE CACHE MANAGER: Deduplicated profile fetch
+            const data = await cacheManager.fetchProfile(token);
             
             if (response.ok && data.status === 'success' && data.system_config) {
                 // ✅ Use fresh data from backend, not stale localStorage
@@ -1459,11 +1582,8 @@ if (document.getElementById('loginForm')) {
                 
                 // Make second call to get profile data with subscriptions
                 try {
-                    const profileResponse = await fetch(`${API_BASE_URL}/profile`, {
-                        headers: { 'Authorization': `Bearer ${data.access_token}` }
-                    });
-                    
-                    const profileData = await profileResponse.json();
+                    // ✅ USE CACHE MANAGER: Deduplicated profile fetch
+                    const profileData = await cacheManager.fetchProfile(data.access_token);
                     
                     if (profileResponse.ok && profileData.status === 'success') {
                         // Save subscriptions data
@@ -1741,10 +1861,26 @@ class Router {
         
         try {
             const token = this.authManager.getToken();
-            const response = await fetch(`${API_BASE_URL}/get_patron_links?tier_id=${tierId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await response.json();
+            
+            // ✅ CACHE CHECK: Try to get from cache first
+            let data = null;
+            const cachedContent = cacheManager.getCachedLinks(tierId);
+            
+            if (cachedContent) {
+                // Use cached data
+                data = { status: 'success', content: cachedContent };
+            } else {
+                // Fetch fresh data
+                const response = await fetch(`${API_BASE_URL}/get_patron_links?tier_id=${tierId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                data = await response.json();
+                
+                // ✅ CACHE SET: Save to cache if successful
+                if (response.ok && data.status === 'success' && data.content) {
+                    cacheManager.setCachedLinks(tierId, data.content);
+                }
+            }
             
             if (response.ok && data.status === 'success' && data.content) {
                 this.appState.currentContent = data.content;
@@ -2344,6 +2480,8 @@ if (document.getElementById('appContainer')) {
     window.appState = appState; 
     
     authManager = new AuthManager();
+    cacheManager = new CacheManager(); // ✅ NEW: Initialize cache manager
+    window.cacheManager = cacheManager; // Make globally accessible
     
     const mainContent = document.getElementById('mainContent');
     const searchContainer = document.getElementById('searchContainer');
