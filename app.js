@@ -2755,6 +2755,12 @@ if (document.getElementById('appContainer')) {
                 card.dataset.platformId = platformId;
                 card.dataset.tierId = link.tier_id; // ✅ FIX: Use numeric ID from API
 
+                // ✅ FIX: Create index badge for EVERY card (moved from thumbnail section)
+                const indexBadge = document.createElement('div');
+                indexBadge.className = 'link-index-badge';
+                indexBadge.textContent = `#${linkCounter++}`;
+                card.appendChild(indexBadge); // Attach to CARD, not thumbnail
+
                 // Handle Gallery content type differently
                 const isGallery = link.content_type === 'Gallery';
 
@@ -2763,11 +2769,7 @@ if (document.getElementById('appContainer')) {
                     const thumbnailContainer = document.createElement('div');
                     thumbnailContainer.className = 'thumbnail-container';
                     
-                    // ✅ NEW: Add sequential index badge
-                    const indexBadge = document.createElement('div');
-                    indexBadge.className = 'link-index-badge';
-                    indexBadge.textContent = `#${linkCounter++}`;
-                    thumbnailContainer.appendChild(indexBadge);
+                    // ⚠️ REMOVED: Badge creation (now happens above for all cards)
                     
                     // NEW: Add play button overlay for videos
                     if (!isGallery && !link.locked) {

@@ -3835,3 +3835,17 @@ body.player-active {
     color: #1a1f2e;
     border: 1px solid rgba(0, 0, 0, 0.15);
 }
+
+/* ============================================================================
+   BADGE POSITIONING - Cards Without Thumbnails
+   ============================================================================ */
+
+/* When card has NO thumbnail, push content down to avoid badge overlap */
+.link-card:not(:has(.thumbnail-container)) .card-content {
+    padding-top: 40px; /* Extra space at top for the floating badge */
+}
+
+/* When card HAS a thumbnail, use standard padding */
+.link-card:has(.thumbnail-container) .card-content {
+    padding-top: 15px; /* Normal spacing */
+}
