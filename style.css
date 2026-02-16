@@ -3849,3 +3849,21 @@ body.player-active {
 .link-card:has(.thumbnail-container) .card-content {
     padding-top: 15px; /* Normal spacing */
 }
+
+/* ============================================================================
+   LINK INDEX BADGE FIX - Ensure always visible
+   ============================================================================ */
+
+/* Ensure link-card is positioning context for the badge */
+.link-card {
+    position: relative;
+}
+
+/* Ensure badge is always visible, not just on hover */
+.link-index-badge {
+    opacity: 1 !important;
+    visibility: visible !important;
+    display: block !important;
+    pointer-events: none;
+    z-index: 15;
+}
