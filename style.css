@@ -3808,3 +3808,30 @@ body.player-active {
         }
     }
 }
+
+/* ============================================================================
+   LINK INDEX BADGE - Sequential Card Numbering
+   ============================================================================ */
+
+.link-index-badge {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #ffffff;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.85em;
+    font-weight: bold;
+    z-index: 15;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    pointer-events: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Light theme variant */
+.theme-light .link-index-badge {
+    background: rgba(255, 255, 255, 0.9);
+    color: #1a1f2e;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+}

@@ -194,6 +194,9 @@ if (typeof window !== 'undefined') {
 // --- NEW: Active Video Players Registry ---
 const activePlayers = new Map(); // playerId -> {player, modal}
 
+// ✅ NEW: Scroll position preservation for video player
+let lastScrollPosition = 0;
+
 // --- Theme Manager ---
 class ThemeManager {
     constructor() {
@@ -716,6 +719,10 @@ class NativeMobilePlayer {
         `;
         
         document.body.appendChild(this.modal);
+        
+        // ✅ NEW: Save current scroll position before locking
+        lastScrollPosition = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
+        
         document.body.classList.add('player-active');
         
         this.videoElement = document.getElementById(`nativeVideo_${this.videoId}`);
@@ -863,6 +870,12 @@ class NativeMobilePlayer {
         }
         
         document.body.classList.remove('player-active');
+        
+        // ✅ NEW: Restore scroll position with instant behavior
+        window.scrollTo({
+            top: lastScrollPosition,
+            behavior: 'instant'
+        });
     }
 }
 
@@ -2717,6 +2730,10 @@ if (document.getElementById('appContainer')) {
             return;
         }
         let hasVisibleContent = false;
+        
+        // ✅ NEW: Initialize continuous link counter
+        let linkCounter = 1;
+        
         for (const tierName in contentData) {
             const links = contentData[tierName];
             if (links.length === 0) continue;
@@ -2745,6 +2762,12 @@ if (document.getElementById('appContainer')) {
                 if (link.thumbnail_url) {
                     const thumbnailContainer = document.createElement('div');
                     thumbnailContainer.className = 'thumbnail-container';
+                    
+                    // ✅ NEW: Add sequential index badge
+                    const indexBadge = document.createElement('div');
+                    indexBadge.className = 'link-index-badge';
+                    indexBadge.textContent = `#${linkCounter++}`;
+                    thumbnailContainer.appendChild(indexBadge);
                     
                     // NEW: Add play button overlay for videos
                     if (!isGallery && !link.locked) {
@@ -3235,6 +3258,10 @@ if (document.getElementById('appContainer')) {
         `;
         
         document.body.appendChild(modal);
+        
+        // ✅ NEW: Save current scroll position before locking
+        lastScrollPosition = window.scrollY || window.pageYOffset || document.documentElement.scrollTop;
+        
         // ✅ SAFE UX: Use CSS class instead of inline style
         document.body.classList.add('player-active');
         
@@ -4124,6 +4151,12 @@ if (document.getElementById('appContainer')) {
             
             // Restore body overflow
             document.body.classList.remove('player-active');
+            
+            // ✅ NEW: Restore scroll position with instant behavior
+            window.scrollTo({
+                top: lastScrollPosition,
+                behavior: 'instant'
+            });
         };
 
         controlsManager.elements.closeBtn.addEventListener('click', (e) => {
