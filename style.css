@@ -537,11 +537,21 @@ button:disabled {
     } 
 }
 
+/* ── Category Section wrapper ─────────────── */
+.category-section {
+    margin-bottom: 48px;
+}
+
+/* ── Category grid: responsive auto-fill ──── */
+.category-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 24px;
+}
+
+/* ── Keep .tier-group as alias (safety) ───── */
 .tier-group {
-    margin-bottom: 30px;
-    border-left: 3px solid var(--color-accent-primary);
-    padding-left: 20px;
-    transition: border-color var(--transition-duration);
+    margin-bottom: 48px;
 }
 
 .tier-title {
@@ -556,7 +566,7 @@ button:disabled {
     background-color: var(--color-background-card);
     border: 1px solid var(--color-border-card);
     border-radius: 8px;
-    margin-bottom: 20px;
+    margin-bottom: 0;
     overflow: hidden;
     padding: 0;
     transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out, border-color var(--transition-duration), background-color var(--transition-duration);
@@ -3866,4 +3876,157 @@ body.player-active {
     display: block !important;
     pointer-events: none;
     z-index: 15;
+}
+
+/* ============================================================================
+   CONTENT HUB — Hero Card
+   ============================================================================ */
+
+/* Hero section sits outside the grid — full width by itself */
+.hero-section {
+    margin-bottom: 40px;
+}
+
+.hero-card {
+    display: flex;
+    flex-direction: row;
+    background: linear-gradient(135deg, var(--color-background-card) 60%, var(--color-background-secondary));
+    border: 2px solid var(--color-accent-primary);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    min-height: 220px;
+    position: relative;
+}
+
+/* On the hero card, the thumbnail takes up 40% */
+.hero-card .thumbnail-container {
+    width: 40%;
+    aspect-ratio: auto;
+    min-height: 220px;
+    flex-shrink: 0;
+}
+
+/* Hero card content fills the rest */
+.hero-card .card-content {
+    flex: 1;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.hero-card h3 {
+    font-size: 1.4em;
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+
+/* "Start Here" label on hero */
+.hero-card::after {
+    content: '★ Latest';
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    background: var(--color-accent-primary);
+    color: #fff;
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    border-radius: 20px;
+    pointer-events: none;
+    z-index: 20;
+}
+
+/* Collapse to stacked layout on narrow screens */
+@media (max-width: 640px) {
+    .hero-card {
+        flex-direction: column;
+    }
+    .hero-card .thumbnail-container {
+        width: 100%;
+        min-height: 0;
+        aspect-ratio: 16 / 9;
+    }
+}
+
+/* ============================================================================
+   CONTENT HUB — Category Header
+   ============================================================================ */
+
+.category-header {
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0 0 20px 0;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--color-accent-primary);
+    color: var(--color-text-header);
+    transition: color var(--transition-duration), border-color var(--transition-duration);
+}
+
+/* ============================================================================
+   CONTENT HUB — Responsive Grid Breakpoints
+   ============================================================================ */
+
+/* 2 columns on narrow tablets */
+@media (max-width: 900px) {
+    .category-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* 1 column on mobile */
+@media (max-width: 600px) {
+    .category-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ============================================================================
+   CONTENT HUB — Content-Type Badges (Video / Gallery pills)
+   ============================================================================ */
+
+.content-type-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size: 0.7em;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 20px;
+    z-index: 16;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Video badge — blue tint */
+.content-type-badge[data-type="Video"] {
+    background: rgba(0, 123, 255, 0.80);
+    color: #fff;
+}
+
+/* Gallery badge — purple tint */
+.content-type-badge[data-type="Gallery"] {
+    background: rgba(138, 43, 226, 0.80);
+    color: #fff;
+}
+
+/* Light theme adjustments */
+.theme-light .content-type-badge[data-type="Video"] {
+    background: rgba(45, 90, 160, 0.85);
+}
+.theme-light .content-type-badge[data-type="Gallery"] {
+    background: rgba(107, 33, 168, 0.85);
+}
+
+/* Hero card: badge sits at top-right but clear of the "Latest" pill */
+.hero-card .content-type-badge {
+    top: 14px;
+    right: 90px; /* clear of the ::after "Latest" label */
 }

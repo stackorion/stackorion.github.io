@@ -2725,161 +2725,211 @@ if (document.getElementById('appContainer')) {
         const linksContentContainer = document.getElementById('linksContentContainer');
         if (!linksContentContainer) return;
         linksContentContainer.innerHTML = '';
+
         if (Object.keys(contentData).length === 0) {
             linksContentContainer.innerHTML = `<p class="empty-tier-message">This tier has no content yet. Check back soon!</p>`;
             return;
         }
-        let hasVisibleContent = false;
-        
-        // ✅ NEW: Initialize continuous link counter
-        let linkCounter = 1;
-        
-        for (const tierName in contentData) {
-            const links = contentData[tierName];
-            if (links.length === 0) continue;
-            const tierGroup = document.createElement('div');
-            tierGroup.className = 'tier-group';
-            links.forEach(link => {
-                const isRecentContent = isRecent(link.added_at);
 
-                const card = document.createElement('div');
-                card.className = 'link-card';
-                if (link.locked) card.classList.add('locked');
-                if (isRecentContent) {
-                    card.classList.add('is-new');
-                }
-                card.dataset.contentType = link.content_type || 'Video';
-                card.dataset.recentStatus = isRecentContent ? 'true' : 'false';
-                card.dataset.searchText = generateSearchableText(link);
-                card.dataset.tierName = tierName;
-                card.dataset.platformId = platformId;
-                card.dataset.tierId = link.tier_id; // ✅ FIX: Use numeric ID from API
+        // Flatten all links from all tier groups into one ordered array
+        let allLinks = Object.values(contentData).flat();
 
-                // ✅ FIX: Create index badge for EVERY card (moved from thumbnail section)
-                const indexBadge = document.createElement('div');
-                indexBadge.className = 'link-index-badge';
-                indexBadge.textContent = `#${linkCounter++}`;
-                card.appendChild(indexBadge); // Attach to CARD, not thumbnail
-
-                // Handle Gallery content type differently
-                const isGallery = link.content_type === 'Gallery';
-
-                // Thumbnail section (if present)
-                if (link.thumbnail_url) {
-                    const thumbnailContainer = document.createElement('div');
-                    thumbnailContainer.className = 'thumbnail-container';
-                    
-                    // ⚠️ REMOVED: Badge creation (now happens above for all cards)
-                    
-                    // NEW: Add play button overlay for videos
-                    if (!isGallery && !link.locked) {
-                        const playOverlay = document.createElement('div');
-                        playOverlay.className = 'video-play-overlay';
-                        playOverlay.innerHTML = `
-                            <svg viewBox="0 0 24 24" fill="white" width="64" height="64">
-                                <path d="M8 5v14l11-7z"/>
-                            </svg>
-                        `;
-                        thumbnailContainer.appendChild(playOverlay);
-                    }
-                    
-                    if (isRecentContent) {
-                        const newBadge = document.createElement('div');
-                        newBadge.className = 'new-badge';
-                        newBadge.textContent = `New! (${getDaysAgo(link.added_at)})`;
-                        thumbnailContainer.appendChild(newBadge);
-                    }
-                    const thumbnailImage = document.createElement('img');
-                    thumbnailImage.src = link.thumbnail_url;
-                    thumbnailImage.alt = `Thumbnail for ${link.title}`;
-                    thumbnailImage.loading = 'lazy';
-                    thumbnailContainer.appendChild(thumbnailImage);
-                    
-                    // NEW: Add click handler for video playback
-                    if (!isGallery && !link.locked) {
-                        thumbnailContainer.style.cursor = 'pointer';
-                        // ✅ UPDATED: Use PlayerFactory for thumbnail click
-                        thumbnailContainer.addEventListener('click', () => {
-                            PlayerFactory.create(link, tierName);
-                        });
-                    }
-                    
-                    card.appendChild(thumbnailContainer);
-                }
-
-                const cardContent = document.createElement('div');
-                cardContent.className = 'card-content';
-
-                // Title section with text-based badge for recent items without thumbnails
-                const title = document.createElement('h3');
-                const titleText = document.createTextNode(link.title || "Untitled Link");
-                title.appendChild(titleText);
-                
-                // Add icon for Gallery content type
-                if (isGallery) {
-                    const icon = document.createElement('span');
-                    icon.className = 'content-type-icon gallery-icon';
-                    icon.textContent = '🖼️';
-                    title.prepend(icon);
-                }
-                
-                if (isRecentContent && !link.thumbnail_url) {
-                    const newBadgeText = document.createElement('span');
-                    newBadgeText.className = 'new-badge-text';
-                    newBadgeText.style.cssText = "background: #ff3b30; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; margin-left: 8px;";
-                    newBadgeText.textContent = `New! (${getDaysAgo(link.added_at)})`;
-                    title.appendChild(newBadgeText);
-                }
-                cardContent.appendChild(title);
-
-                if (link.description) {
-                    const description = document.createElement('p');
-                    description.textContent = link.description;
-                    cardContent.appendChild(description);
-                }
-
-                const metaInfo = document.createElement('div');
-                metaInfo.className = 'meta-info';
-                if (link.category) {
-                    const categorySpan = document.createElement('span');
-                    categorySpan.innerHTML = `<strong>Category:</strong> ${link.category}`;
-                    metaInfo.appendChild(categorySpan);
-                }
-                cardContent.appendChild(metaInfo);
-
-                const actionsContainer = document.createElement('div');
-                actionsContainer.className = 'card-actions';
-
-                if (!link.locked) {
-                    if (isGallery) {
-                        // --- NEW: Add a "View Gallery" button ---
-                        const viewButton = document.createElement('a');
-                        viewButton.className = 'view-gallery-btn';
-                        viewButton.style.cssText = "display: block; text-align: center; background: #e3f2fd; color: #007aff; padding: 8px; border-radius: 4px; text-decoration: none; font-weight: 500;";
-                        viewButton.textContent = '🖼️ View Gallery';
-                        viewButton.href = `links.html?view=gallery&slug=${link.url}`;
-                        actionsContainer.appendChild(viewButton);
-                    } else {
-                        // NEW: Watch Video button
-                        const watchButton = document.createElement('button');
-                        watchButton.className = 'watch-video-btn';
-                        watchButton.textContent = '▶️ Watch Video';
-                        // ✅ UPDATED: Use PlayerFactory for button click
-                        watchButton.addEventListener('click', () => {
-                            PlayerFactory.create(link, tierName);
-                        });
-                        actionsContainer.appendChild(watchButton);
-                    }
-                    cardContent.appendChild(actionsContainer);
-                }
-
-                card.appendChild(cardContent);
-                tierGroup.appendChild(card);
-            });
-            linksContentContainer.appendChild(tierGroup);
-            hasVisibleContent = true;
+        if (allLinks.length === 0) {
+            linksContentContainer.innerHTML = `<p class="empty-tier-message">No content matches your search/filter criteria.</p>`;
+            return;
         }
-        if (!hasVisibleContent) {
+
+        let linkCounter = 1;
+
+        // ── Helper: build one card element (reuses all existing logic) ──────────
+        function buildCard(link, tierName, isHero) {
+            const isRecentContent = isRecent(link.added_at);
+
+            const card = document.createElement('div');
+            card.className = 'link-card';
+            if (isHero)          card.classList.add('hero-card');
+            if (link.locked)     card.classList.add('locked');
+            if (isRecentContent) card.classList.add('is-new');
+
+            card.dataset.contentType  = link.content_type || 'Video';
+            card.dataset.recentStatus = isRecentContent ? 'true' : 'false';
+            card.dataset.searchText   = generateSearchableText(link);
+            card.dataset.tierName     = tierName;
+            card.dataset.platformId   = platformId;
+            card.dataset.tierId       = link.tier_id;
+
+            // Index badge
+            const indexBadge = document.createElement('div');
+            indexBadge.className = 'link-index-badge';
+            indexBadge.textContent = `#${linkCounter++}`;
+            card.appendChild(indexBadge);
+
+            // ── Content-type pill badge (Video / Gallery) ────────────────────────
+            const typePill = document.createElement('span');
+            typePill.className = 'content-type-badge';
+            typePill.setAttribute('data-type', link.content_type || 'Video');
+            typePill.textContent = link.content_type || 'Video';
+            card.appendChild(typePill);
+
+            const isGallery = link.content_type === 'Gallery';
+
+            // Thumbnail
+            if (link.thumbnail_url) {
+                const thumbnailContainer = document.createElement('div');
+                thumbnailContainer.className = 'thumbnail-container';
+
+                if (!isGallery && !link.locked) {
+                    const playOverlay = document.createElement('div');
+                    playOverlay.className = 'video-play-overlay';
+                    playOverlay.innerHTML = `
+                        <svg viewBox="0 0 24 24" fill="white" width="64" height="64">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                    `;
+                    thumbnailContainer.appendChild(playOverlay);
+                }
+
+                if (isRecentContent) {
+                    const newBadge = document.createElement('div');
+                    newBadge.className = 'new-badge';
+                    newBadge.textContent = `New! (${getDaysAgo(link.added_at)})`;
+                    thumbnailContainer.appendChild(newBadge);
+                }
+
+                const thumbnailImage = document.createElement('img');
+                thumbnailImage.src     = link.thumbnail_url;
+                thumbnailImage.alt     = `Thumbnail for ${link.title}`;
+                thumbnailImage.loading = 'lazy';
+                thumbnailContainer.appendChild(thumbnailImage);
+
+                if (!isGallery && !link.locked) {
+                    thumbnailContainer.style.cursor = 'pointer';
+                    thumbnailContainer.addEventListener('click', () => {
+                        PlayerFactory.create(link, tierName);
+                    });
+                }
+
+                card.appendChild(thumbnailContainer);
+            }
+
+            // Card content
+            const cardContent = document.createElement('div');
+            cardContent.className = 'card-content';
+
+            const title = document.createElement('h3');
+            const titleText = document.createTextNode(link.title || "Untitled Link");
+            title.appendChild(titleText);
+
+            if (isGallery) {
+                const icon = document.createElement('span');
+                icon.className = 'content-type-icon gallery-icon';
+                icon.textContent = '🖼️';
+                title.prepend(icon);
+            }
+
+            if (isRecentContent && !link.thumbnail_url) {
+                const newBadgeText = document.createElement('span');
+                newBadgeText.className = 'new-badge-text';
+                newBadgeText.style.cssText = "background: #ff3b30; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; margin-left: 8px;";
+                newBadgeText.textContent = `New! (${getDaysAgo(link.added_at)})`;
+                title.appendChild(newBadgeText);
+            }
+            cardContent.appendChild(title);
+
+            if (link.description) {
+                const description = document.createElement('p');
+                description.textContent = link.description;
+                cardContent.appendChild(description);
+            }
+
+            const metaInfo = document.createElement('div');
+            metaInfo.className = 'meta-info';
+            if (link.category) {
+                const categorySpan = document.createElement('span');
+                categorySpan.innerHTML = `<strong>Category:</strong> ${link.category}`;
+                metaInfo.appendChild(categorySpan);
+            }
+            cardContent.appendChild(metaInfo);
+
+            const actionsContainer = document.createElement('div');
+            actionsContainer.className = 'card-actions';
+
+            if (!link.locked) {
+                if (isGallery) {
+                    const viewButton = document.createElement('a');
+                    viewButton.className = 'view-gallery-btn';
+                    viewButton.style.cssText = "display: block; text-align: center; background: #e3f2fd; color: #007aff; padding: 8px; border-radius: 4px; text-decoration: none; font-weight: 500;";
+                    viewButton.textContent = '🖼️ View Gallery';
+                    viewButton.href = `links.html?view=gallery&slug=${link.url}`;
+                    actionsContainer.appendChild(viewButton);
+                } else {
+                    const watchButton = document.createElement('button');
+                    watchButton.className = 'watch-video-btn';
+                    watchButton.textContent = '▶️ Watch Video';
+                    watchButton.addEventListener('click', () => {
+                        PlayerFactory.create(link, tierName);
+                    });
+                    actionsContainer.appendChild(watchButton);
+                }
+                cardContent.appendChild(actionsContainer);
+            }
+
+            card.appendChild(cardContent);
+            return card;
+        }
+
+        // ── 1. HERO — first item spans full width ────────────────────────────────
+        const heroLink      = allLinks[0];
+        // Find which tierName this link belongs to (needed for PlayerFactory)
+        const heroTierName  = Object.keys(contentData).find(t =>
+            contentData[t].some(l => l === heroLink)
+        ) || Object.keys(contentData)[0];
+
+        const heroSection = document.createElement('div');
+        heroSection.className = 'category-section hero-section';
+        heroSection.setAttribute('data-category', '__hero__');
+        heroSection.appendChild(buildCard(heroLink, heroTierName, true));
+        linksContentContainer.appendChild(heroSection);
+
+        // ── 2. GROUP remaining links by category ────────────────────────────────
+        const groups = {}; // { categoryName: [ { link, tierName } ] }
+
+        allLinks.slice(1).forEach(link => {
+            const cat      = link.category || 'General Content';
+            const tierName = Object.keys(contentData).find(t =>
+                contentData[t].some(l => l === link)
+            ) || Object.keys(contentData)[0];
+
+            if (!groups[cat]) groups[cat] = [];
+            groups[cat].push({ link, tierName });
+        });
+
+        // ── 3. RENDER each category section ────────────────────────────────────
+        for (const [category, items] of Object.entries(groups)) {
+            const section = document.createElement('div');
+            section.className = 'category-section';
+            section.setAttribute('data-category', category);
+
+            // Category header (spans full grid width via CSS)
+            const header = document.createElement('h2');
+            header.className = 'category-header';
+            header.textContent = category;
+            section.appendChild(header);
+
+            // Grid wrapper holds the cards
+            const grid = document.createElement('div');
+            grid.className = 'category-grid';
+
+            items.forEach(({ link, tierName }) => {
+                grid.appendChild(buildCard(link, tierName, false));
+            });
+
+            section.appendChild(grid);
+            linksContentContainer.appendChild(section);
+        }
+
+        // Flag for empty-state check (applyFilters uses querySelectorAll)
+        if (allLinks.length === 0) {
             linksContentContainer.innerHTML = `<p class="empty-tier-message">No content matches your search/filter criteria.</p>`;
         }
     }
@@ -2985,7 +3035,7 @@ if (document.getElementById('appContainer')) {
             const isQueryMatch = query === '' || card.dataset.searchText.includes(query);
 
             const shouldShow = isViewMatch && isTypeMatch && isQueryMatch;
-            card.style.display = shouldShow ? 'block' : 'none';
+            card.style.display = shouldShow ? '' : 'none';
 
             if (view === 'Recent' && isRecentContent) {
                 card.classList.add('recent-highlight');
@@ -2996,9 +3046,9 @@ if (document.getElementById('appContainer')) {
             if (shouldShow) hasVisibleContent = true;
         });
 
-        document.querySelectorAll('.tier-group').forEach(group => {
-            const hasVisibleCards = group.querySelector('.link-card:not([style*="display: none"])');
-            group.style.display = hasVisibleCards ? 'block' : 'none';
+        document.querySelectorAll('.category-section').forEach(section => {
+            const hasVisibleCards = section.querySelector('.link-card:not([style*="display: none"])');
+            section.style.display = hasVisibleCards ? '' : 'none';
         });
 
         if (!hasVisibleContent) {
