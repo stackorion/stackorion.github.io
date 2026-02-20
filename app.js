@@ -478,7 +478,7 @@ class SessionRefreshManager {
                 // Subscription expired - redirect to login
                 this.stop();
                 localStorage.clear();
-                window.location.href = 'login.html';
+                window.location.href = 'index.html';
             }
         } catch (error) {
             // Silently handle errors
@@ -1720,7 +1720,7 @@ class Router {
         await renderHeaderActions();
 
         if (!this.authManager.isValid()) {
-            window.location.href = 'login.html';
+            window.location.href = 'index.html';
             return;
         }
 
@@ -1935,7 +1935,7 @@ class Router {
                 // Check if we have a response object (network request was made)
                 if (typeof response !== 'undefined' && (response.status === 401 || response.status === 403)) {
                     localStorage.clear();
-                    window.location.href = 'login.html';
+                    window.location.href = 'index.html';
                 } else {
                     this.uiManager.showError(data?.message || "Failed to fetch content.");
                 }
@@ -1982,7 +1982,7 @@ class Router {
                 this.uiManager.renderGallery(data.gallery);
             } else if (response.status === 401 || response.status === 403) {
                 localStorage.clear();
-                window.location.href = 'login.html';
+                window.location.href = 'index.html';
             } else {
                 this.uiManager.showError(data.message || "Failed to fetch gallery.");
             }
