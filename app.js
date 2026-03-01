@@ -501,7 +501,7 @@ class VideoAnalyticsTracker {
     constructor() {
         this.trackedVideos = new Map(); // videoId -> analytics state
         this.batchQueue = [];
-        this.batchInterval = 10000; // Send batch every 10 seconds
+        this.batchInterval = 20000; // Send batch every 10 seconds
         this.tierIdCache = new Map(); // Cache videoId -> numeric tierId
         this.sessionIdCache = new Map();  // ✅ NEW: Track session IDs
         this.startBatchTimer();
@@ -825,7 +825,7 @@ class NativeMobilePlayer {
         let lastTrackedTime = 0;
         this.videoElement.addEventListener('timeupdate', () => {
             const currentTime = this.videoElement.currentTime;
-            if (currentTime - lastTrackedTime >= 5) {
+            if (currentTime - lastTrackedTime >= 20) {
                 trackEvent('timeupdate');
                 lastTrackedTime = currentTime;
             }
@@ -4766,8 +4766,8 @@ if (document.getElementById('appContainer')) {
 
             const currentTime = activePlayer.currentTime();
             
-            // Only track every 5 seconds to avoid spam
-            if (currentTime - lastTrackedTime >= 5) {
+            // Only track every 20 seconds to avoid spam
+            if (currentTime - lastTrackedTime >= 20) {
                 analyticsTracker.trackEvent(videoId, 'timeupdate', activePlayer, tierId);
                 lastTrackedTime = currentTime;
             }
