@@ -260,7 +260,7 @@ class ThemeManager {
 class VideoTokenRefreshManager {
     constructor() {
         this.activeVideos = new Map(); // videoId -> { player, tierId, libraryId, timer, playerType }
-        this.refreshInterval = 90000; // 90 seconds (refresh before 120s expiry)
+        this.refreshInterval = 300000; // 5 minutes - tokens have sufficient TTL
     }
 
     registerVideo(videoId, player, tierId, libraryId) {
@@ -610,6 +610,8 @@ class VideoAnalyticsTracker {
 
     startBatchTimer() {
         setInterval(() => {
+            // ⚡ Skip flush if tab is hidden — user isn't watching, queue will be empty anyway
+            if (document.hidden) return;
             this.sendBatch();
         }, this.batchInterval);
     }
