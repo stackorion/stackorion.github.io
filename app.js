@@ -821,10 +821,15 @@ class NativeMobilePlayer {
         this.videoElement.addEventListener('pause', () => trackEvent('pause'));
         this.videoElement.addEventListener('ended', () => trackEvent('ended'));
         
-        // Throttled timeupdate tracking
+        // Throttled timeupdate tracking — Zombie Guard enabled
         let lastTrackedTime = 0;
         this.videoElement.addEventListener('timeupdate', () => {
             const currentTime = this.videoElement.currentTime;
+
+            // 🧟 Zombie Guard: skip pings if paused or past 10-min cap
+            if (this.videoElement.paused) return;
+            if (currentTime > 610) return;
+
             if (currentTime - lastTrackedTime >= 30) {
                 trackEvent('timeupdate');
                 lastTrackedTime = currentTime;
@@ -4758,11 +4763,15 @@ if (document.getElementById('appContainer')) {
         
         // --- Analytics Integration ---
         
-        // Track timeupdate every 5 seconds (throttled)
+        // Track timeupdate every 30 seconds (throttled) — Zombie Guard enabled
         let lastTrackedTime = 0;
         player.on('timeupdate', () => {
             const activePlayer = getSafePlayer();
             if (!activePlayer) return;
+
+            // 🧟 Zombie Guard: skip pings if paused or past 10-min cap
+            if (activePlayer.paused()) return;
+            if (activePlayer.currentTime() > 610) return;
 
             const currentTime = activePlayer.currentTime();
             
