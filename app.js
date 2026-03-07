@@ -283,6 +283,15 @@ class VideoTokenRefreshManager {
     }
 
     async refreshVideoToken(videoId, tierId, libraryId, player, playerType) {
+        // 🛑 Tab Visibility Guard: don't refresh tokens if the user isn't looking
+        if (document.hidden) return;
+
+        // 🛑 Pause Guard: don't refresh token if video is paused
+        try {
+            if (playerType === 'videojs' && player && !player.isDisposed() && player.paused()) return;
+            if (playerType === 'native' && player && player.videoElement && player.videoElement.paused) return;
+        } catch(e) {}
+
         try {
             // ✅ FIX: Validate player based on type
             if (playerType === 'videojs') {
