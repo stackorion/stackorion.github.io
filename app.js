@@ -585,17 +585,15 @@ class VideoAnalyticsTracker {
             const token = localStorage.getItem('lustroom_jwt');
             if (!token) return;
 
-            // Send each event
-            for (const event of batch) {
-                await fetch(`${API_BASE_URL}/analytics/track`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify(event)
-                });
-            }
+            // Send all events in a single batched request
+            await fetch(`${API_BASE_URL}/analytics/track`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ events: batch })
+            });
         } catch (error) {
             // Silently handle errors
         }
