@@ -837,7 +837,7 @@ class NativeMobilePlayer {
             if (this.videoElement.paused) return;
             if (currentTime > 610) return;
 
-            if (currentTime - lastTrackedTime >= 30) {
+            if (currentTime - lastTrackedTime >= 60) {
                 trackEvent('timeupdate');
                 lastTrackedTime = currentTime;
             }
@@ -4782,8 +4782,8 @@ if (document.getElementById('appContainer')) {
 
             const currentTime = activePlayer.currentTime();
             
-            // Only track every 30 seconds to avoid spam
-            if (currentTime - lastTrackedTime >= 30) {
+            // Only track every 60 seconds to reduce DB write volume
+            if (currentTime - lastTrackedTime >= 60) {
                 analyticsTracker.trackEvent(videoId, 'timeupdate', activePlayer, tierId);
                 lastTrackedTime = currentTime;
             }
