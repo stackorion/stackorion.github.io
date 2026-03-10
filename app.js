@@ -541,9 +541,12 @@ class VideoAnalyticsTracker {
 
     trackEvent(videoId, event, player, tierName) {
         // ✅ Kill-Switch: Check global analytics toggle before doing anything
-        const config = JSON.parse(localStorage.getItem('system_config') || '{}');
-        if (config.collect_analytics === 'false') {
-            return; // Silent exit — no network calls, no resources used
+        const configRaw = localStorage.getItem('system_config');
+        if (configRaw) {
+            try {
+                const config = JSON.parse(configRaw);
+                if (config.collect_analytics === 'false') return;
+            } catch (e) { /* malformed config, allow through */ }
         }
 
         // ✅ FIX: Validate numeric tier ID exists
@@ -1551,8 +1554,10 @@ async function renderHeaderActions() {
             // ✅ USE CACHE MANAGER: Deduplicated profile fetch
             const data = await cacheManager.fetchProfile(token);
             
-            if (response.ok && data.status === 'success' && data.system_config) {
-                // ✅ Use fresh data from backend, not stale localStorage
+            if (data && data.status === 'success' && data.system_config) {
+                // ✅ SYNC: Always overwrite localStorage with live config from server
+                localStorage.setItem('system_config', JSON.stringify(data.system_config));
+
                 const systemConfig = data.system_config;
                 const showButton = systemConfig.show_download_button === 'true';
                 const downloadUrl = systemConfig.download_app_url || '';

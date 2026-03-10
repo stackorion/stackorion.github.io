@@ -594,6 +594,13 @@
                                 if (profileData.announcements) {
                                     localStorage.setItem('global_announcements', JSON.stringify(profileData.announcements));
                                 }
+
+                                // ✅ SYNC: Save system_config so kill-switch works immediately on login
+                                if (profileData.system_config) {
+                                    localStorage.setItem('system_config', JSON.stringify(profileData.system_config));
+                                } else {
+                                    localStorage.removeItem('system_config');
+                                }
                             }
                             
                             clearFailedAttempts();
