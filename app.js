@@ -540,6 +540,12 @@ class VideoAnalyticsTracker {
     }
 
     trackEvent(videoId, event, player, tierName) {
+        // ✅ Kill-Switch: Check global analytics toggle before doing anything
+        const config = JSON.parse(localStorage.getItem('system_config') || '{}');
+        if (config.collect_analytics === 'false') {
+            return; // Silent exit — no network calls, no resources used
+        }
+
         // ✅ FIX: Validate numeric tier ID exists
         const numericTierId = this.tierIdCache.get(videoId);
         if (!numericTierId) {
