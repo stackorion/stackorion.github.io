@@ -594,17 +594,27 @@ class VideoAnalyticsTracker {
     }
 
     async sendBatch() {
+        // ✅ Fix 1: Initial kill-switch check — stop before sending if already OFF
+        const configRaw = localStorage.getItem('system_config');
+        if (configRaw) {
+            try {
+                const config = JSON.parse(configRaw);
+                if (config.collect_analytics === 'false') {
+                    this.batchQueue = []; // Drain queued events
+                    return;
+                }
+            } catch (e) { /* malformed config, allow through */ }
+        }
+
         if (this.batchQueue.length === 0) return;
 
         const batch = [...this.batchQueue];
         this.batchQueue = [];
+        const token = localStorage.getItem('lustroom_jwt');
+        if (!token) return;
 
         try {
-            const token = localStorage.getItem('lustroom_jwt');
-            if (!token) return;
-
-            // Send all events in a single batched request
-            await fetch(`${API_BASE_URL}/analytics/track`, {
+            const response = await fetch(`${API_BASE_URL}/analytics/track`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -612,6 +622,20 @@ class VideoAnalyticsTracker {
                 },
                 body: JSON.stringify({ events: batch })
             });
+
+            const data = await response.json();
+
+            // ✅ Fix 2 (Feedback Loop): Server tells browser the current switch state
+            if (data.collect_analytics) {
+                const currentConfig = JSON.parse(localStorage.getItem('system_config') || '{}');
+                currentConfig.collect_analytics = data.collect_analytics;
+                localStorage.setItem('system_config', JSON.stringify(currentConfig));
+
+                // If server just told us to stop, drain the queue for next interval
+                if (data.collect_analytics === 'false') {
+                    this.batchQueue = [];
+                }
+            }
         } catch (error) {
             // Silently handle errors
         }
