@@ -2953,31 +2953,66 @@ if (document.getElementById('appContainer')) {
             groups[cat].push({ link, tierName });
         });
 
-        // ── 3. RENDER each category section ────────────────────────────────────
-        for (const [category, items] of Object.entries(groups)) {
-            const section = document.createElement('div');
-            section.className = 'category-section';
-            section.setAttribute('data-category', category);
+        // ── 3. CATEGORY PILL BAR ─────────────────────────────────────────────────
+        const allCategories = Object.keys(groups);
+        if (allCategories.length > 1) {
+            const catBar = document.createElement('div');
+            catBar.className = 'category-pill-bar';
+            catBar.id = 'categoryPillBar';
 
-            // Category header (spans full grid width via CSS)
+            const allPill = document.createElement('button');
+            allPill.className = 'cat-pill active';
+            allPill.textContent = 'All';
+            allPill.dataset.cat = '__all__';
+            catBar.appendChild(allPill);
+
+            allCategories.forEach(cat => {
+                const pill = document.createElement('button');
+                pill.className = 'cat-pill';
+                pill.textContent = cat;
+                pill.dataset.cat = cat;
+                catBar.appendChild(pill);
+            });
+
+            linksContentContainer.appendChild(catBar);
+
+            catBar.addEventListener('click', e => {
+                const pill = e.target.closest('.cat-pill');
+                if (!pill) return;
+                catBar.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+                pill.classList.add('active');
+                const chosen = pill.dataset.cat;
+                linksContentContainer.querySelectorAll('.category-row').forEach(row => {
+                    row.style.display = (chosen === '__all__' || row.dataset.category === chosen) ? '' : 'none';
+                });
+            });
+        }
+
+        // ── 4. NETFLIX-STYLE HORIZONTAL SCROLL ROWS ─────────────────────────────
+        for (const [category, items] of Object.entries(groups)) {
+            const row = document.createElement('div');
+            row.className = 'category-row category-section';  // keep category-section for applyFilters compat
+            row.setAttribute('data-category', category);
+
             const header = document.createElement('h2');
             header.className = 'category-header';
             header.textContent = category;
-            section.appendChild(header);
+            row.appendChild(header);
 
-            // Grid wrapper holds the cards
-            const grid = document.createElement('div');
-            grid.className = 'category-grid';
+            const scrollTrack = document.createElement('div');
+            scrollTrack.className = 'category-scroll-track';
 
             items.forEach(({ link, tierName }) => {
-                grid.appendChild(buildCard(link, tierName, false));
+                const card = buildCard(link, tierName, false);
+                card.classList.add('scroll-card');
+                scrollTrack.appendChild(card);
             });
 
-            section.appendChild(grid);
-            linksContentContainer.appendChild(section);
+            row.appendChild(scrollTrack);
+            linksContentContainer.appendChild(row);
         }
 
-        // Flag for empty-state check (applyFilters uses querySelectorAll)
+        // Flag for empty-state check
         if (allLinks.length === 0) {
             linksContentContainer.innerHTML = `<p class="empty-tier-message">No content matches your search/filter criteria.</p>`;
         }
@@ -3095,9 +3130,23 @@ if (document.getElementById('appContainer')) {
             if (shouldShow) hasVisibleContent = true;
         });
 
-        document.querySelectorAll('.category-section').forEach(section => {
+        document.querySelectorAll('.category-section, .category-row').forEach(section => {
             const hasVisibleCards = section.querySelector('.link-card:not([style*="display: none"])');
-            section.style.display = hasVisibleCards ? '' : 'none';
+            // Respect category pill filter — only hide if no cards match AND pill filter allows it
+            if (!hasVisibleCards) {
+                section.style.display = 'none';
+            } else {
+                // Only restore if the category pill bar isn't hiding this row
+                const pillBar = document.getElementById('categoryPillBar');
+                if (pillBar) {
+                    const activePill = pillBar.querySelector('.cat-pill.active');
+                    const chosen = activePill ? activePill.dataset.cat : '__all__';
+                    const cat = section.dataset.category;
+                    section.style.display = (chosen === '__all__' || cat === chosen) ? '' : 'none';
+                } else {
+                    section.style.display = '';
+                }
+            }
         });
 
         if (!hasVisibleContent) {
