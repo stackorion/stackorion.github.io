@@ -210,22 +210,6 @@
         if (!checkRateLimit()) {
             return;
         }
-
-        // ✅ SAFARI SAFETY NET: If anything hangs for 20s, force-show login
-        const safariHangGuard = setTimeout(() => {
-            const gate = document.getElementById('instant-gate');
-            if (gate) {
-                removeGate();
-                renderAuthPage();
-            }
-        }, 20000);
-
-        // Wrap removeGate to also clear the hang guard
-        const _originalRemoveGate = removeGate;
-        function removeGate() {
-            clearTimeout(safariHangGuard);
-            _originalRemoveGate();
-        }
         
         // Check if there's an access token in the URL
         const urlParams = new URLSearchParams(window.location.search);
@@ -268,19 +252,14 @@
         
         updateStatus('Waking up server...', 'This may take up to 30 seconds on first load');
         
-        // Validate token with backend (with timeout so Safari never hangs)
-        const tokenValidationController = new AbortController();
-        const tokenValidationTimeout = setTimeout(() => tokenValidationController.abort(), 15000);
-
+        // Validate token with backend
         fetch(`${API_BASE_URL}/auth/validate-token`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ token: accessToken }),
-            signal: tokenValidationController.signal
+            body: JSON.stringify({ token: accessToken })
         })
-        .then(r => { clearTimeout(tokenValidationTimeout); return r; })
         .then(response => {
             if (!response.ok) {
                 throw new Error('Token validation failed');
@@ -591,6 +570,7 @@
                             headers: {
                                 'Content-Type': 'application/json'
                             },
+                            credentials: 'include',
                             body: JSON.stringify({ email, password })
                         });
                         
