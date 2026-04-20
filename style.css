@@ -548,14 +548,19 @@ button:disabled {
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-start;
     gap: 8px;
     padding: 0 0 20px 0;
     margin-bottom: 8px;
+    width: 100%;
 }
 
 .cat-pill {
     display: inline-flex;
     align-items: center;
+    flex-grow: 0;
+    flex-shrink: 0;
+    width: auto;
     background: transparent;
     color: var(--color-text-secondary);
     border: 1px solid var(--color-border-button);
