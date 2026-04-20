@@ -542,49 +542,49 @@ button:disabled {
     margin-bottom: 48px;
 }
 
-/* ── Netflix-style category pill bar ──────────────────────────────────────── */
+/* ── Category pill bar (horizontal, NOT sticky) ────────────────────────────── */
 .category-pill-bar {
     display: flex;
+    flex-direction: row;
     flex-wrap: wrap;
     gap: 8px;
-    padding: 14px 0 18px;
-    position: sticky;
-    top: 0;
-    background-color: var(--color-background-secondary);
-    z-index: 20;
-    border-bottom: 1px solid var(--color-border-secondary);
-    margin-bottom: 24px;
+    padding: 0 0 20px 0;
+    margin-bottom: 8px;
+    /* NO position sticky, NO z-index — sits in normal flow */
 }
 
 .cat-pill {
     background: transparent;
     color: var(--color-text-secondary);
     border: 1px solid var(--color-border-button);
-    border-radius: 20px;
-    padding: 6px 16px;
-    font-size: 0.82rem;
+    border-radius: 25px;
+    padding: 8px 18px;
+    font-size: 0.88rem;
     font-weight: 500;
     cursor: pointer;
-    transition: background var(--transition-duration), color var(--transition-duration), border-color var(--transition-duration);
     white-space: nowrap;
-    letter-spacing: 0.02em;
+    transition: var(--transition-all);
 }
 
 .cat-pill:hover {
-    background: var(--color-background-card);
+    background-color: var(--color-border-primary);
     color: var(--color-text-primary);
-    border-color: var(--color-accent-primary);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .cat-pill.active {
-    background: var(--color-accent-primary);
+    background-color: var(--color-accent-primary);
     color: #fff;
     border-color: var(--color-accent-primary);
+    font-weight: 600;
+    box-shadow: 0 2px 12px rgba(0, 123, 255, 0.3);
 }
 
-/* ── Netflix-style horizontal scroll row ───────────────────────────────────── */
+/* ── Netflix-style category row ─────────────────────────────────────────────── */
 .category-row {
     margin-bottom: 36px;
+    position: relative; /* for arrow buttons */
 }
 
 .category-row .category-header {
@@ -598,34 +598,84 @@ button:disabled {
     transition: color var(--transition-duration), border-color var(--transition-duration);
 }
 
+/* ── Scroll track wrapper (holds arrows + track) ──────────────────────────── */
+.scroll-track-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0;
+}
+
+/* ── Arrow buttons ─────────────────────────────────────────────────────────── */
+.scroll-arrow {
+    flex-shrink: 0;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1px solid var(--color-border-button);
+    background-color: var(--color-background-card);
+    color: var(--color-text-primary);
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition-all);
+    z-index: 2;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.scroll-arrow:hover {
+    background-color: var(--color-accent-primary);
+    border-color: var(--color-accent-primary);
+    color: #fff;
+    transform: scale(1.08);
+}
+
+.scroll-arrow:active {
+    transform: scale(0.96);
+}
+
+.scroll-arrow.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* ── Scroll track ──────────────────────────────────────────────────────────── */
 .category-scroll-track {
+    flex: 1;
     display: flex;
     gap: 14px;
     overflow-x: auto;
-    padding-bottom: 10px;
+    padding: 4px 6px 16px 6px;
     scroll-snap-type: x mandatory;
     -webkit-overflow-scrolling: touch;
+    /* Big native scrollbar on all platforms */
+    scrollbar-width: auto;       /* Firefox — use default (big) */
+    scrollbar-color: var(--color-border-primary) var(--color-border-secondary);
 }
 
 .category-scroll-track::-webkit-scrollbar {
-    height: 4px;
+    height: 10px;               /* Tall = easy to grab on mobile */
 }
 
 .category-scroll-track::-webkit-scrollbar-track {
     background: var(--color-border-secondary);
-    border-radius: 2px;
+    border-radius: 5px;
 }
 
 .category-scroll-track::-webkit-scrollbar-thumb {
     background: var(--color-border-primary);
-    border-radius: 2px;
+    border-radius: 5px;
+    border: 2px solid var(--color-border-secondary);
 }
 
 .category-scroll-track::-webkit-scrollbar-thumb:hover {
     background: var(--color-accent-primary);
 }
 
-/* Cards inside scroll track — fixed width so they don't squash */
+/* ── Cards inside scroll track ─────────────────────────────────────────────── */
 .category-scroll-track .link-card.scroll-card {
     min-width: 240px;
     max-width: 240px;
@@ -639,6 +689,11 @@ button:disabled {
         min-width: 185px;
         max-width: 185px;
     }
+    .scroll-arrow {
+        width: 32px;
+        height: 32px;
+        font-size: 0.95rem;
+    }
 }
 
 @media (max-width: 480px) {
@@ -646,12 +701,9 @@ button:disabled {
         min-width: 155px;
         max-width: 155px;
     }
-    .category-pill-bar {
-        gap: 6px;
-    }
     .cat-pill {
-        padding: 5px 12px;
-        font-size: 0.78rem;
+        padding: 6px 13px;
+        font-size: 0.82rem;
     }
 }
 

@@ -2953,7 +2953,7 @@ if (document.getElementById('appContainer')) {
             groups[cat].push({ link, tierName });
         });
 
-        // ── 3. CATEGORY PILL BAR ─────────────────────────────────────────────────
+        // ── 3. CATEGORY PILL BAR (horizontal, static — no sticky) ───────────────
         const allCategories = Object.keys(groups);
         if (allCategories.length > 1) {
             const catBar = document.createElement('div');
@@ -2974,8 +2974,6 @@ if (document.getElementById('appContainer')) {
                 catBar.appendChild(pill);
             });
 
-            linksContentContainer.appendChild(catBar);
-
             catBar.addEventListener('click', e => {
                 const pill = e.target.closest('.cat-pill');
                 if (!pill) return;
@@ -2986,12 +2984,14 @@ if (document.getElementById('appContainer')) {
                     row.style.display = (chosen === '__all__' || row.dataset.category === chosen) ? '' : 'none';
                 });
             });
+
+            linksContentContainer.appendChild(catBar);
         }
 
-        // ── 4. NETFLIX-STYLE HORIZONTAL SCROLL ROWS ─────────────────────────────
+        // ── 4. NETFLIX-STYLE ROWS WITH ARROW NAVIGATION ─────────────────────────
         for (const [category, items] of Object.entries(groups)) {
             const row = document.createElement('div');
-            row.className = 'category-row category-section';  // keep category-section for applyFilters compat
+            row.className = 'category-row category-section';
             row.setAttribute('data-category', category);
 
             const header = document.createElement('h2');
@@ -2999,17 +2999,62 @@ if (document.getElementById('appContainer')) {
             header.textContent = category;
             row.appendChild(header);
 
-            const scrollTrack = document.createElement('div');
-            scrollTrack.className = 'category-scroll-track';
+            // Wrapper holds left arrow + track + right arrow
+            const wrapper = document.createElement('div');
+            wrapper.className = 'scroll-track-wrapper';
+
+            const btnLeft = document.createElement('button');
+            btnLeft.className = 'scroll-arrow scroll-arrow-left';
+            btnLeft.innerHTML = '&#8249;'; // ‹
+            btnLeft.setAttribute('aria-label', 'Scroll left');
+
+            const track = document.createElement('div');
+            track.className = 'category-scroll-track';
+
+            const btnRight = document.createElement('button');
+            btnRight.className = 'scroll-arrow scroll-arrow-right';
+            btnRight.innerHTML = '&#8250;'; // ›
+            btnRight.setAttribute('aria-label', 'Scroll right');
 
             items.forEach(({ link, tierName }) => {
                 const card = buildCard(link, tierName, false);
                 card.classList.add('scroll-card');
-                scrollTrack.appendChild(card);
+                track.appendChild(card);
             });
 
-            row.appendChild(scrollTrack);
+            // Arrow click handler — scroll by ~2 card widths
+            const SCROLL_AMOUNT = 500;
+
+            btnLeft.addEventListener('click', () => {
+                track.scrollBy({ left: -SCROLL_AMOUNT, behavior: 'smooth' });
+            });
+            btnRight.addEventListener('click', () => {
+                track.scrollBy({ left: SCROLL_AMOUNT, behavior: 'smooth' });
+            });
+
+            // Show/hide arrows based on scroll position
+            function updateArrows() {
+                const atStart = track.scrollLeft <= 4;
+                const atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 4;
+                btnLeft.classList.toggle('hidden', atStart);
+                btnRight.classList.toggle('hidden', atEnd && track.scrollWidth > track.clientWidth);
+                // Hide both if everything fits without scrolling
+                if (track.scrollWidth <= track.clientWidth) {
+                    btnLeft.classList.add('hidden');
+                    btnRight.classList.add('hidden');
+                }
+            }
+
+            track.addEventListener('scroll', updateArrows, { passive: true });
+
+            wrapper.appendChild(btnLeft);
+            wrapper.appendChild(track);
+            wrapper.appendChild(btnRight);
+            row.appendChild(wrapper);
             linksContentContainer.appendChild(row);
+
+            // Initial arrow state after DOM paint
+            requestAnimationFrame(updateArrows);
         }
 
         // Flag for empty-state check
@@ -3130,13 +3175,11 @@ if (document.getElementById('appContainer')) {
             if (shouldShow) hasVisibleContent = true;
         });
 
-        document.querySelectorAll('.category-section, .category-row').forEach(section => {
+        document.querySelectorAll('.category-row').forEach(section => {
             const hasVisibleCards = section.querySelector('.link-card:not([style*="display: none"])');
-            // Respect category pill filter — only hide if no cards match AND pill filter allows it
             if (!hasVisibleCards) {
                 section.style.display = 'none';
             } else {
-                // Only restore if the category pill bar isn't hiding this row
                 const pillBar = document.getElementById('categoryPillBar');
                 if (pillBar) {
                     const activePill = pillBar.querySelector('.cat-pill.active');
