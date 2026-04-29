@@ -16,3 +16,8 @@ package-lock.json
 yarn.lock
 
 .vercel
+
+# Deployment Scripts (Contain Secrets)
+*.bat
+deploy.bat
+deploy_all.bat
