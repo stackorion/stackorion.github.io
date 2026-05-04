@@ -99,6 +99,23 @@
         'use strict';
         
         const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
+
+        // ── Safe storage: iOS Safari private browsing fallback ──
+        const _memStore = {};
+        const safeStorage = {
+            getItem(k) {
+                try { return safeStorage.getItem(k); }
+                catch(e) { return _memStore[k] !== undefined ? _memStore[k] : null; }
+            },
+            setItem(k, v) {
+                try { safeStorage.setItem(k, v); }
+                catch(e) { _memStore[k] = String(v); }
+            },
+            removeItem(k) {
+                try { safeStorage.removeItem(k); }
+                catch(e) { delete _memStore[k]; }
+            }
+        };
         const gateStatus = document.getElementById('gate-status');
         const gateSubtext = document.getElementById('gate-subtext');
         
@@ -119,8 +136,8 @@
         // RATE LIMITING - Prevent brute force
         // ====================================
         function checkRateLimit() {
-            const failedAttempts = parseInt(localStorage.getItem('failed_auth_attempts') || '0', 10);
-            const lastAttempt = parseInt(localStorage.getItem('last_failed_attempt') || '0', 10);
+            const failedAttempts = parseInt(safeStorage.getItem('failed_auth_attempts') || '0', 10);
+            const lastAttempt = parseInt(safeStorage.getItem('last_failed_attempt') || '0', 10);
             const timeSince = Date.now() - lastAttempt;
             const ONE_HOUR = 3600000;
             
@@ -134,14 +151,14 @@
         }
         
         function recordFailedAttempt() {
-            const current = parseInt(localStorage.getItem('failed_auth_attempts') || '0', 10);
-            localStorage.setItem('failed_auth_attempts', (current + 1).toString());
-            localStorage.setItem('last_failed_attempt', Date.now().toString());
+            const current = parseInt(safeStorage.getItem('failed_auth_attempts') || '0', 10);
+            safeStorage.setItem('failed_auth_attempts', (current + 1).toString());
+            safeStorage.setItem('last_failed_attempt', Date.now().toString());
         }
         
         function clearFailedAttempts() {
-            localStorage.removeItem('failed_auth_attempts');
-            localStorage.removeItem('last_failed_attempt');
+            safeStorage.removeItem('failed_auth_attempts');
+            safeStorage.removeItem('last_failed_attempt');
         }
         
         // ====================================
@@ -219,9 +236,9 @@
         if (!accessToken) {
             updateStatus('Checking session...', 'Please wait');
             
-            const existingJWT = localStorage.getItem('lustroom_jwt');
-            const obtainedAt = parseInt(localStorage.getItem('lustroom_jwt_obtained_at'), 10);
-            const expiresIn = parseInt(localStorage.getItem('lustroom_jwt_expires_in'), 10);
+            const existingJWT = safeStorage.getItem('lustroom_jwt');
+            const obtainedAt = parseInt(safeStorage.getItem('lustroom_jwt_obtained_at'), 10);
+            const expiresIn = parseInt(safeStorage.getItem('lustroom_jwt_expires_in'), 10);
             
             // If JWT exists and is still valid, redirect to main app
             if (existingJWT && obtainedAt && expiresIn) {
@@ -270,10 +287,10 @@
             if (data.status === 'success' && data.access_token) {
                 updateStatus('Authenticated!', 'Loading profile...');
                 
-                localStorage.setItem('lustroom_jwt', data.access_token);
-                localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
-                localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
-                localStorage.setItem('user_info', JSON.stringify(data.user_info));
+                safeStorage.setItem('lustroom_jwt', data.access_token);
+                safeStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
+                safeStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
+                safeStorage.setItem('user_info', JSON.stringify(data.user_info));
                 
                 return fetch(`${API_BASE_URL}/profile`, {
                     headers: { 'Authorization': `Bearer ${data.access_token}` }
@@ -285,12 +302,12 @@
         .then(response => response.json())
         .then(profileData => {
             if (profileData.status === 'success') {
-                localStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions || []));
+                safeStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions || []));
                 
                 if (profileData.announcements) {
-                    localStorage.setItem('global_announcements', JSON.stringify(profileData.announcements));
+                    safeStorage.setItem('global_announcements', JSON.stringify(profileData.announcements));
                 } else {
-                    localStorage.removeItem('global_announcements');
+                    safeStorage.removeItem('global_announcements');
                 }
                 
                 clearFailedAttempts();
@@ -577,10 +594,10 @@
                         const data = await response.json();
                         
                         if (response.ok && data.status === 'success') {
-                            localStorage.setItem('lustroom_jwt', data.access_token);
-                            localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
-                            localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
-                            localStorage.setItem('user_info', JSON.stringify(data.user));
+                            safeStorage.setItem('lustroom_jwt', data.access_token);
+                            safeStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
+                            safeStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
+                            safeStorage.setItem('user_info', JSON.stringify(data.user));
                             
                             const profileResponse = await fetch(`${API_BASE_URL}/profile`, {
                                 headers: { 'Authorization': `Bearer ${data.access_token}` }
@@ -589,17 +606,17 @@
                             const profileData = await profileResponse.json();
                             
                             if (profileResponse.ok && profileData.status === 'success') {
-                                localStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions || []));
+                                safeStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions || []));
                                 
                                 if (profileData.announcements) {
-                                    localStorage.setItem('global_announcements', JSON.stringify(profileData.announcements));
+                                    safeStorage.setItem('global_announcements', JSON.stringify(profileData.announcements));
                                 }
 
                                 // ✅ SYNC: Save system_config so kill-switch works immediately on login
                                 if (profileData.system_config) {
-                                    localStorage.setItem('system_config', JSON.stringify(profileData.system_config));
+                                    safeStorage.setItem('system_config', JSON.stringify(profileData.system_config));
                                 } else {
-                                    localStorage.removeItem('system_config');
+                                    safeStorage.removeItem('system_config');
                                 }
                             }
                             
