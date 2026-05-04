@@ -1805,7 +1805,7 @@ button:disabled {
     margin: 0 auto 20px;
     padding: 0 15px;
     position: relative;
-    z-index: 2000; /* Above header */
+    z-index: 10; /* Lowered: was blocking header buttons on mobile */
     overflow: visible; /* Don't clip */
 }
 

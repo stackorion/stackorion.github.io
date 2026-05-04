@@ -146,7 +146,8 @@ class CacheManager {
         }
         
         // Check cache first
-        const cached = sessionStorage.getItem(this.profileCacheKey);
+        let cached = null;
+        try { cached = sessionStorage.getItem(this.profileCacheKey); } catch(e) {}
         if (cached) {
             try {
                 const data = JSON.parse(cached);
@@ -158,7 +159,7 @@ class CacheManager {
                     return data.profile;
                 }
             } catch (e) {
-                sessionStorage.removeItem(this.profileCacheKey);
+                try { sessionStorage.removeItem(this.profileCacheKey); } catch(e2) {}
             }
         }
         
@@ -195,10 +196,11 @@ class CacheManager {
     
     // Clear all caches (call on logout)
     clearAll() {
-        const keys = Object.keys(sessionStorage);
+        let keys = [];
+        try { keys = Object.keys(sessionStorage); } catch(e) {}
         keys.forEach(key => {
             if (key.startsWith(this.cachePrefix)) {
-                sessionStorage.removeItem(key);
+                try { sessionStorage.removeItem(key); } catch(e) {}
             }
         });
         console.log('🗑️ All caches cleared');
@@ -5014,9 +5016,14 @@ if (document.getElementById('appContainer')) {
     });
     window.onpopstate = () => window.appRouter.handlePopState();
 
-    logoutButton.addEventListener('click', () => {
+    const _doLogout = () => {
         cleanupAllVideoPlayers();
         authManager.logout();
+    };
+    logoutButton.addEventListener('click', _doLogout);
+    logoutButton.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        _doLogout();
     });
     
     // Add cleanup on page unload
