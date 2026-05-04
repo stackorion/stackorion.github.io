@@ -1,21 +1,21 @@
 // ── Safe storage: iOS Safari private browsing fallback ──
-const _memStore = {};
+window._memStore = window._memStore || {};
 const safeStorage = {
     getItem(k) {
         try { return localStorage.getItem(k); }
-        catch(e) { return _memStore[k] !== undefined ? _memStore[k] : null; }
+        catch(e) { return window._memStore[k] !== undefined ? window._memStore[k] : null; }
     },
     setItem(k, v) {
         try { localStorage.setItem(k, v); }
-        catch(e) { _memStore[k] = String(v); }
+        catch(e) { window._memStore[k] = String(v); }
     },
     removeItem(k) {
         try { localStorage.removeItem(k); }
-        catch(e) { delete _memStore[k]; }
+        catch(e) { delete window._memStore[k]; }
     },
     clear() {
         try { localStorage.clear(); }
-        catch(e) { Object.keys(_memStore).forEach(k => delete _memStore[k]); }
+        catch(e) { Object.keys(window._memStore).forEach(k => delete window._memStore[k]); }
     }
 };
 
