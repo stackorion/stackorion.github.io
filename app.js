@@ -97,13 +97,13 @@ class CacheManager {
     // ✅ Cache get_patron_links results per tier
     getCachedLinks(tierId) {
         const cacheKey = `${this.cachePrefix}links_tier_${tierId}`;
-        const cached = sessionStorage.getItem(cacheKey);
+        let cached = null;
+        try { cached = sessionStorage.getItem(cacheKey); } catch(e) {}
         
         if (!cached) return null;
         
         try {
             const data = JSON.parse(cached);
-            // Check if cache is still valid (5 minutes TTL)
             const age = Date.now() - (data.timestamp || 0);
             const FIVE_MINUTES = 5 * 60 * 1000;
             
@@ -112,12 +112,12 @@ class CacheManager {
                 return data.content;
             } else {
                 console.log(`⏰ Cache EXPIRED for tier ${tierId}`);
-                sessionStorage.removeItem(cacheKey);
+                try { sessionStorage.removeItem(cacheKey); } catch(e) {}
                 return null;
             }
         } catch (e) {
             console.error('Cache parse error:', e);
-            sessionStorage.removeItem(cacheKey);
+            try { sessionStorage.removeItem(cacheKey); } catch(e2) {}
             return null;
         }
     }
@@ -132,7 +132,8 @@ class CacheManager {
             sessionStorage.setItem(cacheKey, JSON.stringify(data));
             console.log(`💾 Cached links for tier ${tierId}`);
         } catch (e) {
-            console.error('Cache set error:', e);
+            // sessionStorage blocked (iOS private mode) — skip caching, content will still load
+            console.log(`ℹ️ Cache unavailable for tier ${tierId}, fetching fresh each time`);
         }
     }
     
