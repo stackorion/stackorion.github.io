@@ -1,21 +1,25 @@
-// ── Safe storage: iOS Safari private browsing fallback ──
-window._memStore = window._memStore || {};
+// ── Safe storage: iOS Safari private browsing fallback (survives redirects) ──
+const _getNameStore = () => {
+    try { return JSON.parse(window.name || "{}"); }
+    catch(e) { return {}; }
+};
+const _saveNameStore = (store) => { window.name = JSON.stringify(store); };
 const safeStorage = {
     getItem(k) {
         try { return localStorage.getItem(k); }
-        catch(e) { return window._memStore[k] !== undefined ? window._memStore[k] : null; }
+        catch(e) { return _getNameStore()[k] || null; }
     },
     setItem(k, v) {
         try { localStorage.setItem(k, v); }
-        catch(e) { window._memStore[k] = String(v); }
+        catch(e) { const store = _getNameStore(); store[k] = String(v); _saveNameStore(store); }
     },
     removeItem(k) {
         try { localStorage.removeItem(k); }
-        catch(e) { delete window._memStore[k]; }
+        catch(e) { const store = _getNameStore(); delete store[k]; _saveNameStore(store); }
     },
     clear() {
         try { localStorage.clear(); }
-        catch(e) { Object.keys(window._memStore).forEach(k => delete window._memStore[k]); }
+        catch(e) { window.name = "{}"; }
     }
 };
 
