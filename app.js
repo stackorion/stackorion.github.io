@@ -1,3 +1,24 @@
+// ── Safe storage: iOS Safari private browsing fallback ──
+const _memStore = {};
+const safeStorage = {
+    getItem(k) {
+        try { return safeStorage.getItem(k); }
+        catch(e) { return _memStore[k] !== undefined ? _memStore[k] : null; }
+    },
+    setItem(k, v) {
+        try { safeStorage.setItem(k, v); }
+        catch(e) { _memStore[k] = String(v); }
+    },
+    removeItem(k) {
+        try { safeStorage.removeItem(k); }
+        catch(e) { delete _memStore[k]; }
+    },
+    clear() {
+        try { safeStorage.clear(); }
+        catch(e) { Object.keys(_memStore).forEach(k => delete _memStore[k]); }
+    }
+};
+
 // Configuration - IMPORTANT: This MUST match your live backend URL
 const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
 
@@ -34,9 +55,9 @@ class AuthManager {
     }
     
     isValid() {
-        const token = localStorage.getItem(this.tokenKey);
-        const obtainedAt = parseInt(localStorage.getItem(this.obtainedAtKey), 10);
-        const expiresIn = parseInt(localStorage.getItem(this.expiresInKey), 10);
+        const token = safeStorage.getItem(this.tokenKey);
+        const obtainedAt = parseInt(safeStorage.getItem(this.obtainedAtKey), 10);
+        const expiresIn = parseInt(safeStorage.getItem(this.expiresInKey), 10);
         
         if (!token || isNaN(obtainedAt) || isNaN(expiresIn)) return false;
         
@@ -45,7 +66,7 @@ class AuthManager {
     }
     
     logout() {
-        localStorage.clear();
+        safeStorage.clear();
         if (window.cacheManager) {
             window.cacheManager.clearAll(); // ✅ Clear session cache
         }
@@ -53,7 +74,7 @@ class AuthManager {
     }
     
     getToken() {
-        return localStorage.getItem(this.tokenKey);
+        return safeStorage.getItem(this.tokenKey);
     }
 }
 
@@ -212,7 +233,7 @@ class ThemeManager {
     }
 
     getPreferredTheme() {
-        const storedTheme = localStorage.getItem(this.themeKey);
+        const storedTheme = safeStorage.getItem(this.themeKey);
         if (storedTheme && this.themes.includes(storedTheme)) {
             return storedTheme;
         }
@@ -227,7 +248,7 @@ class ThemeManager {
         const effectiveTheme = theme === 'auto' ? this.detectSystemTheme() : theme;
         document.body.classList.remove('theme-light', 'theme-dark');
         document.body.classList.add(`theme-${effectiveTheme}`);
-        localStorage.setItem(this.themeKey, theme);
+        safeStorage.setItem(this.themeKey, theme);
         
         const toggle = document.getElementById('themeToggle');
         if (toggle) {
@@ -313,7 +334,7 @@ class VideoTokenRefreshManager {
                 return;
             }
 
-            const token = localStorage.getItem('lustroom_jwt');
+            const token = safeStorage.getItem('lustroom_jwt');
             if (!token) {
                 this.stopRefresh(videoId);
                 return;
@@ -445,9 +466,9 @@ class SessionRefreshManager {
     }
 
     async checkAndRefresh() {
-        const token = localStorage.getItem('lustroom_jwt');
-        const obtainedAt = parseInt(localStorage.getItem('lustroom_jwt_obtained_at'), 10);
-        const expiresIn = parseInt(localStorage.getItem('lustroom_jwt_expires_in'), 10);
+        const token = safeStorage.getItem('lustroom_jwt');
+        const obtainedAt = parseInt(safeStorage.getItem('lustroom_jwt_obtained_at'), 10);
+        const expiresIn = parseInt(safeStorage.getItem('lustroom_jwt_expires_in'), 10);
 
         if (!token || isNaN(obtainedAt) || isNaN(expiresIn)) {
             this.stop();
@@ -466,7 +487,7 @@ class SessionRefreshManager {
 
     async refreshSession() {
         try {
-            const token = localStorage.getItem('lustroom_jwt');
+            const token = safeStorage.getItem('lustroom_jwt');
             if (!token) return;
 
             const response = await fetch(`${API_BASE_URL}/refresh-session`, {
@@ -480,13 +501,13 @@ class SessionRefreshManager {
 
             if (response.ok && data.status === 'success') {
                 // Update stored token
-                localStorage.setItem('lustroom_jwt', data.access_token);
-                localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
-                localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
+                safeStorage.setItem('lustroom_jwt', data.access_token);
+                safeStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
+                safeStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
             } else if (response.status === 403) {
                 // Subscription expired - redirect to login
                 this.stop();
-                localStorage.clear();
+                safeStorage.clear();
                 window.location.href = 'index.html';
             }
         } catch (error) {
@@ -541,7 +562,7 @@ class VideoAnalyticsTracker {
 
     trackEvent(videoId, event, player, tierName) {
         // ✅ Kill-Switch: Check global analytics toggle before doing anything
-        const configRaw = localStorage.getItem('system_config');
+        const configRaw = safeStorage.getItem('system_config');
         if (configRaw) {
             try {
                 const config = JSON.parse(configRaw);
@@ -595,7 +616,7 @@ class VideoAnalyticsTracker {
 
     async sendBatch() {
         // ✅ Fix 1: Initial kill-switch check — stop before sending if already OFF
-        const configRaw = localStorage.getItem('system_config');
+        const configRaw = safeStorage.getItem('system_config');
         if (configRaw) {
             try {
                 const config = JSON.parse(configRaw);
@@ -610,7 +631,7 @@ class VideoAnalyticsTracker {
 
         const batch = [...this.batchQueue];
         this.batchQueue = [];
-        const token = localStorage.getItem('lustroom_jwt');
+        const token = safeStorage.getItem('lustroom_jwt');
         if (!token) return;
 
         try {
@@ -627,9 +648,9 @@ class VideoAnalyticsTracker {
 
             // ✅ Fix 2 (Feedback Loop): Server tells browser the current switch state
             if (data.collect_analytics) {
-                const currentConfig = JSON.parse(localStorage.getItem('system_config') || '{}');
+                const currentConfig = JSON.parse(safeStorage.getItem('system_config') || '{}');
                 currentConfig.collect_analytics = data.collect_analytics;
-                localStorage.setItem('system_config', JSON.stringify(currentConfig));
+                safeStorage.setItem('system_config', JSON.stringify(currentConfig));
 
                 // If server just told us to stop, drain the queue for next interval
                 if (data.collect_analytics === 'false') {
@@ -1408,8 +1429,8 @@ class AnnouncementSlider {
 // --- NEW: Load user data from localStorage ---
 function loadUserData() {
     try {
-        appState.userInfo = JSON.parse(localStorage.getItem('user_info') || 'null');
-        appState.subscriptions = JSON.parse(localStorage.getItem('user_subscriptions') || '[]');
+        appState.userInfo = JSON.parse(safeStorage.getItem('user_info') || 'null');
+        appState.subscriptions = JSON.parse(safeStorage.getItem('user_subscriptions') || '[]');
         return true;
     } catch (error) {
         appState.userInfo = null;
@@ -1569,7 +1590,7 @@ async function renderHeaderActions() {
     if (downloadAppButton) {
         try {
             // Fetch live system settings from backend
-            const token = localStorage.getItem('lustroom_jwt');
+            const token = safeStorage.getItem('lustroom_jwt');
             if (!token) {
                 downloadAppButton.style.display = 'none';
                 return;
@@ -1580,7 +1601,7 @@ async function renderHeaderActions() {
             
             if (data && data.status === 'success' && data.system_config) {
                 // ✅ SYNC: Always overwrite localStorage with live config from server
-                localStorage.setItem('system_config', JSON.stringify(data.system_config));
+                safeStorage.setItem('system_config', JSON.stringify(data.system_config));
 
                 const systemConfig = data.system_config;
                 const showButton = systemConfig.show_download_button === 'true';
@@ -1637,10 +1658,10 @@ if (document.getElementById('loginForm')) {
             
             if (response.ok && data.status === 'success' && data.access_token) {
                 // Save token and basic user info
-                localStorage.setItem('lustroom_jwt', data.access_token);
-                localStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
-                localStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
-                localStorage.setItem('user_info', JSON.stringify(data.user_info));
+                safeStorage.setItem('lustroom_jwt', data.access_token);
+                safeStorage.setItem('lustroom_jwt_expires_in', data.expires_in);
+                safeStorage.setItem('lustroom_jwt_obtained_at', Math.floor(Date.now() / 1000));
+                safeStorage.setItem('user_info', JSON.stringify(data.user_info));
                 
                 // Make second call to get profile data with subscriptions
                 try {
@@ -1649,20 +1670,20 @@ if (document.getElementById('loginForm')) {
                     
                     if (profileResponse.ok && profileData.status === 'success') {
                         // Save subscriptions data
-                        localStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions));
+                        safeStorage.setItem('user_subscriptions', JSON.stringify(profileData.subscriptions));
                         
                         // ✅ NEW: Save announcement data if present
                         if (profileData.announcements) {
-                            localStorage.setItem('global_announcements', JSON.stringify(profileData.announcements));
+                            safeStorage.setItem('global_announcements', JSON.stringify(profileData.announcements));
                         } else {
-                            localStorage.removeItem('global_announcements');
+                            safeStorage.removeItem('global_announcements');
                         }
                         
                         // ✅ NEW: Save system_config data if present
                         if (profileData.system_config) {
-                            localStorage.setItem('system_config', JSON.stringify(profileData.system_config));
+                            safeStorage.setItem('system_config', JSON.stringify(profileData.system_config));
                         } else {
-                            localStorage.removeItem('system_config');
+                            safeStorage.removeItem('system_config');
                         }
                         
                         // Load user data into global variables
@@ -1759,7 +1780,7 @@ class Router {
         }
         
         // Load and display announcements
-        const announcementsData = JSON.parse(localStorage.getItem('global_announcements') || '[]');
+        const announcementsData = JSON.parse(safeStorage.getItem('global_announcements') || '[]');
         if (this.announcementSlider) {
             this.announcementSlider.showAnnouncements(announcementsData);
         }
@@ -1983,7 +2004,7 @@ class Router {
             } else {
                 // Check if we have a response object (network request was made)
                 if (typeof response !== 'undefined' && (response.status === 401 || response.status === 403)) {
-                    localStorage.clear();
+                    safeStorage.clear();
                     window.location.href = 'index.html';
                 } else {
                     this.uiManager.showError(data?.message || "Failed to fetch content.");
@@ -2030,7 +2051,7 @@ class Router {
             if (response.ok && data.status === 'success' && data.gallery) {
                 this.uiManager.renderGallery(data.gallery);
             } else if (response.status === 401 || response.status === 403) {
-                localStorage.clear();
+                safeStorage.clear();
                 window.location.href = 'index.html';
             } else {
                 this.uiManager.showError(data.message || "Failed to fetch gallery.");
@@ -2416,7 +2437,7 @@ class UIManager {
                 const totalUniqueViews = viewedImageIndexes.size;
 
                 if (totalUniqueViews > 0 && gallerySlugForTracking) {
-                    const token = localStorage.getItem('lustroom_jwt');
+                    const token = safeStorage.getItem('lustroom_jwt');
                     if (token) {
                         const payload = {
                             gallery_slug: gallerySlugForTracking,
