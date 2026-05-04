@@ -104,15 +104,15 @@
         const _memStore = {};
         const safeStorage = {
             getItem(k) {
-                try { return safeStorage.getItem(k); }
+                try { return localStorage.getItem(k); }
                 catch(e) { return _memStore[k] !== undefined ? _memStore[k] : null; }
             },
             setItem(k, v) {
-                try { safeStorage.setItem(k, v); }
+                try { localStorage.setItem(k, v); }
                 catch(e) { _memStore[k] = String(v); }
             },
             removeItem(k) {
-                try { safeStorage.removeItem(k); }
+                try { localStorage.removeItem(k); }
                 catch(e) { delete _memStore[k]; }
             }
         };
