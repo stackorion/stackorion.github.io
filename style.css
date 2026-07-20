@@ -4202,3 +4202,443 @@ body.player-active {
     top: 14px;
     right: 90px; /* clear of the ::after "Latest" label */
 }
+
+
+/* ============================================================================
+   Iteration 2 — Early Access UI styles
+   ============================================================================ */
+
+/* Gold gradient badge in the top-right corner of the thumbnail */
+.link-card .thumbnail-container {
+    position: relative; /* ensure badge can absolute-position to this */
+}
+
+.early-access-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 5;
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    box-shadow: 0 2px 8px rgba(217, 119, 6, 0.4);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    align-items: flex-end;
+    max-width: 60%;
+}
+
+.early-access-badge .ea-badge-text {
+    white-space: nowrap;
+}
+
+.early-access-badge .ea-badge-sub {
+    font-size: 0.62rem;
+    font-weight: 500;
+    opacity: 0.92;
+    white-space: nowrap;
+}
+
+.early-access-badge .countdown-timer {
+    font-size: 0.66rem;
+    font-weight: 600;
+    background: rgba(0,0,0,0.25);
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* Locked overlay for early-access-locked cards — replaces the silent blur */
+.link-card.early-access-locked .thumbnail-container img {
+    filter: blur(8px) grayscale(70%) brightness(0.6);
+    opacity: 0.55;
+}
+
+.link-card.early-access-locked {
+    opacity: 0.92;
+    background-color: var(--color-background-secondary, #f8f9fa);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.locked-overlay-early-access {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 16px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.65) 100%);
+    color: white;
+    z-index: 4;
+    gap: 6px;
+}
+
+.locked-overlay-early-access .ea-locked-icon {
+    font-size: 2.4rem;
+    line-height: 1;
+    margin-bottom: 4px;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+}
+
+.locked-overlay-early-access .ea-locked-message {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #fbbf24;
+    letter-spacing: 0.5px;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
+
+.locked-overlay-early-access .ea-locked-sub {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.92);
+    max-width: 240px;
+    line-height: 1.35;
+}
+
+.locked-overlay-early-access .ea-locked-date {
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.75);
+    font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+}
+
+/* Upgrade CTA button inside the locked overlay */
+.locked-overlay-early-access .upgrade-cta-button {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white !important;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(217, 119, 6, 0.4);
+    transition: transform 0.15s, box-shadow 0.15s;
+    pointer-events: auto !important;
+    text-shadow: none !important;
+}
+
+.locked-overlay-early-access .upgrade-cta-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(217, 119, 6, 0.55);
+    color: white !important;
+    text-decoration: none !important;
+}
+
+/* Small EA badge for cards where the user HAS early access (not locked) */
+.link-card.has-early-access {
+    border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+/* Responsive — smaller badge on mobile */
+@media (max-width: 640px) {
+    .early-access-badge {
+        font-size: 0.66rem;
+        padding: 4px 7px;
+    }
+    .early-access-badge .ea-badge-sub,
+    .early-access-badge .countdown-timer {
+        font-size: 0.58rem;
+    }
+    .locked-overlay-early-access .ea-locked-icon {
+        font-size: 1.8rem;
+    }
+    .locked-overlay-early-access .ea-locked-message {
+        font-size: 0.92rem;
+    }
+    .locked-overlay-early-access .ea-locked-sub {
+        font-size: 0.7rem;
+    }
+    .locked-overlay-early-access .upgrade-cta-button {
+        font-size: 0.74rem;
+        padding: 6px 12px;
+    }
+}
+
+/* Hero card variant — bigger badge */
+.link-card.hero-card .early-access-badge {
+    top: 14px;
+    right: 14px;
+    font-size: 0.85rem;
+    padding: 7px 14px;
+}
+
+.link-card.hero-card .early-access-badge .ea-badge-sub,
+.link-card.hero-card .early-access-badge .countdown-timer {
+    font-size: 0.72rem;
+}
+
+.link-card.hero-card .locked-overlay-early-access .ea-locked-icon {
+    font-size: 3.5rem;
+}
+
+.link-card.hero-card .locked-overlay-early-access .ea-locked-message {
+    font-size: 1.4rem;
+}
+
+.link-card.hero-card .locked-overlay-early-access .ea-locked-sub {
+    font-size: 0.95rem;
+    max-width: 400px;
+}
+
+.link-card.hero-card .locked-overlay-early-access .upgrade-cta-button {
+    font-size: 1rem;
+    padding: 12px 24px;
+    margin-top: 16px;
+}
+/* ═══ End Iteration 2 Early Access CSS ═══ */
+
+
+
+/* ============================================================================
+   Iteration 4 — Pagination + Global Search UI styles
+   ============================================================================ */
+
+/* Load more button — appears at the bottom of the links content container */
+.load-more-button {
+    display: block;
+    margin: 30px auto;
+    padding: 14px 32px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    min-width: 260px;
+}
+
+.load-more-button:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.45);
+}
+
+.load-more-button:disabled {
+    background: #adb5bd;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+/* Page size selector */
+.page-size-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.page-size-group .filter-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin: 0;
+}
+
+.page-size-group .filter-select {
+    padding: 6px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.88rem;
+    background: white;
+    cursor: pointer;
+}
+
+.page-size-group .filter-select:focus {
+    outline: 2px solid #667eea;
+    outline-offset: -1px;
+}
+
+/* Search results grid — flat layout, not Netflix rows */
+.search-results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    padding: 10px 0;
+}
+
+.search-result-card {
+    width: 100%;
+    max-width: none;
+}
+
+.search-result-card.scroll-card {
+    /* Override the Netflix-row scroll-card styling */
+    flex: none;
+    width: 100%;
+    min-width: 0;
+}
+
+.search-result-tier {
+    display: block;
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: #667eea;
+    font-weight: 600;
+}
+
+/* Search highlight (used when highlighting matched terms in titles) */
+.search-highlight {
+    background: #fef3c7;
+    color: #92400e;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-weight: 700;
+}
+
+/* Search results empty state */
+.search-empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #6c757d;
+}
+
+.search-empty-state .empty-icon {
+    font-size: 3em;
+    margin-bottom: 12px;
+    opacity: 0.6;
+}
+
+/* Search input — slightly more prominent when in search scope */
+.search-container.is-global-search #searchInput {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+/* "Search hint" below the search bar */
+.search-hint {
+    font-size: 0.78rem;
+    color: #6c757d;
+    margin-top: 4px;
+    text-align: center;
+}
+
+.search-hint kbd {
+    background: #e9ecef;
+    border: 1px solid #dee2e6;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: monospace;
+    font-size: 0.85em;
+}
+
+/* Responsive — search results grid */
+@media (max-width: 640px) {
+    .search-results-grid {
+        grid-template-columns: 1fr;
+    }
+    .load-more-button {
+        min-width: 100%;
+    }
+    .page-size-group {
+        margin-left: 0;
+        margin-top: 8px;
+    }
+}
+/* ═══ End Iteration 4 CSS ═══ */
+
+
+
+/* ============================================================================
+   Iteration 5 — Nested Categories UI (two-row pill bar + breadcrumb)
+   ============================================================================ */
+
+.category-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 0 0 12px 0;
+    font-size: 0.85rem;
+    color: var(--color-text-muted, #6c757d);
+}
+
+.category-breadcrumb .breadcrumb-item {
+    cursor: pointer;
+    padding: 3px 8px;
+    border-radius: 4px;
+    transition: var(--transition-all, all 0.2s);
+}
+
+.category-breadcrumb .breadcrumb-item:hover {
+    background: var(--color-border-primary, #e9ecef);
+    color: var(--color-text-primary, #333);
+}
+
+.category-breadcrumb .breadcrumb-item.active {
+    color: var(--color-accent-primary, #007bff);
+    font-weight: 600;
+    background: var(--color-border-primary, #e9ecef);
+}
+
+.category-breadcrumb .breadcrumb-sep {
+    color: var(--color-text-muted, #adb5bd);
+    font-weight: 400;
+}
+
+/* Parent pill bar — same styling as existing .cat-pill */
+.category-pill-bar.parent-bar {
+    border-bottom: 1px solid var(--color-border-primary, #e9ecef);
+    padding-bottom: 12px;
+    margin-bottom: 8px;
+}
+
+/* Child pill bar — slightly smaller, indented */
+.category-pill-bar.child-bar {
+    padding: 0 0 12px 16px;
+    margin-bottom: 8px;
+    border-left: 2px solid var(--color-accent-primary, #007bff);
+    margin-left: 8px;
+}
+
+.category-pill-bar.child-bar .cat-pill {
+    font-size: 0.82rem;
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: var(--color-background-secondary, #f8f9fa);
+    color: var(--color-text-secondary, #6c757d);
+    border-color: var(--color-border-primary, #dee2e6);
+}
+
+.category-pill-bar.child-bar .cat-pill:hover {
+    background: var(--color-border-primary, #e9ecef);
+}
+
+.category-pill-bar.child-bar .cat-pill.active {
+    background: var(--color-accent-primary, #007bff);
+    color: white;
+    border-color: var(--color-accent-primary, #007bff);
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+    .category-pill-bar.parent-bar,
+    .category-pill-bar.child-bar {
+        gap: 6px;
+    }
+    .category-pill-bar.child-bar {
+        padding-left: 12px;
+        margin-left: 4px;
+    }
+    .category-breadcrumb {
+        font-size: 0.78rem;
+    }
+}
+/* ═══ End Iteration 5 CSS ═══ */

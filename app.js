@@ -36,6 +36,24 @@ class AppState {
         this.tiers = {};
         this.currentContent = null;
         this.filterState = { view: 'All', type: 'All', query: '' };
+        // Iteration 4: pagination state
+        this.contentPage = 1;
+        this.contentPageSize = 50;
+        this.contentHasMore = false;
+        this.contentTotalCount = 0;
+        this.currentTierId = null;
+        this.currentPlatformId = null;
+        this.currentTierName = null;
+        this.currentPlatformName = null;
+        // Iteration 4: global search state
+        this.searchQuery = '';
+        this.searchPage = 1;
+        this.searchHasMore = false;
+        this.searchTotalCount = 0;
+        // Iteration 5: category tree state
+        this.categoryTree = {};  // {platformId: [tree]}
+        this.currentCategoryId = null;  // selected category (null = All)
+        this.currentCategoryPath = [];  // ['Vanc', 'Elina'] for breadcrumb
         this.searchScope = 'platforms';
         this.userInfo = null;
         this.subscriptions = [];
@@ -971,8 +989,17 @@ class DesktopPlayer {
 // --- Player Factory ---
 class PlayerFactory {
     static create(link, tierId) {
+        // Iteration 2: defense-in-depth guard — never play a locked link
+        // (including early-access-locked links). The click handlers in
+        // buildCard should already prevent this, but we want a single
+        // source of truth.
+        if (link && link.locked) {
+            console.warn('[PlayerFactory] ABorted — link is locked', link);
+            return null;
+        }
+
         const isMobile = DeviceDetector.isMobile();
-        
+
         if (isMobile) {
             const player = new NativeMobilePlayer(link, tierId);
             player.open();
@@ -1807,6 +1834,17 @@ class Router {
             const platformId = urlParams.get('platform_id');
             const tierId = urlParams.get('tier_id');
             const slug = urlParams.get('slug');
+            const searchQuery = urlParams.get('q');
+
+            // Iteration 4: handle search view
+            if (view === 'search' && searchQuery) {
+                await this.ensurePlatformsData();
+                this.appState.searchScope = 'search';
+                await this.fetchAndDisplaySearchResults(searchQuery, platformId);
+                renderSubscriptionStatus();
+                hideAppLoader();
+                return;
+            }
 
             // Handle gallery view
             if (view === 'gallery' && slug) {
@@ -1944,38 +1982,43 @@ class Router {
         this.navigate();
     }
 
-    // ✅ NEW: Content fetching method
+    // ✅ NEW: Content fetching method (Iteration 4: paginated)
     async fetchAndDisplayContent(platformId, tierId, tierName, platformName) {
         this.appState.searchScope = 'content';
+        this.appState.currentTierId = tierId;
+        this.appState.currentPlatformId = platformId;
+        this.appState.currentTierName = tierName;
+        this.appState.currentPlatformName = platformName;
+        this.appState.contentPage = 1;  // reset to first page
         this.uiManager.renderContentSkeleton(tierName, platformName);
-        
+
         try {
             const token = this.authManager.getToken();
-            
-            // ✅ CACHE CHECK: Try to get from cache first
-            let data = null;
-            const cachedContent = cacheManager.getCachedLinks(tierId);
-            
-            if (cachedContent) {
-                // Use cached data
-                data = { status: 'success', content: cachedContent };
-            } else {
-                // Fetch fresh data
-                const response = await fetch(`${API_BASE_URL}/get_patron_links?tier_id=${tierId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                data = await response.json();
-                
-                // ✅ CACHE SET: Save to cache if successful
-                // Only cache if we actually made a network request (response exists)
-                if (data && data.status === 'success' && data.content) {
-                    cacheManager.setCachedLinks(tierId, data.content);
-                }
-            }
-            
+
+            // Iteration 4: cache key includes page+page_size. Don't use the
+            // old cacheManager.getCachedLinks() because it doesn't know about
+            // pagination. Backend cache will handle it.
+            const page = this.appState.contentPage;
+            const pageSize = this.appState.contentPageSize;
+            const url = `${API_BASE_URL}/get_patron_links?tier_id=${tierId}&page=${page}&page_size=${pageSize}`;
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+
             if (data && data.status === 'success' && data.content) {
                 this.appState.currentContent = data.content;
                 this.appState.filterState = { view: 'All', type: 'All', query: '' };
+
+                // Iteration 4: store pagination state
+                if (data.pagination) {
+                    this.appState.contentHasMore = data.pagination.has_next;
+                    this.appState.contentTotalCount = data.pagination.total;
+                } else {
+                    // Legacy response (no pagination) — assume all loaded
+                    this.appState.contentHasMore = false;
+                    this.appState.contentTotalCount = 0;
+                }
 
                 // Build content HTML
                 this.mainContent.innerHTML = `
@@ -1987,9 +2030,12 @@ class Router {
                     <div id="linksContentContainer"></div>`;
 
                 this.searchContainer.style.display = 'block';
-                this.searchInput.placeholder = `Search in ${tierName || 'Content'}`;
+                this.searchInput.placeholder = `Search in ${tierName || 'Content'} (or use global search above)`;
                 this.searchInput.value = '';
-                
+
+                // Iteration 5: fetch category tree for this platform (cached)
+                await this.ensureCategoryTree(platformId);
+
                 // Attach back button listener
                 const backButton = document.getElementById('backButton');
                 if (backButton) {
@@ -1998,18 +2044,17 @@ class Router {
                         this.navigate();
                     });
                 }
-                
-                // Render content
-                renderContent(data.content, platformId);
-                
-                // Setup filters
+
+                // Render content (initial page)
+                renderContent(data.content, platformId, true);
+
+                // Setup filters (includes page size selector)
                 setupFilters(data.content);
-                
+
                 // Setup copy buttons
                 setupCopyButtonDelegation();
-                
+
             } else {
-                // Check if we have a response object (network request was made)
                 if (typeof response !== 'undefined' && (response.status === 401 || response.status === 403)) {
                     safeStorage.clear();
                     window.location.href = 'index.html';
@@ -2020,6 +2065,188 @@ class Router {
         } catch (error) {
             console.error("Content fetch error:", error);
             this.uiManager.showError("An error occurred while fetching content.");
+        }
+    }
+
+    // Iteration 5: fetch + cache category tree for a platform
+    async ensureCategoryTree(platformId) {
+        if (this.appState.categoryTree[platformId]) {
+            return this.appState.categoryTree[platformId];
+        }
+        try {
+            const token = this.authManager.getToken();
+            const resp = await fetch(`${API_BASE_URL}/platforms/${platformId}/categories`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!resp.ok) return null;
+            const data = await resp.json();
+            if (data.status === 'success' && data.categories) {
+                this.appState.categoryTree[platformId] = data.categories;
+                return data.categories;
+            }
+        } catch (e) {
+            console.warn('Failed to fetch category tree:', e);
+        }
+        return null;
+    }
+
+    // Iteration 4: Load next page of content (called by "Load more" button)
+    async loadMoreContent() {
+        if (!this.appState.contentHasMore) return;
+        this.appState.contentPage += 1;
+        const tierId = this.appState.currentTierId;
+        const platformId = this.appState.currentPlatformId;
+
+        // Update button to show loading state
+        const loadMoreBtn = document.getElementById('loadMoreBtn');
+        if (loadMoreBtn) {
+            loadMoreBtn.disabled = true;
+            loadMoreBtn.textContent = 'Loading...';
+        }
+
+        try {
+            const token = this.authManager.getToken();
+            const page = this.appState.contentPage;
+            const pageSize = this.appState.contentPageSize;
+            const url = `${API_BASE_URL}/get_patron_links?tier_id=${tierId}&page=${page}&page_size=${pageSize}`;
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+
+            if (data && data.status === 'success' && data.content) {
+                // Merge new content into currentContent
+                const newContent = data.content;
+                for (const tierName in newContent) {
+                    if (!this.appState.currentContent[tierName]) {
+                        this.appState.currentContent[tierName] = [];
+                    }
+                    this.appState.currentContent[tierName].push(...newContent[tierName]);
+                }
+
+                // Update pagination state
+                if (data.pagination) {
+                    this.appState.contentHasMore = data.pagination.has_next;
+                    this.appState.contentTotalCount = data.pagination.total;
+                }
+
+                // Append new cards to existing category rows
+                renderContent(newContent, platformId, false);
+
+                // Update or remove the Load more button
+                updateLoadMoreButton();
+            } else {
+                this.appState.contentPage -= 1;  // revert on failure
+                if (loadMoreBtn) {
+                    loadMoreBtn.disabled = false;
+                    loadMoreBtn.textContent = 'Load more';
+                }
+                showToast('Failed to load more content.', 'error');
+            }
+        } catch (error) {
+            console.error("Load more error:", error);
+            this.appState.contentPage -= 1;
+            if (loadMoreBtn) {
+                loadMoreBtn.disabled = false;
+                loadMoreBtn.textContent = 'Load more';
+            }
+            showToast('Network error loading more content.', 'error');
+        }
+    }
+
+    // Iteration 4: Global search across all accessible tiers
+    async fetchAndDisplaySearchResults(query, platformId = null) {
+        this.appState.searchScope = 'search';
+        this.appState.searchQuery = query;
+        this.appState.searchPage = 1;
+
+        if (!query || query.trim().length < 2) {
+            this.uiManager.showError('Search query must be at least 2 characters.');
+            return;
+        }
+
+        this.uiManager.renderContentSkeleton('Search', platformId ? 'All Platforms' : 'All Platforms');
+
+        try {
+            const token = this.authManager.getToken();
+            const url = `${API_BASE_URL}/search?q=${encodeURIComponent(query.trim())}&page=1&page_size=50` +
+                        (platformId ? `&platform_id=${platformId}` : '');
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+
+            if (data && data.status === 'success') {
+                this.appState.searchHasMore = data.pagination?.has_next || false;
+                this.appState.searchTotalCount = data.pagination?.total || 0;
+
+                this.mainContent.innerHTML = `
+                    <div class="view-header">
+                        <button id="backButton" class="back-button">← Back</button>
+                        <h2>Search: "${escapeHtml(query)}" <span class="header-breadcrumb">/ ${data.pagination?.total || 0} results</span></h2>
+                    </div>
+                    <div id="linksContentContainer"></div>`;
+
+                this.searchContainer.style.display = 'block';
+                this.searchInput.placeholder = 'Search all content...';
+                this.searchInput.value = query;
+
+                const backButton = document.getElementById('backButton');
+                if (backButton) {
+                    backButton.addEventListener('click', () => {
+                        history.back();
+                        this.navigate();
+                    });
+                }
+
+                renderSearchResults(data.results, query);
+            } else {
+                this.uiManager.showError(data?.message || 'Search failed.');
+            }
+        } catch (error) {
+            console.error('Search error:', error);
+            this.uiManager.showError('An error occurred during search.');
+        }
+    }
+
+    // Iteration 4: Load more search results
+    async loadMoreSearchResults() {
+        if (!this.appState.searchHasMore) return;
+        this.appState.searchPage += 1;
+        const query = this.appState.searchQuery;
+
+        const loadMoreBtn = document.getElementById('loadMoreBtn');
+        if (loadMoreBtn) {
+            loadMoreBtn.disabled = true;
+            loadMoreBtn.textContent = 'Loading...';
+        }
+
+        try {
+            const token = this.authManager.getToken();
+            const url = `${API_BASE_URL}/search?q=${encodeURIComponent(query)}&page=${this.appState.searchPage}&page_size=50`;
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+
+            if (data && data.status === 'success') {
+                this.appState.searchHasMore = data.pagination?.has_next || false;
+                appendSearchResults(data.results, query);
+                updateLoadMoreButton();
+            } else {
+                this.appState.searchPage -= 1;
+                if (loadMoreBtn) {
+                    loadMoreBtn.disabled = false;
+                    loadMoreBtn.textContent = 'Load more';
+                }
+            }
+        } catch (error) {
+            console.error('Load more search error:', error);
+            this.appState.searchPage -= 1;
+            if (loadMoreBtn) {
+                loadMoreBtn.disabled = false;
+                loadMoreBtn.textContent = 'Load more';
+            }
         }
     }
     
@@ -2686,15 +2913,46 @@ if (document.getElementById('appContainer')) {
         const query = event.target.value.toLowerCase().trim();
         appState.filterState.query = query;
 
-        const emptyMessage = document.getElementById('searchEmptyMessage');
-        if (emptyMessage && query === '') {
-            emptyMessage.remove();
+        // Iteration 4: if the query starts with "g:" or user presses Enter,
+        // treat as global search across all tiers.
+        // Otherwise, do the existing per-view search.
+        if (appState.searchScope === 'search') {
+            // Already in search view — debounce then re-search
+            clearTimeout(window._globalSearchDebounce);
+            window._globalSearchDebounce = setTimeout(() => {
+                const trimmedQuery = event.target.value.trim();
+                if (trimmedQuery.length >= 2) {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('view', 'search');
+                    url.searchParams.set('q', trimmedQuery);
+                    window.history.pushState({}, '', url.toString());
+                    window.appRouter.fetchAndDisplaySearchResults(trimmedQuery);
+                }
+            }, 500);
+            return;
         }
 
         if (appState.searchScope === 'tiers') {
             handleTierLevelSearch(query);
         } else {
-            applyFilters();
+            applyFilters();   // client-side filter on link-card.dataset.searchText
+        }
+    }
+
+    // Iteration 4: Enter key in search bar = global search
+    function handleSearchKeydown(event) {
+        if (event.key === 'Enter') {
+            const query = event.target.value.trim();
+            if (query.length >= 2) {
+                // Switch to global search view
+                const url = new URL(window.location.href);
+                url.searchParams.set('view', 'search');
+                url.searchParams.set('q', query);
+                url.searchParams.delete('platform_id');
+                url.searchParams.delete('tier_id');
+                window.history.pushState({}, '', url.toString());
+                window.appRouter.navigate();
+            }
         }
     }
 
@@ -2798,13 +3056,23 @@ if (document.getElementById('appContainer')) {
         }
     };
 
-    function renderContent(contentData, platformId) {
+    function renderContent(contentData, platformId, isInitial = true) {
         const linksContentContainer = document.getElementById('linksContentContainer');
         if (!linksContentContainer) return;
-        linksContentContainer.innerHTML = '';
+
+        // Iteration 4: only clear on initial render. On "Load more" pages,
+        // we APPEND new cards to existing category rows.
+        if (isInitial) {
+            linksContentContainer.innerHTML = '';
+            // Remove any existing Load more button
+            const existingBtn = document.getElementById('loadMoreBtn');
+            if (existingBtn) existingBtn.remove();
+        }
 
         if (Object.keys(contentData).length === 0) {
-            linksContentContainer.innerHTML = `<p class="empty-tier-message">This tier has no content yet. Check back soon!</p>`;
+            if (isInitial) {
+                linksContentContainer.innerHTML = `<p class="empty-tier-message">This tier has no content yet. Check back soon!</p>`;
+            }
             return;
         }
 
@@ -2818,6 +3086,88 @@ if (document.getElementById('appContainer')) {
 
         let linkCounter = 1;
 
+        // ─── Iteration 2: Early Access helpers ─────────────────────────────────
+        // CountdownTimer — updates every minute to show "Available in 3d 4h 12m"
+        class CountdownTimer {
+            constructor(targetISO, element) {
+                this.targetISO = targetISO;
+                this.element = element;
+                this.intervalId = null;
+                this.update(); // initial render
+                this.intervalId = setInterval(() => this.update(), 60000); // every minute
+            }
+            update() {
+                if (!this.element) return;
+                if (!this.targetISO) {
+                    this.element.textContent = '';
+                    return;
+                }
+                const target = new Date(this.targetISO).getTime();
+                const now = Date.now();
+                const diff = target - now;
+                if (diff <= 0) {
+                    this.element.textContent = 'Available now!';
+                    if (this.intervalId) {
+                        clearInterval(this.intervalId);
+                        this.intervalId = null;
+                    }
+                    // Reload the page so the link unlocks
+                    setTimeout(() => location.reload(), 3000);
+                    return;
+                }
+                const days = Math.floor(diff / 86400000);
+                const hours = Math.floor((diff % 86400000) / 3600000);
+                const minutes = Math.floor((diff % 3600000) / 60000);
+                let text = '';
+                if (days > 0) text = `${days}d ${hours}h ${minutes}m`;
+                else if (hours > 0) text = `${hours}h ${minutes}m`;
+                else text = `${minutes}m`;
+                this.element.textContent = `Public in ${text}`;
+            }
+            destroy() {
+                if (this.intervalId) {
+                    clearInterval(this.intervalId);
+                    this.intervalId = null;
+                }
+            }
+        }
+
+        // Track active countdown instances so we can clean them up on view change
+        if (!window._activeCountdowns) window._activeCountdowns = [];
+        function registerCountdown(ct) {
+            window._activeCountdowns.push(ct);
+            return ct;
+        }
+        function destroyAllCountdowns() {
+            if (window._activeCountdowns) {
+                window._activeCountdowns.forEach(ct => ct.destroy && ct.destroy());
+                window._activeCountdowns = [];
+            }
+        }
+
+        // Helper: format an ISO date for human display in the locked overlay
+        function formatReleaseDate(iso) {
+            if (!iso) return 'soon';
+            try {
+                const d = new Date(iso);
+                return d.toLocaleDateString(undefined, {
+                    year: 'numeric', month: 'short', day: 'numeric',
+                    hour: 'numeric', minute: '2-digit'
+                });
+            } catch (e) {
+                return iso;
+            }
+        }
+
+        // Helper: get the platform modal upgrade URL from appState
+        function getPlatformUpgradeUrl(platformId) {
+            if (!appState || !appState.platforms) return null;
+            const platform = appState.platforms.find(p => p.id === platformId);
+            if (platform && platform.renewal_url) return platform.renewal_url;
+            return null;
+        }
+        // ─── End Iteration 2 helpers ────────────────────────────────────────────
+
         // ── Helper: build one card element (reuses all existing logic) ──────────
         function buildCard(link, tierName, isHero) {
             const isRecentContent = isRecent(link.added_at);
@@ -2828,7 +3178,27 @@ if (document.getElementById('appContainer')) {
             if (link.locked)     card.classList.add('locked');
             if (isRecentContent) card.classList.add('is-new');
 
+            // ─── Iteration 2: detect early-access lock ──────────────────────────
+            // lock_reason === 'early_access' means the user has tier access but
+            // is blocked by the EA window. We add a separate class so the UI can
+            // show a richer overlay (badge + countdown + upgrade CTA) instead of
+            // the silent blur of a regular tier-locked card.
+            const isEarlyAccessLocked = (link.locked_reason === 'early_access');
+            if (isEarlyAccessLocked) {
+                card.classList.add('early-access-locked');
+                card.classList.remove('locked'); // remove generic locked — EA has its own styling
+            }
+            // If the link has is_early_access=true but is NOT locked for this user
+            // (they have early access), still show a small EA badge to acknowledge
+            // their exclusive access.
+            const hasEarlyAccessBadge = link.is_early_access && !isEarlyAccessLocked;
+            if (hasEarlyAccessBadge) {
+                card.classList.add('has-early-access');
+            }
+
             card.dataset.contentType  = link.content_type || 'Video';
+            // Iteration 5: category path for filtering
+            card.dataset.categoryPath = (link.category_path || []).join('||');
             card.dataset.recentStatus = isRecentContent ? 'true' : 'false';
             card.dataset.searchText   = generateSearchableText(link);
             card.dataset.tierName     = tierName;
@@ -2855,6 +3225,29 @@ if (document.getElementById('appContainer')) {
                 const thumbnailContainer = document.createElement('div');
                 thumbnailContainer.className = 'thumbnail-container';
 
+                // ─── Iteration 2: Early Access badge (gold) ────────────────────
+                // Shown when link.is_early_access is true. Whether locked or
+                // unlocked-for-this-user, the badge appears — the only difference
+                // is the badge text and whether a countdown is shown.
+                if (link.is_early_access) {
+                    const eaBadge = document.createElement('div');
+                    eaBadge.className = 'early-access-badge';
+                    if (isEarlyAccessLocked) {
+                        // User can't watch yet — show countdown
+                        eaBadge.innerHTML = '<span class="ea-badge-text">⏰ Early Access</span>';
+                        const countdownEl = document.createElement('div');
+                        countdownEl.className = 'countdown-timer';
+                        eaBadge.appendChild(countdownEl);
+                        thumbnailContainer.appendChild(eaBadge);
+                        // Start the countdown
+                        registerCountdown(new CountdownTimer(link.public_release_at, countdownEl));
+                    } else {
+                        // User has early access — show static badge
+                        eaBadge.innerHTML = '<span class="ea-badge-text">⏰ Early Access</span><span class="ea-badge-sub">You have early access</span>';
+                        thumbnailContainer.appendChild(eaBadge);
+                    }
+                }
+
                 if (!isGallery && !link.locked) {
                     const playOverlay = document.createElement('div');
                     playOverlay.className = 'video-play-overlay';
@@ -2864,6 +3257,34 @@ if (document.getElementById('appContainer')) {
                         </svg>
                     `;
                     thumbnailContainer.appendChild(playOverlay);
+                }
+
+                // ─── Iteration 2: locked overlay for EA-locked cards ────────────
+                // Show a clear message about why the card is locked + the unlock
+                // date + an upgrade CTA button. Replaces the silent blur for
+                // early-access-locked cards specifically.
+                if (isEarlyAccessLocked) {
+                    const eaLockedOverlay = document.createElement('div');
+                    eaLockedOverlay.className = 'locked-overlay-early-access';
+                    const releaseDateStr = formatReleaseDate(link.public_release_at);
+                    eaLockedOverlay.innerHTML = `
+                        <div class="ea-locked-icon">🔒</div>
+                        <div class="ea-locked-message">Early Access</div>
+                        <div class="ea-locked-sub">Available exclusively to higher-tier members.</div>
+                        <div class="ea-locked-date">Public release: ${releaseDateStr}</div>
+                    `;
+                    // Add upgrade CTA if we have a renewal URL
+                    const upgradeUrl = getPlatformUpgradeUrl(platformId);
+                    if (upgradeUrl) {
+                        const ctaBtn = document.createElement('a');
+                        ctaBtn.className = 'upgrade-cta-button';
+                        ctaBtn.href = upgradeUrl;
+                        ctaBtn.target = '_blank';
+                        ctaBtn.rel = 'noopener noreferrer';
+                        ctaBtn.textContent = 'Upgrade for Early Access →';
+                        eaLockedOverlay.appendChild(ctaBtn);
+                    }
+                    thumbnailContainer.appendChild(eaLockedOverlay);
                 }
 
                 if (isRecentContent) {
@@ -2981,39 +3402,131 @@ if (document.getElementById('appContainer')) {
             groups[cat].push({ link, tierName });
         });
 
-        // ── 3. CATEGORY PILL BAR (horizontal, static — no sticky) ───────────────
-        const allCategories = Object.keys(groups);
-        if (allCategories.length > 1) {
-            const catBar = document.createElement('div');
-            catBar.className = 'category-pill-bar';
-            catBar.id = 'categoryPillBar';
+        // ─── 3. CATEGORY PILL BAR — Iteration 5: TWO-ROW (parent + child) + breadcrumb ─
+        // Build a flat list of categories from the links' category_path field.
+        // Each link has category_path: ['Vanc', 'Elina'] (root → leaf).
+        // We derive the parent/child structure from this.
+        const parentCategories = new Set();  // root-level category names
+        const childCategoriesByParent = {};  // {parentName: Set(childName, ...)}
+        allLinks.forEach(link => {
+            const path = link.category_path || (link.category ? [link.category] : []);
+            if (path.length === 0) return;
+            const root = path[0];
+            parentCategories.add(root);
+            if (path.length > 1) {
+                if (!childCategoriesByParent[root]) childCategoriesByParent[root] = new Set();
+                childCategoriesByParent[root].add(path[1]);
+            }
+        });
 
-            const allPill = document.createElement('button');
-            allPill.className = 'cat-pill active';
-            allPill.textContent = 'All';
-            allPill.dataset.cat = '__all__';
-            catBar.appendChild(allPill);
+        const parentList = Array.from(parentCategories).sort();
+        const hasMultipleParents = parentList.length > 1 || Object.keys(childCategoriesByParent).length > 0;
 
-            allCategories.forEach(cat => {
+        if (hasMultipleParents) {
+            // Breadcrumb (shows current selection path)
+            const breadcrumb = document.createElement('div');
+            breadcrumb.className = 'category-breadcrumb';
+            breadcrumb.id = 'categoryBreadcrumb';
+            const allLink = document.createElement('span');
+            allLink.className = 'breadcrumb-item active';
+            allLink.textContent = 'All';
+            allLink.dataset.catPath = '';
+            breadcrumb.appendChild(allLink);
+            breadcrumb.addEventListener('click', e => {
+                const item = e.target.closest('.breadcrumb-item');
+                if (!item) return;
+                const path = item.dataset.catPath;
+                applyCategoryFilter(path || '');
+            });
+            linksContentContainer.appendChild(breadcrumb);
+
+            // Row 1: parent categories
+            const parentBar = document.createElement('div');
+            parentBar.className = 'category-pill-bar parent-bar';
+            parentBar.id = 'parentCategoryBar';
+
+            const allParentPill = document.createElement('button');
+            allParentPill.className = 'cat-pill active';
+            allParentPill.textContent = 'All';
+            allParentPill.dataset.parent = '__all__';
+            parentBar.appendChild(allParentPill);
+
+            parentList.forEach(parent => {
                 const pill = document.createElement('button');
                 pill.className = 'cat-pill';
-                pill.textContent = cat;
-                pill.dataset.cat = cat;
-                catBar.appendChild(pill);
+                pill.textContent = parent;
+                pill.dataset.parent = parent;
+                parentBar.appendChild(pill);
             });
 
-            catBar.addEventListener('click', e => {
+            parentBar.addEventListener('click', e => {
                 const pill = e.target.closest('.cat-pill');
                 if (!pill) return;
-                catBar.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+                parentBar.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
                 pill.classList.add('active');
-                const chosen = pill.dataset.cat;
-                linksContentContainer.querySelectorAll('.category-row').forEach(row => {
-                    row.style.display = (chosen === '__all__' || row.dataset.category === chosen) ? '' : 'none';
-                });
+                const selectedParent = pill.dataset.parent;
+                // Update child bar
+                updateChildBar(selectedParent);
+                // Apply filter
+                applyCategoryFilter(selectedParent === '__all__' ? '' : selectedParent);
             });
 
-            linksContentContainer.appendChild(catBar);
+            linksContentContainer.appendChild(parentBar);
+
+            // Row 2: child categories (initially empty / shows "All" only)
+            const childBar = document.createElement('div');
+            childBar.className = 'category-pill-bar child-bar';
+            childBar.id = 'childCategoryBar';
+            childBar.style.display = 'none';  // hidden until a parent is selected
+
+            const allChildPill = document.createElement('button');
+            allChildPill.className = 'cat-pill active';
+            allChildPill.textContent = 'All';
+            allChildPill.dataset.child = '__all__';
+            childBar.appendChild(allChildPill);
+
+            childBar.addEventListener('click', e => {
+                const pill = e.target.closest('.cat-pill');
+                if (!pill) return;
+                childBar.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+                pill.classList.add('active');
+                const selectedChild = pill.dataset.child;
+                const activeParentPill = parentBar.querySelector('.cat-pill.active');
+                const parentName = activeParentPill ? activeParentPill.dataset.parent : '__all__';
+                if (selectedChild === '__all__') {
+                    applyCategoryFilter(parentName === '__all__' ? '' : parentName);
+                } else {
+                    applyCategoryFilter(`${parentName}/${selectedChild}`);
+                }
+            });
+
+            linksContentContainer.appendChild(childBar);
+
+            // Helper: update the child bar based on selected parent
+            function updateChildBar(selectedParent) {
+                const childBarEl = document.getElementById('childCategoryBar');
+                if (!childBarEl) return;
+                if (selectedParent === '__all__' || !childCategoriesByParent[selectedParent] || childCategoriesByParent[selectedParent].size === 0) {
+                    childBarEl.style.display = 'none';
+                    return;
+                }
+                childBarEl.style.display = 'flex';
+                // Rebuild child pills (keep "All" first)
+                childBarEl.innerHTML = '';
+                const allPill = document.createElement('button');
+                allPill.className = 'cat-pill active';
+                allPill.textContent = 'All';
+                allPill.dataset.child = '__all__';
+                childBarEl.appendChild(allPill);
+                const children = Array.from(childCategoriesByParent[selectedParent]).sort();
+                children.forEach(child => {
+                    const pill = document.createElement('button');
+                    pill.className = 'cat-pill';
+                    pill.textContent = child;
+                    pill.dataset.child = child;
+                    childBarEl.appendChild(pill);
+                });
+            }
         }
 
         // ── 4. NETFLIX-STYLE ROWS WITH ARROW NAVIGATION ─────────────────────────
@@ -3086,15 +3599,195 @@ if (document.getElementById('appContainer')) {
         }
 
         // Flag for empty-state check
-        if (allLinks.length === 0) {
+        if (allLinks.length === 0 && isInitial) {
             linksContentContainer.innerHTML = `<p class="empty-tier-message">No content matches your search/filter criteria.</p>`;
+        }
+
+        // Iteration 4: add "Load more" button if there are more pages
+        if (isInitial) {
+            updateLoadMoreButton();
         }
     }
 
-    // --- Setup filters with Recently Added support ---
+    // Iteration 5: apply category filter — shows/hides category rows based on
+    // the selected path. Path format: '' (all) | 'Vanc' | 'Vanc/Elina'
+    function applyCategoryFilter(path) {
+        appState.currentCategoryId = path || null;
+        const container = document.getElementById('linksContentContainer');
+        if (!container) return;
+
+        // Update breadcrumb
+        const breadcrumb = document.getElementById('categoryBreadcrumb');
+        if (breadcrumb) {
+            breadcrumb.innerHTML = '';
+            const allItem = document.createElement('span');
+            allItem.className = 'breadcrumb-item' + (path === '' ? ' active' : '');
+            allItem.textContent = 'All';
+            allItem.dataset.catPath = '';
+            breadcrumb.appendChild(allItem);
+            if (path) {
+                const parts = path.split('/');
+                let cumulative = '';
+                parts.forEach((part, idx) => {
+                    cumulative = cumulative ? `${cumulative}/${part}` : part;
+                    const sep = document.createElement('span');
+                    sep.className = 'breadcrumb-sep';
+                    sep.textContent = ' / ';
+                    breadcrumb.appendChild(sep);
+                    const item = document.createElement('span');
+                    item.className = 'breadcrumb-item' + (idx === parts.length - 1 ? ' active' : '');
+                    item.textContent = part;
+                    item.dataset.catPath = cumulative;
+                    breadcrumb.appendChild(item);
+                });
+            }
+        }
+
+        // Filter category rows
+        const rows = container.querySelectorAll('.category-row');
+        rows.forEach(row => {
+            const rowCategory = row.dataset.category || '';
+            if (!path) {
+                row.style.display = '';
+            } else if (path.includes('/')) {
+                // Path is parent/child — show only the exact match
+                row.style.display = (rowCategory === path.split('/')[1]) ? '' : 'none';
+            } else {
+                // Path is parent — show all rows under this parent
+                // (matches the parent name in category_path[0] of any link in the row)
+                row.style.display = (rowCategory === path || row.dataset.parentCategory === path) ? '' : 'none';
+            }
+        });
+
+        // Also filter individual cards within rows (for the "All under parent" case)
+        if (path && !path.includes('/')) {
+            container.querySelectorAll('.category-row').forEach(row => {
+                if (row.style.display === 'none') return;
+                const cards = row.querySelectorAll('.link-card');
+                let anyVisible = false;
+                cards.forEach(card => {
+                    const cardPath = card.dataset.categoryPath || '';
+                    const pathParts = cardPath.split('||');
+                    const matches = pathParts.some(p => p.startsWith(path + '/') || p === path);
+                    card.style.display = matches ? '' : 'none';
+                    if (matches) anyVisible = true;
+                });
+                row.style.display = anyVisible ? '' : 'none';
+            });
+        }
+    }
+
+    // ── Iteration 4: helper to add/update/remove the Load more button
+    function updateLoadMoreButton() {
+        const linksContentContainer = document.getElementById('linksContentContainer');
+        if (!linksContentContainer) return;
+
+        let btn = document.getElementById('loadMoreBtn');
+        const hasMore = appState.contentHasMore;
+        const total = appState.contentTotalCount;
+        const loaded = Object.values(appState.currentContent || {}).flat().length;
+
+        if (!hasMore) {
+            if (btn) btn.remove();
+            return;
+        }
+
+        if (!btn) {
+            btn = document.createElement('button');
+            btn.id = 'loadMoreBtn';
+            btn.className = 'load-more-button';
+            btn.addEventListener('click', () => {
+                if (appState.searchScope === 'search') {
+                    window.appRouter.loadMoreSearchResults();
+                } else {
+                    window.appRouter.loadMoreContent();
+                }
+            });
+            linksContentContainer.appendChild(btn);
+        }
+
+        btn.disabled = false;
+        btn.textContent = `Load more (showing ${loaded} of ${total})`;
+    }
+
+    // Iteration 4: render search results (flat list, not grouped by tier)
+    function renderSearchResults(results, query) {
+        const linksContentContainer = document.getElementById('linksContentContainer');
+        if (!linksContentContainer) return;
+        linksContentContainer.innerHTML = '';
+
+        if (!results || results.length === 0) {
+            linksContentContainer.innerHTML = `<p class="empty-tier-message">No results found for "${escapeHtml(query)}". Try different keywords.</p>`;
+            return;
+        }
+
+        // Search results are a flat list — render as a grid (not Netflix rows)
+        const resultsGrid = document.createElement('div');
+        resultsGrid.className = 'search-results-grid';
+        resultsGrid.id = 'searchResultsGrid';
+
+        results.forEach(link => {
+            // link already has tier_display_name from the API
+            const card = buildCard(link, link.tier_name || link.tier_display_name, false);
+            card.classList.add('search-result-card');
+            // Add tier/platform breadcrumb to the card
+            const meta = card.querySelector('.meta-info');
+            if (meta) {
+                const tierInfo = document.createElement('span');
+                tierInfo.className = 'search-result-tier';
+                tierInfo.innerHTML = `<strong>Tier:</strong> ${escapeHtml(link.tier_display_name || 'N/A')}`;
+                meta.appendChild(tierInfo);
+            }
+            resultsGrid.appendChild(card);
+        });
+
+        linksContentContainer.appendChild(resultsGrid);
+
+        // Add Load more button if there are more results
+        if (appState.searchHasMore) {
+            const btn = document.createElement('button');
+            btn.id = 'loadMoreBtn';
+            btn.className = 'load-more-button';
+            btn.textContent = `Load more (showing ${results.length} of ${appState.searchTotalCount})`;
+            btn.addEventListener('click', () => window.appRouter.loadMoreSearchResults());
+            linksContentContainer.appendChild(btn);
+        }
+    }
+
+    // Iteration 4: append more search results to the grid
+    function appendSearchResults(newResults, query) {
+        const grid = document.getElementById('searchResultsGrid');
+        if (!grid) return;
+        newResults.forEach(link => {
+            const card = buildCard(link, link.tier_name || link.tier_display_name, false);
+            card.classList.add('search-result-card');
+            const meta = card.querySelector('.meta-info');
+            if (meta) {
+                const tierInfo = document.createElement('span');
+                tierInfo.className = 'search-result-tier';
+                tierInfo.innerHTML = `<strong>Tier:</strong> ${escapeHtml(link.tier_display_name || 'N/A')}`;
+                meta.appendChild(tierInfo);
+            }
+            grid.appendChild(card);
+        });
+    }
+
+    // Iteration 4: HTML escape helper (prevents XSS in search query display)
+    function escapeHtml(str) {
+        if (str == null) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    // --- Setup filters with Recently Added support (Iteration 4: + page size) ---
     function setupFilters(contentData) {
         const filterContainer = document.getElementById('filterContainer');
         if (!filterContainer) return;
+        filterContainer.innerHTML = '';  // Iteration 4: clear before re-adding
 
         const contentTypes = new Set();
         Object.values(contentData).flat().forEach(link => contentTypes.add(link.content_type || 'Video'));
@@ -3154,6 +3847,34 @@ if (document.getElementById('appContainer')) {
         }
 
         filterContainer.addEventListener('click', handleFilterClick);
+            // Iteration 4: page size selector
+        const pageSizeDiv = document.createElement('div');
+        pageSizeDiv.className = 'filter-group page-size-group';
+        pageSizeDiv.innerHTML = `
+            <label class="filter-label">Per page:</label>
+            <select id="pageSizeSelect" class="filter-select">
+                <option value="25" ${appState.contentPageSize === 25 ? 'selected' : ''}>25</option>
+                <option value="50" ${appState.contentPageSize === 50 ? 'selected' : ''}>50</option>
+                <option value="100" ${appState.contentPageSize === 100 ? 'selected' : ''}>100</option>
+            </select>
+        `;
+        filterContainer.appendChild(pageSizeDiv);
+
+        const pageSizeSelect = document.getElementById('pageSizeSelect');
+        if (pageSizeSelect) {
+            pageSizeSelect.addEventListener('change', (e) => {
+                appState.contentPageSize = parseInt(e.target.value, 10);
+                // Reload content from page 1 with new page size
+                if (appState.currentTierId && appState.currentPlatformId) {
+                    window.appRouter.fetchAndDisplayContent(
+                        appState.currentPlatformId,
+                        appState.currentTierId,
+                        appState.currentTierName,
+                        appState.currentPlatformName
+                    );
+                }
+            });
+        }
     }
 
     // --- Filter handling with search support ---
@@ -5012,6 +5733,7 @@ if (document.getElementById('appContainer')) {
         window.appRouter.navigate();
         if (searchInput) {
             searchInput.addEventListener('input', debounce(handleSearchInput, 300));
+            searchInput.addEventListener('keydown', handleSearchKeydown);
         }
     });
     window.onpopstate = () => window.appRouter.handlePopState();
