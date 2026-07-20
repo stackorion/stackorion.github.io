@@ -1995,10 +1995,12 @@ class Router {
         try {
             const token = this.authManager.getToken();
 
-            // FIX: Load ALL links (no pagination) so category filtering works
-            // across all videos in the tier, not just page 1. The backend
-            // returns all links when 'page' param is omitted (legacy mode).
-            const url = `${API_BASE_URL}/get_patron_links?tier_id=${tierId}`;
+            // Iteration 4: cache key includes page+page_size. Don't use the
+            // old cacheManager.getCachedLinks() because it doesn't know about
+            // pagination. Backend cache will handle it.
+            const page = this.appState.contentPage;
+            const pageSize = this.appState.contentPageSize;
+            const url = `${API_BASE_URL}/get_patron_links?tier_id=${tierId}&page=${page}&page_size=${pageSize}`;
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -2008,9 +2010,15 @@ class Router {
                 this.appState.currentContent = data.content;
                 this.appState.filterState = { view: 'All', type: 'All', query: '' };
 
-                // FIX: no pagination — all links loaded in one request
-                this.appState.contentHasMore = false;
-                this.appState.contentTotalCount = Object.values(data.content || {}).flat().length;
+                // Iteration 4: store pagination state
+                if (data.pagination) {
+                    this.appState.contentHasMore = data.pagination.has_next;
+                    this.appState.contentTotalCount = data.pagination.total;
+                } else {
+                    // Legacy response (no pagination) — assume all loaded
+                    this.appState.contentHasMore = false;
+                    this.appState.contentTotalCount = 0;
+                }
 
                 // Build content HTML
                 this.mainContent.innerHTML = `
@@ -3048,115 +3056,17 @@ if (document.getElementById('appContainer')) {
         }
     };
 
-    // FIX: append new cards to existing category rows without re-rendering.
-    // Called by renderContent when isInitial=false (Load more).
-    function appendContentCards(contentData, platformId) {
-        const linksContentContainer = document.getElementById('linksContentContainer');
-        if (!linksContentContainer) return;
-
-        const allLinks = Object.values(contentData).flat();
-        if (allLinks.length === 0) return;
-
-        // For each new link, find its category row (by category name) and
-        // append the card to the scroll track. If the row doesn't exist yet,
-        // create a new row.
-        allLinks.forEach(link => {
-            const cat = link.category || 'General Content';
-            const tierName = Object.keys(contentData).find(t =>
-                contentData[t].some(l => l === link)
-            ) || Object.keys(contentData)[0];
-
-            // Find existing row for this category
-            let row = linksContentContainer.querySelector(
-                `.category-row[data-category="${CSS.escape(cat)}"]`
-            );
-
-            if (!row) {
-                // Create new row for this category
-                row = document.createElement('div');
-                row.className = 'category-row category-section';
-                row.setAttribute('data-category', cat);
-                row.dataset.parentCategory = (link.category_path && link.category_path[0]) || cat;
-
-                const header = document.createElement('h2');
-                header.className = 'category-header';
-                header.textContent = cat;
-                row.appendChild(header);
-
-                const wrapper = document.createElement('div');
-                wrapper.className = 'scroll-track-wrapper';
-
-                const btnLeft = document.createElement('button');
-                btnLeft.className = 'scroll-arrow scroll-arrow-left';
-                btnLeft.innerHTML = '&#8249;';
-                btnLeft.setAttribute('aria-label', 'Scroll left');
-
-                const track = document.createElement('div');
-                track.className = 'category-scroll-track';
-
-                const btnRight = document.createElement('button');
-                btnRight.className = 'scroll-arrow scroll-arrow-right';
-                btnRight.innerHTML = '&#8250;';
-                btnRight.setAttribute('aria-label', 'Scroll right');
-
-                const SCROLL_AMOUNT = 500;
-                btnLeft.addEventListener('click', () => track.scrollBy({ left: -SCROLL_AMOUNT, behavior: 'smooth' }));
-                btnRight.addEventListener('click', () => track.scrollBy({ left: SCROLL_AMOUNT, behavior: 'smooth' }));
-
-                function updateArrows() {
-                    const atStart = track.scrollLeft <= 4;
-                    const atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 4;
-                    btnLeft.classList.toggle('hidden', atStart);
-                    btnRight.classList.toggle('hidden', atEnd && track.scrollWidth > track.clientWidth);
-                    if (track.scrollWidth <= track.clientWidth) {
-                        btnLeft.classList.add('hidden');
-                        btnRight.classList.add('hidden');
-                    }
-                }
-                track.addEventListener('scroll', updateArrows, { passive: true });
-
-                wrapper.appendChild(btnLeft);
-                wrapper.appendChild(track);
-                wrapper.appendChild(btnRight);
-                row.appendChild(wrapper);
-                linksContentContainer.appendChild(row);
-
-                requestAnimationFrame(updateArrows);
-
-                // Use this track for the card
-                const card = buildCard(link, tierName, false);
-                card.classList.add('scroll-card');
-                card.dataset.categoryPath = (link.category_path || []).join('||');
-                track.appendChild(card);
-            } else {
-                // Append card to existing row's scroll track
-                const track = row.querySelector('.category-scroll-track');
-                if (track) {
-                    const card = buildCard(link, tierName, false);
-                    card.classList.add('scroll-card');
-                    card.dataset.categoryPath = (link.category_path || []).join('||');
-                    track.appendChild(card);
-                }
-            }
-        });
-    }
-
     function renderContent(contentData, platformId, isInitial = true) {
         const linksContentContainer = document.getElementById('linksContentContainer');
         if (!linksContentContainer) return;
 
-        // FIX: only clear on initial render. On "Load more" pages,
+        // Iteration 4: only clear on initial render. On "Load more" pages,
         // we APPEND new cards to existing category rows.
         if (isInitial) {
             linksContentContainer.innerHTML = '';
             // Remove any existing Load more button
             const existingBtn = document.getElementById('loadMoreBtn');
             if (existingBtn) existingBtn.remove();
-        } else {
-            // FIX: append mode — delegate to appendContentCards to avoid
-            // re-rendering hero/pillbar/rows (which caused duplication).
-            appendContentCards(contentData, platformId);
-            return;
         }
 
         if (Object.keys(contentData).length === 0) {
@@ -3357,10 +3267,20 @@ if (document.getElementById('appContainer')) {
                     const eaLockedOverlay = document.createElement('div');
                     eaLockedOverlay.className = 'locked-overlay-early-access';
                     const releaseDateStr = formatReleaseDate(link.public_release_at);
+                    // tier_content_flag: show actual EA tier name(s) instead of generic "higher-tier members"
+                    const eaTierNames = link.early_access_tier_names || [];
+                    let eaSubMessage;
+                    if (eaTierNames.length === 1) {
+                        eaSubMessage = `Only ${escapeHtml(eaTierNames[0])} members can watch early.`;
+                    } else if (eaTierNames.length > 1) {
+                        eaSubMessage = `Only ${eaTierNames.map(escapeHtml).join(' and ')} members can watch early.`;
+                    } else {
+                        eaSubMessage = 'Available exclusively to higher-tier members.';
+                    }
                     eaLockedOverlay.innerHTML = `
                         <div class="ea-locked-icon">🔒</div>
                         <div class="ea-locked-message">Early Access</div>
-                        <div class="ea-locked-sub">Available exclusively to higher-tier members.</div>
+                        <div class="ea-locked-sub">${eaSubMessage}</div>
                         <div class="ea-locked-date">Public release: ${releaseDateStr}</div>
                     `;
                     // Add upgrade CTA if we have a renewal URL
@@ -3937,8 +3857,34 @@ if (document.getElementById('appContainer')) {
         }
 
         filterContainer.addEventListener('click', handleFilterClick);
-            // FIX: page size selector removed — user portal loads all links at once.
-        // Pagination is still supported by the backend but not used here.
+            // Iteration 4: page size selector
+        const pageSizeDiv = document.createElement('div');
+        pageSizeDiv.className = 'filter-group page-size-group';
+        pageSizeDiv.innerHTML = `
+            <label class="filter-label">Per page:</label>
+            <select id="pageSizeSelect" class="filter-select">
+                <option value="25" ${appState.contentPageSize === 25 ? 'selected' : ''}>25</option>
+                <option value="50" ${appState.contentPageSize === 50 ? 'selected' : ''}>50</option>
+                <option value="100" ${appState.contentPageSize === 100 ? 'selected' : ''}>100</option>
+            </select>
+        `;
+        filterContainer.appendChild(pageSizeDiv);
+
+        const pageSizeSelect = document.getElementById('pageSizeSelect');
+        if (pageSizeSelect) {
+            pageSizeSelect.addEventListener('change', (e) => {
+                appState.contentPageSize = parseInt(e.target.value, 10);
+                // Reload content from page 1 with new page size
+                if (appState.currentTierId && appState.currentPlatformId) {
+                    window.appRouter.fetchAndDisplayContent(
+                        appState.currentPlatformId,
+                        appState.currentTierId,
+                        appState.currentTierName,
+                        appState.currentPlatformName
+                    );
+                }
+            });
+        }
     }
 
     // --- Filter handling with search support ---
