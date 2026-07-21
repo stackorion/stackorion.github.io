@@ -3241,8 +3241,7 @@ if (document.getElementById('appContainer')) {
             try {
                 const d = new Date(iso);
                 return d.toLocaleDateString(undefined, {
-                    year: 'numeric', month: 'short', day: 'numeric',
-                    hour: 'numeric', minute: '2-digit'
+                    year: 'numeric', month: 'short', day: 'numeric'
                 });
             } catch (e) {
                 return iso;
@@ -3386,7 +3385,7 @@ if (document.getElementById('appContainer')) {
                     thumbnailContainer.appendChild(eaLockedOverlay);
                 }
 
-                if (isRecentContent) {
+                if (isRecentContent && !link.is_early_access) {
                     const newBadge = document.createElement('div');
                     newBadge.className = 'new-badge';
                     newBadge.textContent = `New! (${getDaysAgo(link.added_at)})`;

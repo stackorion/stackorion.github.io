@@ -4215,7 +4215,7 @@ body.player-active {
 
 .early-access-badge {
     position: absolute;
-    top: 8px;
+    top: 46px;
     right: 8px;
     z-index: 5;
     background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
@@ -4369,7 +4369,7 @@ body.player-active {
 
 /* Hero card variant — bigger badge */
 .link-card.hero-card .early-access-badge {
-    top: 14px;
+    top: 54px;
     right: 14px;
     font-size: 0.85rem;
     padding: 7px 14px;
