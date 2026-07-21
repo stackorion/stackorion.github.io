@@ -3273,7 +3273,7 @@ if (document.getElementById('appContainer')) {
             // is blocked by the EA window. We add a separate class so the UI can
             // show a richer overlay (badge + countdown + upgrade CTA) instead of
             // the silent blur of a regular tier-locked card.
-            const isEarlyAccessLocked = (link.locked_reason === 'early_access');
+            const isEarlyAccessLocked = (link.lock_reason === 'early_access');
             if (isEarlyAccessLocked) {
                 card.classList.add('early-access-locked');
                 card.classList.remove('locked'); // remove generic locked — EA has its own styling
