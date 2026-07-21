@@ -3311,7 +3311,7 @@ if (document.getElementById('appContainer')) {
             const isGallery = link.content_type === 'Gallery';
 
             // Thumbnail
-            if (link.thumbnail_url) {
+            {
                 const thumbnailContainer = document.createElement('div');
                 thumbnailContainer.className = 'thumbnail-container';
 
@@ -3393,11 +3393,13 @@ if (document.getElementById('appContainer')) {
                     thumbnailContainer.appendChild(newBadge);
                 }
 
-                const thumbnailImage = document.createElement('img');
-                thumbnailImage.src     = link.thumbnail_url;
-                thumbnailImage.alt     = `Thumbnail for ${link.title}`;
-                thumbnailImage.loading = 'lazy';
-                thumbnailContainer.appendChild(thumbnailImage);
+                if (link.thumbnail_url) {
+                    const thumbnailImage = document.createElement('img');
+                    thumbnailImage.src     = link.thumbnail_url;
+                    thumbnailImage.alt     = `Thumbnail for ${link.title}`;
+                    thumbnailImage.loading = 'lazy';
+                    thumbnailContainer.appendChild(thumbnailImage);
+                }
 
                 if (!isGallery && !link.locked) {
                     thumbnailContainer.style.cursor = 'pointer';
