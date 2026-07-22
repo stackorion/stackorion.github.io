@@ -3318,23 +3318,15 @@ if (document.getElementById('appContainer')) {
                 // Shown when link.is_early_access is true. Whether locked or
                 // unlocked-for-this-user, the badge appears — the only difference
                 // is the badge text and whether a countdown is shown.
-                if (link.is_early_access) {
+                if (link.is_early_access && !isEarlyAccessLocked) {
+                    // Only show the small floating badge when the user actually
+                    // HAS early access. Locked cards already show the full
+                    // overlay below (icon + message + date + upgrade button),
+                    // so adding this floating badge too just overlaps it.
                     const eaBadge = document.createElement('div');
                     eaBadge.className = 'early-access-badge';
-                    if (isEarlyAccessLocked) {
-                        // User can't watch yet — show countdown
-                        eaBadge.innerHTML = '<span class="ea-badge-text">⏰ Early Access</span>';
-                        const countdownEl = document.createElement('div');
-                        countdownEl.className = 'countdown-timer';
-                        eaBadge.appendChild(countdownEl);
-                        thumbnailContainer.appendChild(eaBadge);
-                        // Start the countdown
-                        registerCountdown(new CountdownTimer(link.public_release_at, countdownEl));
-                    } else {
-                        // User has early access — show static badge
-                        eaBadge.innerHTML = '<span class="ea-badge-text">⏰ Early Access</span><span class="ea-badge-sub">You have early access</span>';
-                        thumbnailContainer.appendChild(eaBadge);
-                    }
+                    eaBadge.innerHTML = '<span class="ea-badge-text">⏰ Early Access</span><span class="ea-badge-sub">You have early access</span>';
+                    thumbnailContainer.appendChild(eaBadge);
                 }
 
                 if (!isGallery && !link.locked) {
