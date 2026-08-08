@@ -2832,6 +2832,55 @@ if (document.getElementById('appContainer')) {
         }
     }
 
+    // ── Iteration: EA-aware "new content" detection (Problem 2) ──
+    // For early-access links, the "new to the public" window starts when
+    // the EA window ENDS (i.e. at public_release_at), not when the admin
+    // first added the link. Before public_release_at, the content is still
+    // exclusive to EA-tier viewers — it is NOT yet "new content" for the
+    // general public, so isRecent() returns false.
+    function getEffectivePublishedDate(link) {
+        if (!link) return null;
+        // EA link with a scheduled public release date?
+        if (link.is_early_access && link.public_release_at) {
+            try {
+                const release = new Date(link.public_release_at);
+                if (!isNaN(release.getTime())) return release;
+            } catch (e) { /* fall through to added_at */ }
+        }
+        // Non-EA link, or EA link without a release date: use added_at.
+        if (!link.added_at) return null;
+        try {
+            const added = new Date(link.added_at);
+            return isNaN(added.getTime()) ? null : added;
+        } catch (e) { return null; }
+    }
+
+    // EA-aware "is this link recent?" check. Replaces the old
+    // isRecent(link.added_at) calls in buildCard() and
+    // hasRecentContent() so that the "Recent / New Content" tab on
+    // the user-facing portal correctly surfaces EA links once they
+    // become publicly available.
+    function isLinkRecent(link, daysThreshold = 7) {
+        const pubDate = getEffectivePublishedDate(link);
+        if (!pubDate) return false;
+        try {
+            const now = new Date();
+            // If the effective published date is in the future (EA
+            // window not yet expired), the content is not yet "new
+            // to the public" — exclude it from the Recent tab.
+            if (pubDate.getTime() > now.getTime()) return false;
+            const thresholdDate = new Date(now.getTime() - (daysThreshold * 24 * 60 * 60 * 1000));
+            return pubDate.getTime() > thresholdDate.getTime();
+        } catch (e) { return false; }
+    }
+
+    // Returns the ISO string of the effective published date for use
+    // with getDaysAgo() (e.g. "New! (3 days ago)").
+    function getEffectivePublishedDateISO(link) {
+        const d = getEffectivePublishedDate(link);
+        return d ? d.toISOString() : null;
+    }
+
     function getDaysAgo(dateString) {
         if (!dateString) return '';
         try {
@@ -2849,7 +2898,10 @@ if (document.getElementById('appContainer')) {
     function hasRecentContent(contentData) {
         return Object.values(contentData)
             .flat()
-            .some(link => isRecent(link.added_at));
+            // Iteration (Problem 2): use EA-aware recency check so
+            // that an EA link only counts as "recent" once its
+            // public_release_at has passed.
+            .some(link => isLinkRecent(link));
     }
 
     function generateSearchableText(link) {
@@ -3259,7 +3311,32 @@ if (document.getElementById('appContainer')) {
 
         // ── Helper: build one card element (reuses all existing logic) ──────────
         function buildCard(link, tierName, isHero) {
-            const isRecentContent = isRecent(link.added_at);
+            // Iteration (Problem 2): use EA-aware recency so the card
+            // only counts as "new" once its public_release_at has
+            // passed (i.e. the content is now publicly accessible).
+            const isRecentContent = isLinkRecent(link);
+
+            // Iteration (Problem 3): compute EA window status up
+            // front so we can reuse it for both the badge and the
+            // "New!" badge logic. The EA window is considered active
+            // when either (a) the link is not an EA link, or (b) it
+            // is an EA link with no scheduled release date, or (c) it
+            // is an EA link whose public_release_at is still in the
+            // future. Once public_release_at passes, the EA window
+            // has expired and the content is public — the "You have
+            // early access" badge must be hidden.
+            let eaWindowActive = false;
+            if (link.is_early_access) {
+                if (!link.public_release_at) {
+                    eaWindowActive = true; // EA with no scheduled end — treat as active
+                } else {
+                    try {
+                        const release = new Date(link.public_release_at);
+                        eaWindowActive = !isNaN(release.getTime()) && release.getTime() > Date.now();
+                    } catch (e) { eaWindowActive = true; }
+                }
+            }
+            const isEaReleasedToPublic = link.is_early_access && !eaWindowActive;
 
             const card = document.createElement('div');
             card.className = 'link-card';
@@ -3279,8 +3356,11 @@ if (document.getElementById('appContainer')) {
             }
             // If the link has is_early_access=true but is NOT locked for this user
             // (they have early access), still show a small EA badge to acknowledge
-            // their exclusive access.
-            const hasEarlyAccessBadge = link.is_early_access && !isEarlyAccessLocked;
+            // their exclusive access — BUT only while the EA window is
+            // still active. Once the EA window expires (public_release_at
+            // has passed), the content is public and the EA badge is no
+            // longer appropriate.
+            const hasEarlyAccessBadge = link.is_early_access && !isEarlyAccessLocked && eaWindowActive;
             if (hasEarlyAccessBadge) {
                 card.classList.add('has-early-access');
             }
@@ -3319,13 +3399,17 @@ if (document.getElementById('appContainer')) {
                 // unlocked-for-this-user, the badge appears — the only difference
                 // is the badge text and whether a countdown is shown.
                 if (link.is_early_access && !isEarlyAccessLocked) {
-                    // Only show the small floating badge when the user actually
-                    // HAS early access. Locked cards already show the full
-                    // overlay below (icon + message + date + upgrade button),
-                    // so adding this floating badge too just overlaps it.
                     const eaBadge = document.createElement('div');
-                    eaBadge.className = 'early-access-badge';
-                    eaBadge.innerHTML = '<span class="ea-badge-text">⏰ Early Access</span><span class="ea-badge-sub">You have early access</span>';
+                    if (eaWindowActive) {
+                        // EA window still active: user has exclusive early access.
+                        eaBadge.className = 'early-access-badge';
+                        eaBadge.innerHTML = '<span class="ea-badge-text">⏰ Early Access</span><span class="ea-badge-sub">You have early access</span>';
+                    } else {
+                        // EA window expired: content is now publicly released.
+                        // Show a 'Released' badge instead of the EA badge.
+                        eaBadge.className = 'early-access-badge released-badge';
+                        eaBadge.innerHTML = '<span class="ea-badge-text">✓ Released</span><span class="ea-badge-sub">Now public</span>';
+                    }
                     thumbnailContainer.appendChild(eaBadge);
                 }
 
@@ -3377,10 +3461,16 @@ if (document.getElementById('appContainer')) {
                     thumbnailContainer.appendChild(eaLockedOverlay);
                 }
 
-                if (isRecentContent && !link.is_early_access) {
+                // Iteration (Problem 2): show the "New!" badge for both
+                // non-EA links AND EA links whose EA window has expired
+                // (i.e. the content is now publicly released). For EA-now-
+                // public links, the "X days ago" is measured from the
+                // public_release_at date, not added_at.
+                if (isRecentContent && (!link.is_early_access || isEaReleasedToPublic)) {
                     const newBadge = document.createElement('div');
                     newBadge.className = 'new-badge';
-                    newBadge.textContent = `New! (${getDaysAgo(link.added_at)})`;
+                    const effectiveDateISO = getEffectivePublishedDateISO(link);
+                    newBadge.textContent = `New! (${getDaysAgo(effectiveDateISO)})`;
                     thumbnailContainer.appendChild(newBadge);
                 }
 
@@ -3417,11 +3507,13 @@ if (document.getElementById('appContainer')) {
                 title.prepend(icon);
             }
 
-            if (isRecentContent && !link.thumbnail_url) {
+            if (isRecentContent && !link.thumbnail_url && (!link.is_early_access || isEaReleasedToPublic)) {
                 const newBadgeText = document.createElement('span');
                 newBadgeText.className = 'new-badge-text';
                 newBadgeText.style.cssText = "background: #ff3b30; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; margin-left: 8px;";
-                newBadgeText.textContent = `New! (${getDaysAgo(link.added_at)})`;
+                // Iteration (Problem 2): use EA-aware pub date.
+                const effectiveDateISO2 = getEffectivePublishedDateISO(link);
+                newBadgeText.textContent = `New! (${getDaysAgo(effectiveDateISO2)})`;
                 title.appendChild(newBadgeText);
             }
             cardContent.appendChild(title);
