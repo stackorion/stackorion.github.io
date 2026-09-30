@@ -6233,6 +6233,10 @@ if (document.getElementById('appContainer')) {
     `;
     document.head.appendChild(styleSheet);
 
+    // openVideoPlayer became `async`. Unlike plain function declarations, async ones are NOT
+    // hoisted to global scope inside a block, so DesktopPlayer (top level) could no longer see it.
+    window.openVideoPlayer = openVideoPlayer;
+
     document.addEventListener('DOMContentLoaded', () => {
         window.appRouter.navigate();
         // Pre-warm the video library for this device while the page is idle
