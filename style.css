@@ -3352,9 +3352,9 @@ body.theme-dark .announcement-error {
         gap: 10px;
     }
     
-    .gallery-item img {
-        height: 150px;
-    }
+    /* NOTE: leftover `height: 150px` on .gallery-item img removed - the mobile
+       gallery is a full-bleed slider (height: 100% further below), so the
+       fixed height was dead code that only caused inconsistency. */
     
     /* Filters & Buttons */
     .filter-btn {
@@ -3671,9 +3671,8 @@ body.theme-dark .announcement-error {
         border-radius: 8px;
     }
     
-    .gallery-item img {
-        height: 120px;
-    }
+    /* NOTE: leftover `height: 120px` on .gallery-item img removed (same
+       reason as above - superseded by the mobile slider styles). */
     
     .gallery-caption {
         font-size: 12px;

@@ -27,6 +27,104 @@ const safeStorage = {
 const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
 
 // ============================================================================
+// VIDEO LIBRARY LAZY LOADER
+// hls.js + video.js + http-streaming add up to ~1.4 MB of JavaScript. They
+// used to be blocking <script> tags on every page load, even for customers
+// who only browsed galleries. Now they are fetched on demand the first time
+// a video is opened, and pre-warmed shortly after the page goes idle so that
+// opening a video still feels instant.
+// Platform players stay untouched:
+//   - iPhone/iPad: native HLS via <video src> - these libraries are never
+//     needed there, so iOS never downloads them.
+//   - Android: hls.js attaches to the same <video> element exactly as before;
+//     only the moment the file is fetched changed (on first video open).
+//   - Desktop: video.js + http-streaming initialize exactly as before; we
+//     just await the library before calling videojs().
+// All URLs are version-pinned (no floating @latest) so browsers can cache
+// them long-term and the CDN payload can never change underneath us.
+// ============================================================================
+const VideoLibraryLoader = {
+    sources: {
+        hlsJs:      'https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js',
+        videoJsCss: 'https://unpkg.com/video.js@8.10.0/dist/video-js.min.css',
+        videoJs:    'https://unpkg.com/video.js@8.10.0/dist/video.min.js',
+        videoJsVhs: 'https://unpkg.com/@videojs/http-streaming@3.8.0/dist/videojs-http-streaming.min.js'
+    },
+    _promises: {},
+    _timeoutMs: 20000,
+
+    _loadResource(key, url, type) {
+        if (this._promises[key]) return this._promises[key];
+        this._promises[key] = new Promise((resolve, reject) => {
+            let node;
+            if (type === 'css') {
+                node = document.createElement('link');
+                node.rel = 'stylesheet';
+                node.href = url;
+            } else {
+                node = document.createElement('script');
+                node.src = url;
+                node.async = true;
+            }
+            const timer = setTimeout(() => {
+                this._promises[key] = null; // allow a retry on the next video open
+                reject(new Error(`Timeout loading ${key}`));
+            }, this._timeoutMs);
+            node.onload = () => { clearTimeout(timer); resolve(); };
+            node.onerror = () => {
+                clearTimeout(timer);
+                this._promises[key] = null; // allow a retry on the next video open
+                reject(new Error(`Failed to load ${key}`));
+            };
+            document.head.appendChild(node);
+        });
+        return this._promises[key];
+    },
+
+    // Resolves true when every requested library is present, false on failure
+    // (callers fall back to native playback, exactly like the old code did).
+    async ensure(keys) {
+        try {
+            await Promise.all(keys.map(k => {
+                const isCss = k === 'videoJsCss';
+                return this._loadResource(k, this.sources[k], isCss ? 'css' : 'js');
+            }));
+            return true;
+        } catch (e) {
+            return false;
+        }
+    },
+
+    ensureHls() {
+        return this.ensure(['hlsJs']);
+    },
+
+    ensureVideoJs() {
+        return this.ensure(['videoJsCss', 'videoJs', 'videoJsVhs']);
+    },
+
+    // Pre-warm the library this device will actually use, a couple of seconds
+    // after the page is idle. Non-blocking, silent, and it never downloads
+    // both libraries on the same device (mobile gets hls.js, desktop gets
+    // video.js - mirroring PlayerFactory routing).
+    preloadIdle() {
+        const warm = () => {
+            try {
+                const isMobile = DeviceDetector.isMobile();
+                if (isMobile) this.ensureHls().catch(() => {});
+                else this.ensureVideoJs().catch(() => {});
+            } catch (e) { /* never break the page for a prefetch */ }
+        };
+        if (document.readyState === 'complete') {
+            setTimeout(warm, 2500);
+        } else {
+            window.addEventListener('load', () => setTimeout(warm, 2500), { once: true });
+        }
+    }
+};
+window.VideoLibraryLoader = VideoLibraryLoader; // const is not a window property; needed for preloadIdle()
+
+// ============================================================================
 // PHASE 1: MODULAR ARCHITECTURE
 // ============================================================================
 
@@ -826,14 +924,15 @@ class NativeMobilePlayer {
         });
     }
     
-    setupVideo() {
+    async setupVideo() {
         const isIOS = DeviceDetector.isIOS();
         
         if (isIOS) {
-            // iOS supports HLS natively
+            // iOS supports HLS natively - no external library needed
             this.videoElement.src = this.link.url;
-        } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-            // Android: Use Hls.js
+        } else if (await VideoLibraryLoader.ensureHls() && typeof Hls !== 'undefined' && Hls.isSupported()) {
+            // Android: Use Hls.js (library is lazy-loaded on first video open,
+            // then cached - hls.js attaches to the same <video> element as before)
             this.hlsInstance = new Hls({
                 enableWorker: true,
                 lowLatencyMode: false,
@@ -989,11 +1088,19 @@ class DesktopPlayer {
 // --- Player Factory ---
 class PlayerFactory {
     static create(link, tierId) {
-        // Iteration 2: defense-in-depth guard — never play a locked link
+        // Iteration 2: defense-in-depth guard — never play a broken/locked link
         // (including early-access-locked links). The click handlers in
         // buildCard should already prevent this, but we want a single
         // source of truth.
-        if (link && link.locked) {
+        if (!link) {
+            console.error("[PlayerFactory] ABORT — link is null/undefined");
+            return null;
+        }
+        if (!link.url) {
+            console.error("[PlayerFactory] ABORT — link.url is missing");
+            return null;
+        }
+        if (link.locked) {
             console.warn('[PlayerFactory] ABorted — link is locked', link);
             return null;
         }
@@ -2581,8 +2688,12 @@ class UIManager {
         this.initGalleryLightbox(state, galleryGrid, images);
         if (isMobile) {
             this.initMobileSliderExtras(state, galleryGrid, images);
-            this.restoreGalleryPosition(state, galleryGrid, images.length);
+        } else {
+            // Desktop: remember which card the customer scrolled to
+            this.initDesktopGridExtras(state, galleryGrid);
         }
+        // Both layouts: come back to the image you left on
+        this.restoreGalleryPosition(state, galleryGrid, images.length);
 
         // If the view is replaced (navigating elsewhere in the app), clean up automatically
         state.navObserver = new MutationObserver(() => {
@@ -2682,10 +2793,50 @@ class UIManager {
             if (idx <= 0) return;
             const target = galleryGrid.children[idx];
             if (!target) return;
-            galleryGrid.style.scrollBehavior = 'auto';
-            galleryGrid.scrollLeft = target.offsetLeft;
-            requestAnimationFrame(() => { galleryGrid.style.scrollBehavior = ''; });
+            if (state.isMobile) {
+                // Mobile slider: snap the horizontal strip to the saved card
+                galleryGrid.style.scrollBehavior = 'auto';
+                galleryGrid.scrollLeft = target.offsetLeft;
+                requestAnimationFrame(() => { galleryGrid.style.scrollBehavior = ''; });
+            } else {
+                // Desktop grid: scroll the page so the saved card is at the top.
+                // Cards use aspect-ratio placeholders, so positions are stable
+                // even while the images are still lazy-loading.
+                const top = target.getBoundingClientRect().top + (window.scrollY || window.pageYOffset || document.documentElement.scrollTop) - 12;
+                if (top > 0) window.scrollTo({ top, behavior: "auto" });
+            }
         } catch (e) { /* ignore */ }
+    }
+
+    // Desktop-only: remember grid scroll position while the customer browses.
+    // Uses a thin intersection band near the top of the viewport to find the
+    // topmost visible card. Purely positional - it never touches
+    // state.viewed, so gallery analytics behaviour stays exactly as before.
+    initDesktopGridExtras(state, galleryGrid) {
+        if (!('IntersectionObserver' in window) || !galleryGrid) return;
+        const visible = new Set();
+        let raf = null;
+        let lastSaved = -1;
+        const saveCurrent = () => {
+            raf = null;
+            if (!visible.size) return;
+            let topIdx = Infinity;
+            visible.forEach(i => { if (i < topIdx) topIdx = i; });
+            if (topIdx !== Infinity && topIdx !== lastSaved) {
+                lastSaved = topIdx;
+                this.saveGalleryPosition(state, topIdx);
+            }
+        };
+        state.observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                const idx = parseInt(entry.target.dataset.index, 10);
+                if (isNaN(idx)) return;
+                if (entry.isIntersecting) visible.add(idx);
+                else visible.delete(idx);
+            });
+            if (raf === null) raf = requestAnimationFrame(saveCurrent);
+        }, { rootMargin: '0px 0px -75% 0px', threshold: 0 });
+        galleryGrid.querySelectorAll('.gallery-item').forEach(item => state.observer.observe(item));
     }
 
     // Mobile-only: image counter + one-time swipe hint + view tracking for the slider
@@ -2823,13 +2974,17 @@ class UIManager {
 
             lightbox.on('close', () => {
                 if (lightbox.pswp) this.saveGalleryPosition(state, lightbox.pswp.currIndex);
-                // Mobile: put the slider on the image the customer ended on
-                if (isMobile && lightbox.pswp) {
+                if (lightbox.pswp) {
                     const target = galleryGrid.children[lightbox.pswp.currIndex];
-                    if (target) {
+                    if (isMobile && target) {
+                        // Mobile: put the slider on the image the customer ended on
                         galleryGrid.style.scrollBehavior = 'auto';
                         galleryGrid.scrollLeft = target.offsetLeft;
                         requestAnimationFrame(() => { galleryGrid.style.scrollBehavior = ''; });
+                    } else if (target) {
+                        // Desktop: bring the grid back to the image the customer ended on
+                        const top = target.getBoundingClientRect().top + (window.scrollY || window.pageYOffset || document.documentElement.scrollTop) - 12;
+                        if (top > 0) window.scrollTo({ top, behavior: "auto" });
                     }
                 }
                 // Desktop: log the session now. (Mobile logs when leaving the gallery.)
@@ -4293,7 +4448,8 @@ if (document.getElementById('appContainer')) {
 
     // --- PREMIUM VIDEO PLAYER (PRODUCTION v2.1 MOBILE FIX) ---
     // Note: This function is now primarily called by DesktopPlayer via the Factory.
-    function openVideoPlayer(link, tierId) {
+    // It is async: video.js is lazy-loaded on first call (see VideoLibraryLoader).
+    async function openVideoPlayer(link, tierId) {
         // Extract video ID and library ID
         const videoIdMatch = link.url.match(/\/([a-f0-9-]{36})\//);
         if (!videoIdMatch) return;
@@ -4529,6 +4685,33 @@ if (document.getElementById('appContainer')) {
         document.body.classList.add('player-active');
         
         const playerId = `premiumPlayer_${videoId}`;
+        
+        // Lazy-load video.js + http-streaming on first video open (then cached).
+        // The loading overlay is already visible at this point, so the customer
+        // just sees "Loading video..." while the library arrives. If loading
+        // fails, we surface the existing error overlay instead of a blank player.
+        const libsReady = await VideoLibraryLoader.ensureVideoJs();
+        if (!libsReady || typeof videojs === "undefined") {
+            const errOverlay = modal.querySelector(".player-error-overlay");
+            const errMsg = modal.querySelector(".player-error-message");
+            const loadOverlay = modal.querySelector(".player-loading-overlay");
+            if (loadOverlay) { loadOverlay.classList.remove("active"); loadOverlay.style.display = "none"; }
+            if (errOverlay) { errOverlay.classList.add("active"); errOverlay.style.display = "flex"; }
+            if (errMsg) errMsg.textContent = "Could not load the video player. Please check your connection and try again.";
+            // Close handlers are wired further down, so give the customer a way out here.
+            const exitLoadFail = () => {
+                modal.remove();
+                document.body.classList.remove('player-active');
+                window.scrollTo(0, lastScrollPosition || 0);
+            };
+            const failRetry = modal.querySelector(".retry-btn");
+            if (failRetry) failRetry.onclick = () => { exitLoadFail(); openVideoPlayer(link, tierId); };
+            const failClose = modal.querySelector(".player-close-btn, .close-btn, [class*='close']");
+            if (failClose) failClose.onclick = exitLoadFail;
+            const failEsc = (e) => { if (e.key === 'Escape') { document.removeEventListener('keydown', failEsc); exitLoadFail(); } };
+            document.addEventListener('keydown', failEsc);
+            return;
+        }
         
         // ✅ FIX 6: Removed Auto-Fullscreen Request
         // ✅ UX IMPROVEMENT: Removed auto-fullscreen request to comply with browser policies
@@ -6052,6 +6235,9 @@ if (document.getElementById('appContainer')) {
 
     document.addEventListener('DOMContentLoaded', () => {
         window.appRouter.navigate();
+        // Pre-warm the video library for this device while the page is idle
+        // (mobile -> hls.js, desktop -> video.js). No-ops if already loaded.
+        if (window.VideoLibraryLoader) window.VideoLibraryLoader.preloadIdle();
         if (searchInput) {
             searchInput.addEventListener('input', debounce(handleSearchInput, 300));
             searchInput.addEventListener('keydown', handleSearchKeydown);
