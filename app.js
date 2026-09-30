@@ -2435,188 +2435,260 @@ class UIManager {
         }
     }
 
-    // 📦 DELIVERABLE 2: Updated renderGallery() Method
+    // ========================================================================
+    // GALLERY VIEWER
+    //  - Desktop (>768px): responsive grid + PhotoSwipe lightbox
+    //  - Mobile  (<=768px): full-width swipe slider (CSS scroll-snap) and the SAME
+    //    PhotoSwipe lightbox on tap (real pinch-zoom, double-tap zoom, swipe between
+    //    images, swipe-down to close). Layout is chosen with matchMedia so JS and CSS
+    //    always agree (the old user-agent check disagreed with CSS on tablets).
+    //  - Images are lazy-loaded (no more downloading the whole gallery up front).
+    // ========================================================================
+
+    isMobileGalleryLayout() {
+        return window.matchMedia('(max-width: 768px)').matches;
+    }
+
     renderGallery(galleryData) {
+        // Clean up anything left over from a previously opened gallery
+        this.teardownGallery();
+
+        const esc = (s) => String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+        const images = Array.isArray(galleryData.images) ? galleryData.images : [];
+        const isMobile = this.isMobileGalleryLayout();
+
         this.mainContent.innerHTML = `
             <div class="view-header">
                 <button id="backButton" class="back-button">← Back</button>
-                <h2>${galleryData.title} <span class="header-breadcrumb">/ ${galleryData.platform_name}</span></h2>
+                <h2>${esc(galleryData.title)} <span class="header-breadcrumb">/ ${esc(galleryData.platform_name)}</span></h2>
             </div>
             <div class="gallery-container">
                 <div class="gallery-info" style="margin-bottom: 20px;">
-                    <h3>${galleryData.title}</h3>
-                    <p>${galleryData.description || ''}</p>
+                    <h3>${esc(galleryData.title)}</h3>
+                    <p>${esc(galleryData.description || '')}</p>
                 </div>
                 <div class="gallery-grid pswp-gallery" id="galleryGrid"></div>
             </div>
         `;
-        
+
+        const backButton = document.getElementById('backButton');
+        if (backButton) backButton.addEventListener('click', () => history.back());
+
         const galleryGrid = document.getElementById('galleryGrid');
-        
-        galleryData.images.forEach((image, index) => {
+
+        if (!images.length) {
+            galleryGrid.outerHTML = '<p class="gallery-empty">No images in this gallery yet.</p>';
+            return;
+        }
+
+        const slug = galleryData.slug || new URLSearchParams(window.location.search).get('slug');
+        const state = this._galleryState = {
+            slug,
+            isMobile,
+            refRatio: 2 / 3,          // aspect ratio guess for images whose size isn't known yet
+            viewed: new Set(),        // unique image indexes the customer actually looked at
+            refreshing: false,
+            refreshCount: 0,
+            observer: null,
+            navObserver: null,
+            lightbox: null,
+            onPageHide: null,
+            items: []                 // [{ id, item, link, img }]
+        };
+
+        const eagerCount = 2;         // only the first couple of images load immediately
+
+        images.forEach((image, index) => {
             const item = document.createElement('div');
             item.className = 'gallery-item';
             item.dataset.index = index;
-            
-            // Create a temporary image to get actual dimensions
-            const tempImg = new Image();
-            const linkElement = document.createElement('a');
-            linkElement.href = image.url;
-            linkElement.setAttribute('data-pswp-width', '1920');
-            linkElement.setAttribute('data-pswp-height', '1080');
-            linkElement.target = '_blank';
-            
-            // Load actual dimensions when image loads
-            tempImg.onload = function() {
-                linkElement.setAttribute('data-pswp-width', this.naturalWidth.toString());
-                linkElement.setAttribute('data-pswp-height', this.naturalHeight.toString());
-            };
-            tempImg.src = image.url;
-            
+
+            const link = document.createElement('a');
+            link.href = image.url;
+            link.target = '_blank';
+            link.rel = 'noopener';
+            link.dataset.cropped = 'true';   // thumbnails use object-fit: cover (lets PhotoSwipe animate correctly)
+
             const img = document.createElement('img');
-            img.src = image.url;
             img.alt = image.title || `Image ${index + 1}`;
-            img.loading = index < 3 ? 'eager' : 'lazy'; // Eager load first 3 images
-            
+            img.decoding = 'async';
+            img.draggable = false;
+            if (index < eagerCount) {
+                img.loading = 'eager';
+                if (index === 0) img.setAttribute('fetchpriority', 'high');
+            } else {
+                img.loading = 'lazy';
+            }
+
+            img.addEventListener('load', () => {
+                if (img.naturalWidth && img.naturalHeight) {
+                    // Real size becomes available for PhotoSwipe as soon as the image has loaded
+                    link.dataset.pswpWidth = String(img.naturalWidth);
+                    link.dataset.pswpHeight = String(img.naturalHeight);
+                    state.refRatio = img.naturalWidth / img.naturalHeight;
+                }
+                img.dataset.done = '1';
+                img.classList.add('loaded');
+                item.classList.remove('is-error');
+                const err = item.querySelector('.gallery-error');
+                if (err) err.remove();
+            });
+
+            img.addEventListener('error', () => {
+                img.classList.add('loaded');     // un-hide so the error state is visible
+                this.handleGalleryImageError(state, item, img);
+            });
+
             const caption = document.createElement('div');
             caption.className = 'gallery-caption';
-            caption.style.display = 'none';
             caption.textContent = image.title || `Image ${index + 1}`;
-            
-            linkElement.appendChild(img);
-            linkElement.appendChild(caption);
-            item.appendChild(linkElement);
+
+            link.appendChild(img);
+            link.appendChild(caption);
+            item.appendChild(link);
             galleryGrid.appendChild(item);
+            state.items.push({ id: image.id, item, link, img });
+
+            img.src = image.url;             // set last, after listeners are attached
         });
-        
-        // ✅ NEW: Detect mobile and use native gallery
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        
-        if (isMobile) {
-            // Initialize native mobile gallery
-            setTimeout(() => {
-                this.initNativeMobileGallery(galleryData);
-            }, 100);
-        } else {
-            // Initialize PhotoSwipe for desktop
-            setTimeout(() => {
-                this.initPhotoSwipe(galleryData);
-            }, 500);
+
+        // Tapping a broken image retries it instead of opening the lightbox
+        galleryGrid.addEventListener('click', (e) => {
+            const errItem = e.target.closest && e.target.closest('.gallery-item.is-error');
+            if (errItem) {
+                e.preventDefault();
+                e.stopPropagation();
+                state.refreshCount = 0;
+                this.refreshGalleryUrls(state);
+            }
+        }, true);
+
+        this.initGalleryLightbox(state, galleryGrid, images);
+        if (isMobile) this.initMobileSliderExtras(state, galleryGrid, images);
+
+        // If the view is replaced (navigating elsewhere in the app), clean up automatically
+        state.navObserver = new MutationObserver(() => {
+            if (!document.getElementById('galleryGrid')) this.teardownGallery();
+        });
+        state.navObserver.observe(this.mainContent, { childList: true });
+
+        // Send view analytics if the customer closes/hides the tab (mobile slider views)
+        state.onPageHide = () => { if (document.visibilityState === 'hidden') this.flushGalleryViews(state); };
+        document.addEventListener('visibilitychange', state.onPageHide);
+        window.addEventListener('pagehide', state.onPageHide);
+    }
+
+    teardownGallery() {
+        const state = this._galleryState;
+        document.querySelectorAll('.mobile-gallery-counter, .mobile-gallery-hint').forEach(el => el.remove());
+        if (!state) return;
+        this.flushGalleryViews(state);
+        if (state.observer) state.observer.disconnect();
+        if (state.navObserver) state.navObserver.disconnect();
+        if (state.onPageHide) {
+            document.removeEventListener('visibilitychange', state.onPageHide);
+            window.removeEventListener('pagehide', state.onPageHide);
         }
-        
-        // Add back button listener
-        const backButton = document.getElementById('backButton');
-        if (backButton) {
-            backButton.addEventListener('click', () => {
-                history.back();
+        if (state.lightbox) { try { state.lightbox.destroy(); } catch (e) { /* ignore */ } }
+        this._galleryState = null;
+    }
+
+    // Sends "customer viewed N images" analytics once, then clears the counter
+    flushGalleryViews(state) {
+        if (!state || !state.slug || state.viewed.size === 0) return;
+        const token = safeStorage.getItem('lustroom_jwt');
+        const count = state.viewed.size;
+        state.viewed.clear();
+        if (!token) return;
+        fetch(`${API_BASE_URL}/gallery/log_view`, {
+            method: 'POST',
+            keepalive: true,
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ gallery_slug: state.slug, images_viewed_count: count })
+        }).catch(() => {});
+    }
+
+    // Signed image URLs expire (~1h). If an image fails (expired link, flaky network),
+    // silently fetch fresh URLs once and retry instead of leaving a broken picture.
+    handleGalleryImageError(state, item, img) {
+        item.classList.add('is-error');
+        if (!item.querySelector('.gallery-error')) {
+            const msg = document.createElement('div');
+            msg.className = 'gallery-error';
+            msg.textContent = 'Image unavailable · tap to retry';
+            item.appendChild(msg);
+        }
+        this.refreshGalleryUrls(state);
+    }
+
+    async refreshGalleryUrls(state) {
+        if (!state || state.refreshing || state.refreshCount >= 3 || !state.slug) return;
+        state.refreshing = true;
+        state.refreshCount++;
+        try {
+            const token = safeStorage.getItem('lustroom_jwt');
+            const response = await fetch(`${API_BASE_URL}/gallery/${encodeURIComponent(state.slug)}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
             });
+            const data = await response.json();
+            if (!response.ok || data.status !== 'success' || !data.gallery) return;
+            if (this._galleryState !== state) return;     // user already left this gallery
+            const fresh = new Map(data.gallery.images.map(im => [im.id, im.url]));
+            state.items.forEach(({ id, link, img }) => {
+                const url = fresh.get(id);
+                if (!url) return;
+                link.href = url;
+                if (!img.dataset.done) img.src = url;     // only reload the ones that never loaded
+            });
+        } catch (e) {
+            console.warn('Gallery URL refresh failed', e);
+        } finally {
+            state.refreshing = false;
         }
     }
 
-    // 📦 DELIVERABLE 3: New Native Mobile Gallery Method
-    initNativeMobileGallery(galleryData) {
-        const galleryGrid = document.getElementById('galleryGrid');
-        if (!galleryGrid) return;
-        
-        // Show captions on mobile
-        galleryGrid.querySelectorAll('.gallery-caption').forEach(caption => {
-            caption.style.display = 'block';
-        });
-        
-        // Add counter overlay
+    // Mobile-only: image counter + one-time swipe hint + view tracking for the slider
+    initMobileSliderExtras(state, galleryGrid, images) {
+        const total = images.length;
+
         const counter = document.createElement('div');
         counter.className = 'mobile-gallery-counter';
-        counter.textContent = `1 / ${galleryData.images.length}`;
+        counter.textContent = `1 / ${total}`;
         document.body.appendChild(counter);
-        
-        // Add swipe hint (shows once for 3 seconds)
-        const hint = document.createElement('div');
-        hint.className = 'mobile-gallery-hint';
-        hint.textContent = '← Swipe to browse →';
-        document.body.appendChild(hint);
-        
-        // Remove hint after animation
-        setTimeout(() => {
-            if (hint.parentNode) hint.remove();
-        }, 3000);
-        
-        // ✅ Use IntersectionObserver to track which image is visible
-        const observerOptions = {
-            root: galleryGrid,
-            threshold: 0.5 // Image must be 50% visible to count
-        };
-        
-        const observer = new IntersectionObserver((entries) => {
+
+        if (total > 1) {
+            const hint = document.createElement('div');
+            hint.className = 'mobile-gallery-hint';
+            hint.textContent = '← Swipe to browse →';
+            document.body.appendChild(hint);
+            setTimeout(() => { if (hint.parentNode) hint.remove(); }, 3000);
+        }
+
+        state.observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
-                    const index = parseInt(entry.target.dataset.index) + 1;
-                    counter.textContent = `${index} / ${galleryData.images.length}`;
+                    const idx = parseInt(entry.target.dataset.index, 10);
+                    counter.textContent = `${idx + 1} / ${total}`;
+                    state.viewed.add(idx);
                 }
             });
-        }, observerOptions);
-        
-        // Observe all gallery items
-        galleryGrid.querySelectorAll('.gallery-item').forEach(item => {
-            observer.observe(item);
-        });
-        
-        // ✅ Tap to enter fullscreen zoom mode
-        galleryGrid.querySelectorAll('.gallery-item img').forEach((img, index) => {
-            img.style.pointerEvents = 'auto'; // Re-enable pointer events for tapping
-            img.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.openMobileFullscreen(galleryData.images[index]);
-            });
-        });
-        
-        // Cleanup on navigation
-        window.addEventListener('popstate', () => {
-            if (counter.parentNode) counter.remove();
-            observer.disconnect();
-        }, { once: true });
+        }, { root: galleryGrid, threshold: 0.6 });
+
+        galleryGrid.querySelectorAll('.gallery-item').forEach(item => state.observer.observe(item));
     }
 
-    // 📦 DELIVERABLE 3: Helper for Native Mobile Gallery
-    openMobileFullscreen(image) {
-        // Create fullscreen modal
-        const modal = document.createElement('div');
-        modal.className = 'mobile-gallery-fullscreen active';
-        modal.innerHTML = `
-            <button class="mobile-fullscreen-close" aria-label="Close fullscreen">×</button>
-            <img src="${image.url}" alt="${image.title || 'Image'}" />
-        `;
-        
-        document.body.appendChild(modal);
-        document.body.style.overflow = 'hidden';
-        
-        // Close button
-        const closeBtn = modal.querySelector('.mobile-fullscreen-close');
-        closeBtn.addEventListener('click', () => {
-            modal.remove();
-            document.body.style.overflow = '';
-        });
-        
-        // Tap outside image to close
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.remove();
-                document.body.style.overflow = '';
-            }
-        });
-    }
-
-    // 📦 DELIVERABLE 4: Update initPhotoSwipe() - Desktop Only
-    initPhotoSwipe(galleryData) {
-        // ✅ SKIP PhotoSwipe on mobile - native gallery handles it
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        if (isMobile) return;
-
-        // Check if PhotoSwipe is loaded
-        if (typeof PhotoSwipeLightbox === 'undefined') {
-            console.error('PhotoSwipe library not loaded');
+    initGalleryLightbox(state, galleryGrid, images) {
+        if (typeof PhotoSwipeLightbox === 'undefined' || typeof PhotoSwipe === 'undefined') {
+            console.error('PhotoSwipe library not loaded');   // links still open the image in a new tab
             return;
         }
-        
+
+        const isMobile = state.isMobile;
+        const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
         try {
             const lightbox = new PhotoSwipeLightbox({
                 gallery: '#galleryGrid',
@@ -2625,155 +2697,175 @@ class UIManager {
                 bgOpacity: 1,
                 spacing: 0.05,
                 allowPanToNext: true,
-                loop: true,
+                loop: images.length > 2,
                 pinchToClose: true,
                 closeOnVerticalDrag: true,
                 showHideAnimationType: 'fade',
                 zoomAnimationDuration: 300,
                 initialZoomLevel: 'fit',
-                secondaryZoomLevel: 1.5,
-                maxZoomLevel: 3,
-                paddingFn: (viewportSize) => {
-                    return { top: 20, bottom: 20, left: 20, right: 20 };
-                },
+                secondaryZoomLevel: 2,
+                maxZoomLevel: 4,
+                paddingFn: () => isMobile
+                    ? { top: 0, bottom: 0, left: 0, right: 0 }
+                    : { top: 20, bottom: 20, left: 20, right: 20 },
                 arrowKeys: true,
                 preload: [1, 2]
             });
-            
-            // Track which images are viewed
-            let viewedImageIndexes = new Set();
-            let gallerySlugForTracking = null;
-            
-            // Get slug from URL
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.get('view') === 'gallery') {
-                gallerySlugForTracking = urlParams.get('slug');
+            state.lightbox = lightbox;
+
+            // Images are lazy-loaded, so a slide's real size may not be known yet.
+            // Use the real size when we have it, otherwise a best guess (corrected on load below).
+            lightbox.addFilter('domItemData', (itemData, element, linkEl) => {
+                const w = parseInt(linkEl.dataset.pswpWidth, 10);
+                const h = parseInt(linkEl.dataset.pswpHeight, 10);
+                if (w && h) {
+                    itemData.width = w;
+                    itemData.height = h;
+                    itemData.estimated = false;
+                } else {
+                    itemData.width = 1000;
+                    itemData.height = Math.round(1000 / (state.refRatio || 2 / 3));
+                    itemData.estimated = true;
+                }
+                return itemData;
+            });
+
+            // When a slide with a guessed size finishes loading, snap it to its real size
+            lightbox.on('loadComplete', (e) => {
+                const { content, slide } = e;
+                if (!content || !slide || !content.data || !content.data.estimated) return;
+                const el = content.element;
+                if (!el || !el.naturalWidth || !el.naturalHeight) return;
+                content.data.estimated = false;
+                content.width = slide.width = el.naturalWidth;
+                content.height = slide.height = el.naturalHeight;
+                slide.calculateSize();
+                slide.currentResolution = 0;
+                slide.zoomAndPanToInitial();
+                slide.applyCurrentZoomPan();
+                slide.updateContentSize(true);
+            });
+
+            // Track which images were actually viewed in the lightbox
+            lightbox.on('change', () => {
+                if (lightbox.pswp) state.viewed.add(lightbox.pswp.currIndex);
+            });
+
+            lightbox.on('close', () => {
+                // Mobile: put the slider on the image the customer ended on
+                if (isMobile && lightbox.pswp) {
+                    const target = galleryGrid.children[lightbox.pswp.currIndex];
+                    if (target) {
+                        galleryGrid.style.scrollBehavior = 'auto';
+                        galleryGrid.scrollLeft = target.offsetLeft;
+                        requestAnimationFrame(() => { galleryGrid.style.scrollBehavior = ''; });
+                    }
+                }
+                // Desktop: log the session now. (Mobile logs when leaving the gallery.)
+                if (!isMobile) this.flushGalleryViews(state);
+            });
+
+            // Desktop UI: hide controls after 3s of mouse inactivity
+            if (canHover) {
+                let uiHideTimeout;
+                lightbox.on('afterInit', () => {
+                    const pswpElement = lightbox.pswp.element;
+                    const showUI = () => {
+                        pswpElement.classList.add('pswp--ui-visible');
+                        pswpElement.classList.remove('pswp--ui-hidden');
+                        if (uiHideTimeout) clearTimeout(uiHideTimeout);
+                        uiHideTimeout = setTimeout(() => {
+                            pswpElement.classList.remove('pswp--ui-visible');
+                            pswpElement.classList.add('pswp--ui-hidden');
+                        }, 3000);
+                    };
+                    pswpElement.addEventListener('mousemove', showUI);
+                    pswpElement.addEventListener('click', showUI);
+                    showUI();
+                });
+                lightbox.on('destroy', () => { if (uiHideTimeout) clearTimeout(uiHideTimeout); });
             }
 
-            // Track image views
-            lightbox.on('change', () => {
-                if (lightbox.pswp) {
-                    const currentIndex = lightbox.pswp.currIndex;
-                    viewedImageIndexes.add(currentIndex);
-                }
-            });
-
-            // Send tracking data when gallery is closed
-            lightbox.on('close', () => {
-                const totalUniqueViews = viewedImageIndexes.size;
-
-                if (totalUniqueViews > 0 && gallerySlugForTracking) {
-                    const token = safeStorage.getItem('lustroom_jwt');
-                    if (token) {
-                        const payload = {
-                            gallery_slug: gallerySlugForTracking,
-                            images_viewed_count: totalUniqueViews
-                        };
-
-                        fetch(`${API_BASE_URL}/gallery/log_view`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${token}`
-                            },
-                            body: JSON.stringify(payload)
-                        }).catch(() => {});
+            // Extra toolbar buttons (desktop only; phones use PhotoSwipe's touch gestures)
+            if (!isMobile) {
+                lightbox.on('uiRegister', () => {
+                    if (document.documentElement.requestFullscreen) {
+                        lightbox.pswp.ui.registerElement({
+                            name: 'fullscreen-button',
+                            order: 9,
+                            isButton: true,
+                            title: 'Fullscreen',
+                            html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
+                            onClick: () => {
+                                if (!document.fullscreenElement) {
+                                    lightbox.pswp.element.requestFullscreen().catch(() => {});
+                                } else {
+                                    document.exitFullscreen();
+                                }
+                            }
+                        });
                     }
-                }
-                
-                viewedImageIndexes.clear();
-                gallerySlugForTracking = null;
-            });
-            
-            // Desktop: Auto-hide on mouse idle
-            let uiHideTimeout;
-            
-            lightbox.on('afterInit', function() {
-                const pswpElement = lightbox.pswp.element;
-                
-                const showUI = () => {
-                    pswpElement.classList.add('pswp--ui-visible');
-                    pswpElement.classList.remove('pswp--ui-hidden');
-                    
-                    if (uiHideTimeout) clearTimeout(uiHideTimeout);
-                    
-                    uiHideTimeout = setTimeout(() => {
-                        pswpElement.classList.remove('pswp--ui-visible');
-                        pswpElement.classList.add('pswp--ui-hidden');
-                    }, 3000);
-                };
-                
-                pswpElement.addEventListener('mousemove', showUI);
-                pswpElement.addEventListener('click', showUI);
-                showUI();
-            });
-            
-            lightbox.on('uiRegister', function() {
-                // Fullscreen button
-                lightbox.pswp.ui.registerElement({
-                    name: 'fullscreen-button',
-                    order: 9,
-                    isButton: true,
-                    html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
-                    onClick: (event, el) => {
-                        if (!document.fullscreenElement) {
-                            lightbox.pswp.element.requestFullscreen();
-                        } else {
-                            document.exitFullscreen();
+
+                    lightbox.pswp.ui.registerElement({
+                        name: 'download-button',
+                        order: 8,
+                        isButton: true,
+                        title: 'Download',
+                        html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>',
+                        onClick: () => {
+                            const idx = lightbox.pswp.currIndex;
+                            const src = lightbox.pswp.currSlide.data.src;
+                            this.downloadGalleryImage(src, images[idx] && images[idx].title, idx);
                         }
-                    }
-                });
-                
-                // Download button
-                lightbox.pswp.ui.registerElement({
-                    name: 'download-button',
-                    order: 8,
-                    isButton: true,
-                    html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>',
-                    onClick: (event, el) => {
-                        const currentSlide = lightbox.pswp.currSlide;
-                        const link = document.createElement('a');
-                        link.href = currentSlide.data.src;
-                        link.download = `image-${lightbox.pswp.currIndex + 1}.jpg`;
-                        link.click();
-                    }
-                });
-                
-                // ✅ Only show play button on desktop
-                let slideshowInterval = null;
-                let isPlaying = false;
-                
-                lightbox.pswp.ui.registerElement({
-                    name: 'play-button',
-                    order: 7,
-                    isButton: true,
-                    html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>',
-                    onClick: (event, el) => {
-                        if (!isPlaying) {
-                            isPlaying = true;
-                            el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
-                            slideshowInterval = setInterval(() => {
-                                lightbox.pswp.next();
-                            }, 3000);
-                        } else {
-                            isPlaying = false;
-                            el.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
-                            clearInterval(slideshowInterval);
+                    });
+
+                    let slideshowInterval = null;
+                    const playIcon = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>';
+                    const pauseIcon = '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
+                    lightbox.pswp.ui.registerElement({
+                        name: 'play-button',
+                        order: 7,
+                        isButton: true,
+                        title: 'Slideshow',
+                        html: playIcon,
+                        onClick: (event, el) => {
+                            if (!slideshowInterval) {
+                                el.innerHTML = pauseIcon;
+                                slideshowInterval = setInterval(() => lightbox.pswp.next(), 3000);
+                            } else {
+                                el.innerHTML = playIcon;
+                                clearInterval(slideshowInterval);
+                                slideshowInterval = null;
+                            }
                         }
-                    }
+                    });
+                    lightbox.pswp.on('destroy', () => { if (slideshowInterval) clearInterval(slideshowInterval); });
                 });
-                
-                lightbox.on('close', function() {
-                    if (slideshowInterval) {
-                        clearInterval(slideshowInterval);
-                        isPlaying = false;
-                    }
-                });
-            });
-            
+            }
+
             lightbox.init();
         } catch (error) {
             console.error('PhotoSwipe initialization error:', error);
+        }
+    }
+
+    // Real file download (the plain <a download> trick is ignored for cross-origin images)
+    async downloadGalleryImage(url, title, index) {
+        try {
+            const res = await fetch(url, { mode: 'cors' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const blob = await res.blob();
+            const ext = ((blob.type || 'image/jpeg').split('/')[1] || 'jpg').replace('jpeg', 'jpg').split('+')[0];
+            const base = String(title || `image-${index + 1}`).replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || `image-${index + 1}`;
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${base}.${ext}`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        } catch (e) {
+            window.open(url, '_blank', 'noopener');
         }
     }
 }

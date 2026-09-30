@@ -1358,7 +1358,7 @@ button:disabled {
 /* Gallery Grid - Modern Card Layout */
 .gallery-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 24px;
     padding: 20px 0;
 }
@@ -1405,10 +1405,44 @@ button:disabled {
 
 .gallery-item img {
     width: 100%;
-    height: 280px;
+    height: auto;
+    aspect-ratio: 2 / 3;          /* matches typical 1000x1500 portrait sets; avoids layout jumps while loading */
     object-fit: cover;
+    object-position: center 20%;  /* keep faces/heads when a photo has to be cropped */
     display: block;
-    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    background: rgba(128, 128, 128, 0.12);
+    opacity: 0;
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.35s ease;
+}
+
+.gallery-item img.loaded {
+    opacity: 1;
+}
+
+/* Broken / expired image state (tap retries) */
+.gallery-item.is-error {
+    min-height: 160px;
+}
+
+.gallery-error {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 16px;
+    font-size: 13px;
+    color: var(--text-color, #999);
+    opacity: 0.8;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.gallery-empty {
+    text-align: center;
+    padding: 48px 16px;
+    opacity: 0.7;
 }
 
 .gallery-item:hover img {
@@ -1437,7 +1471,7 @@ button:disabled {
 
 /* Add play icon overlay on hover */
 .gallery-item::after {
-    content: '▶';
+    content: '+';
     position: absolute;
     top: 50%;
     left: 50%;
@@ -1449,7 +1483,9 @@ button:disabled {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
+    font-size: 36px;
+    font-weight: 300;
+    line-height: 1;
     color: #000;
     z-index: 3;
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1642,7 +1678,8 @@ button:disabled {
 /* Smooth Transitions */
 .pswp__img,
 .pswp__zoom-wrap {
-    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    /* opacity only: PhotoSwipe drives transform itself; a CSS transform transition here makes pan/zoom/pinch lag */
+    transition: opacity 0.3s ease !important;
 }
 
 /* UI Visibility States - Cinema Mode */
@@ -3812,7 +3849,18 @@ body.player-active {
         gap: 0 !important;
         padding: 0 !important;
         height: 70vh; /* Fixed height for consistent swipe experience */
+        height: 72dvh; /* iOS/Android: follows the collapsing browser toolbar */
         position: relative;
+        overscroll-behavior-x: contain;
+    }
+
+    /* The link fills the slide so the image can be sized against it (fixes cropping on short phones) */
+    .gallery-item a {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
     
     /* Individual gallery items - full width cards */
@@ -3834,6 +3882,8 @@ body.player-active {
     .gallery-item img {
         width: 100%;
         height: 100%;
+        aspect-ratio: auto;
+        object-position: center;
         object-fit: contain; /* Preserve aspect ratio */
         display: block;
         user-select: none;
@@ -4642,3 +4692,22 @@ body.player-active {
     }
 }
 /* ═══ End Iteration 5 CSS ═══ */
+
+
+/* Respect "reduce motion" for gallery effects */
+@media (prefers-reduced-motion: reduce) {
+    .gallery-item,
+    .gallery-item img,
+    .gallery-caption {
+        transition: none !important;
+    }
+    .gallery-item:hover {
+        transform: none !important;
+    }
+    .gallery-item:hover img {
+        transform: none !important;
+    }
+    .mobile-gallery-hint {
+        animation: none !important;
+    }
+}
