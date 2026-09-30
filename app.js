@@ -1903,6 +1903,17 @@ class Router {
     }
     
     handlePopState() {
+        // Popstate caused by the gallery lightbox closing itself: nothing to re-render
+        if (window.__ignoreNextPopState) {
+            window.__ignoreNextPopState = false;
+            return;
+        }
+        // Back pressed while the gallery lightbox is open: just close it (keeps scroll position)
+        const g = this.uiManager && this.uiManager._galleryState;
+        if (g && g.lightboxOpen && typeof g.closeLightboxFromBack === 'function') {
+            g.closeLightboxFromBack();
+            return;
+        }
         this.navigate();
     }
 
@@ -2443,6 +2454,7 @@ class UIManager {
     //    images, swipe-down to close). Layout is chosen with matchMedia so JS and CSS
     //    always agree (the old user-agent check disagreed with CSS on tablets).
     //  - Images are lazy-loaded (no more downloading the whole gallery up front).
+    //  - Back button closes the lightbox in place; slider position is remembered.
     // ========================================================================
 
     isMobileGalleryLayout() {
@@ -2567,7 +2579,10 @@ class UIManager {
         }, true);
 
         this.initGalleryLightbox(state, galleryGrid, images);
-        if (isMobile) this.initMobileSliderExtras(state, galleryGrid, images);
+        if (isMobile) {
+            this.initMobileSliderExtras(state, galleryGrid, images);
+            this.restoreGalleryPosition(state, galleryGrid, images.length);
+        }
 
         // If the view is replaced (navigating elsewhere in the app), clean up automatically
         state.navObserver = new MutationObserver(() => {
@@ -2650,6 +2665,29 @@ class UIManager {
         }
     }
 
+    // Remember which image the customer was on (per gallery, this tab only, 30 min)
+    saveGalleryPosition(state, index) {
+        if (!state || !state.slug) return;
+        try {
+            sessionStorage.setItem('gallery_pos:' + state.slug, JSON.stringify({ i: index, t: Date.now() }));
+        } catch (e) { /* private mode / storage full: ignore */ }
+    }
+
+    restoreGalleryPosition(state, galleryGrid, total) {
+        if (!state || !state.slug) return;
+        try {
+            const saved = JSON.parse(sessionStorage.getItem('gallery_pos:' + state.slug) || 'null');
+            if (!saved || Date.now() - saved.t > 30 * 60 * 1000) return;
+            const idx = Math.min(Math.max(parseInt(saved.i, 10) || 0, 0), total - 1);
+            if (idx <= 0) return;
+            const target = galleryGrid.children[idx];
+            if (!target) return;
+            galleryGrid.style.scrollBehavior = 'auto';
+            galleryGrid.scrollLeft = target.offsetLeft;
+            requestAnimationFrame(() => { galleryGrid.style.scrollBehavior = ''; });
+        } catch (e) { /* ignore */ }
+    }
+
     // Mobile-only: image counter + one-time swipe hint + view tracking for the slider
     initMobileSliderExtras(state, galleryGrid, images) {
         const total = images.length;
@@ -2673,6 +2711,7 @@ class UIManager {
                     const idx = parseInt(entry.target.dataset.index, 10);
                     counter.textContent = `${idx + 1} / ${total}`;
                     state.viewed.add(idx);
+                    this.saveGalleryPosition(state, idx);
                 }
             });
         }, { root: galleryGrid, threshold: 0.6 });
@@ -2746,12 +2785,44 @@ class UIManager {
                 slide.updateContentSize(true);
             });
 
+            // ── Back button support (Android hardware Back / iPhone swipe-back / browser Back) ──
+            // The lightbox pushes ONE history entry while it is open. Back then just closes the
+            // lightbox and leaves the customer exactly where they were, instead of leaving the
+            // gallery (which used to rebuild it from image 1).
+            let historyPushed = false;
+            let closingFromBack = false;
+            lightbox.on('beforeOpen', () => {
+                state.lightboxOpen = true;
+                try {
+                    history.pushState(Object.assign({}, history.state || {}, { galleryLightbox: true }), '', window.location.href);
+                    historyPushed = true;
+                } catch (e) { historyPushed = false; }
+            });
+            lightbox.on('destroy', () => {
+                state.lightboxOpen = false;
+                if (historyPushed) {
+                    historyPushed = false;
+                    if (!closingFromBack) {
+                        // Closed with X / swipe-down / Esc: remove the entry we added (its popstate is ignored)
+                        window.__ignoreNextPopState = true;
+                        setTimeout(() => { window.__ignoreNextPopState = false; }, 1000);
+                        history.back();
+                    }
+                }
+                closingFromBack = false;
+            });
+            state.closeLightboxFromBack = () => {
+                closingFromBack = true;
+                if (lightbox.pswp) lightbox.pswp.close(); else closingFromBack = false;
+            };
+
             // Track which images were actually viewed in the lightbox
             lightbox.on('change', () => {
                 if (lightbox.pswp) state.viewed.add(lightbox.pswp.currIndex);
             });
 
             lightbox.on('close', () => {
+                if (lightbox.pswp) this.saveGalleryPosition(state, lightbox.pswp.currIndex);
                 // Mobile: put the slider on the image the customer ended on
                 if (isMobile && lightbox.pswp) {
                     const target = galleryGrid.children[lightbox.pswp.currIndex];
