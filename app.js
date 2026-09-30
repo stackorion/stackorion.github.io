@@ -99,8 +99,15 @@ const VideoLibraryLoader = {
         return this.ensure(['hlsJs']);
     },
 
-    ensureVideoJs() {
-        return this.ensure(['videoJsCss', 'videoJs', 'videoJsVhs']);
+    // ORDER MATTERS: http-streaming reads the global `videojs` when it executes.
+    // Dynamically-added scripts run in whatever order they finish downloading, so
+    // it must only start loading AFTER video.js has executed (the old blocking
+    // <script> tags guaranteed this). Loading them in parallel caused:
+    // "Cannot destructure property 'log' of 'n.default' as it is undefined".
+    async ensureVideoJs() {
+        const core = await this.ensure(['videoJsCss', 'videoJs']);
+        if (!core) return false;
+        return this.ensure(['videoJsVhs']);
     },
 
     // Pre-warm the library this device will actually use, a couple of seconds
