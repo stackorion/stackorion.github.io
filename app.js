@@ -2921,8 +2921,7 @@ class UIManager {
                 const idx = parseInt(entry.target.dataset.index, 10);
                 if (isNaN(idx)) return;
                 if (entry.isIntersecting) {
-                    visible.add(idx);
-                    state.viewed.add(idx);   // 📊 count grid browsing as viewing
+                    visible.add(idx);        // (position memory only — scrolling the grid is not a "view")
                 } else {
                     visible.delete(idx);
                 }
@@ -2949,12 +2948,26 @@ class UIManager {
             setTimeout(() => { if (hint.parentNode) hint.remove(); }, 3000);
         }
 
+        // 📊 A view = an image the customer deliberately brought up. Opening the gallery
+        // (or being restored to a saved position) is NOT a view; the first real swipe
+        // counts the image they were on plus the one they swiped to.
+        let currentIdx = 0;
+        let interacted = false;
+        const markInteracted = () => {
+            if (interacted) return;
+            interacted = true;
+            state.viewed.add(currentIdx);
+        };
+        ['touchmove', 'wheel', 'pointerdown', 'keydown'].forEach(evt =>
+            galleryGrid.addEventListener(evt, markInteracted, { passive: true, once: true }));
+
         state.observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
                     const idx = parseInt(entry.target.dataset.index, 10);
                     counter.textContent = `${idx + 1} / ${total}`;
-                    state.viewed.add(idx);
+                    currentIdx = idx;
+                    if (interacted) state.viewed.add(idx);
                     this.saveGalleryPosition(state, idx);
                 }
             });
@@ -3061,8 +3074,11 @@ class UIManager {
             };
 
             // Track which images were actually viewed in the lightbox
+            lightbox.on('afterInit', () => {
+                if (lightbox.pswp) state.viewed.add(lightbox.pswp.currIndex);   // the image that was clicked
+            });
             lightbox.on('change', () => {
-                if (lightbox.pswp) state.viewed.add(lightbox.pswp.currIndex);
+                if (lightbox.pswp) state.viewed.add(lightbox.pswp.currIndex);   // each swipe / arrow / key
             });
 
             lightbox.on('close', () => {
