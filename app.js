@@ -231,10 +231,8 @@ class CacheManager {
             const FIVE_MINUTES = 5 * 60 * 1000;
             
             if (age < FIVE_MINUTES) {
-                console.log(`✅ Cache HIT for tier ${tierId} (age: ${Math.round(age/1000)}s)`);
                 return data.content;
             } else {
-                console.log(`⏰ Cache EXPIRED for tier ${tierId}`);
                 try { sessionStorage.removeItem(cacheKey); } catch(e) {}
                 return null;
             }
@@ -253,10 +251,8 @@ class CacheManager {
                 timestamp: Date.now()
             };
             sessionStorage.setItem(cacheKey, JSON.stringify(data));
-            console.log(`💾 Cached links for tier ${tierId}`);
         } catch (e) {
             // sessionStorage blocked (iOS private mode) — skip caching, content will still load
-            console.log(`ℹ️ Cache unavailable for tier ${tierId}, fetching fresh each time`);
         }
     }
     
@@ -264,7 +260,6 @@ class CacheManager {
     async fetchProfile(token) {
         // If already fetching, return the existing promise
         if (this.isFetchingProfile && this.profileFetchPromise) {
-            console.log('⚡ Profile fetch in progress, reusing promise...');
             return this.profileFetchPromise;
         }
         
@@ -278,7 +273,6 @@ class CacheManager {
                 const TWO_MINUTES = 2 * 60 * 1000;
                 
                 if (age < TWO_MINUTES) {
-                    console.log(`✅ Profile cache HIT (age: ${Math.round(age/1000)}s)`);
                     return data.profile;
                 }
             } catch (e) {
@@ -287,7 +281,6 @@ class CacheManager {
         }
         
         // Fetch fresh data
-        console.log('🌐 Fetching fresh profile data...');
         this.isFetchingProfile = true;
         
         this.profileFetchPromise = fetch(`${API_BASE_URL}/profile`, {
@@ -302,7 +295,6 @@ class CacheManager {
                         profile: data,
                         timestamp: Date.now()
                     }));
-                    console.log('💾 Profile cached');
                 } catch (e) {
                     console.error('Profile cache error:', e);
                 }
@@ -326,7 +318,6 @@ class CacheManager {
                 try { sessionStorage.removeItem(key); } catch(e) {}
             }
         });
-        console.log('🗑️ All caches cleared');
     }
 }
 
@@ -335,7 +326,7 @@ let appState = null;
 let authManager = null;
 let cacheManager = null; // ✅ NEW: Cache manager
 
-// ✅ FIX #5: Make appState accessible via window for debugging and global scope fixes
+// ✅ FIX #5: Make appState accessible via window for global scope fixes
 if (typeof window !== 'undefined') {
     window.appState = null;
 }
@@ -4922,7 +4913,7 @@ if (document.getElementById('appContainer')) {
     // hover and use their native controls. Every failure path degrades
     // gracefully to the old time-only tooltip; playback is never affected.
     // ==============================================================================
-    function setupSeekPreviewScrubber({ modal, player, progressBar, progressThumbnail, thumbnailTime, isMobileDevice }) {
+    function setupSeekPreviewScrubberLegacy({ modal, player, progressBar, progressThumbnail, thumbnailTime, isMobileDevice }) {
         const canvas = modal.querySelector('.premium-thumbnail-canvas');
         const shimmerEl = modal.querySelector('.premium-thumbnail-loading');
         if (!canvas || !progressThumbnail || !thumbnailTime) return { destroy() {} };
@@ -5240,6 +5231,301 @@ if (document.getElementById('appContainer')) {
                 }
                 if (hls) { hls.destroy(); hls = null; }
                 frameCache.clear();
+            } catch (e) { /* never break teardown */ }
+        };
+
+        return { destroy };
+    }
+
+    // ==============================================================================
+    // ⚡ SEEK PREVIEW (SPRITE ENGINE) — instant hover previews on the progress bar.
+    // Every video has pre-rendered "seek sprite sheets":
+    //     /{videoId}/seek/_0.jpg, _1.jpg, ...   (6x6 grid, 1 frame / 2s, 36 frames per sheet)
+    // We load ONE small image per ~72s of video and crop the hovered frame out of it
+    // on a canvas. No hidden <video>, no hls.js, no seeking, no segment downloads,
+    // no decoding → the preview is instant and always matches the hovered time.
+    // If sprites are unavailable for a video, we fall back to the previous engine
+    // (setupSeekPreviewScrubberLegacy) so nothing regresses. Playback is never affected.
+    // ==============================================================================
+    function setupSeekPreviewScrubber(opts) {
+        const { modal, player, progressBar, progressThumbnail, thumbnailTime, isMobileDevice } = opts;
+        const canvas = modal.querySelector('.premium-thumbnail-canvas');
+        const shimmerEl = modal.querySelector('.premium-thumbnail-loading');
+        if (!canvas || !progressThumbnail || !thumbnailTime) return { destroy() {} };
+
+        // Hover previews are meaningless on touch screens
+        const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+        if (isMobileDevice || !canHover) return { destroy() {} };
+
+        const ctx = canvas.getContext('2d');
+        // Render at up to 2x so the preview stays crisp on retina screens
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.round(160 * dpr);
+        canvas.height = Math.round(90 * dpr);
+        const CW = canvas.width, CH = canvas.height;
+
+        const FRAMES_PER_SHEET = 36;       // 6 x 6 grid
+        const MAX_SHEETS_IN_MEMORY = 6;    // each decoded sheet ≈ 7MB → cap RAM
+        const sheets = new Map();          // sheetIndex -> { img, status, tries }
+        let anySheetLoaded = false;
+        let currentHoverTime = null;
+        let destroyed = false;
+        let legacy = null;
+
+        const getSafePlayer = () => {
+            try {
+                if (!player) return null;
+                if (typeof player.isDisposed === 'function' && player.isDisposed()) return null;
+                return player;
+            } catch (e) { return null; }
+        };
+
+        const safeDuration = () => {
+            try {
+                const p = getSafePlayer();
+                const d = p ? p.duration() : NaN;
+                return (isFinite(d) && d > 0) ? d : 0;
+            } catch (e) { return 0; }
+        };
+
+        // 1 frame every 2s (every 1s for videos shorter than 10s)
+        const frameInterval = () => {
+            const d = safeDuration();
+            return (d > 0 && d < 10) ? 1 : 2;
+        };
+
+        // Build the sprite URL from the CURRENT player source so it always uses the
+        // same proxy host, library_id and (refreshed) token as the video itself.
+        function buildSheetUrl(i) {
+            const p = getSafePlayer();
+            let src = '';
+            try {
+                const s = p && p.currentSource ? p.currentSource() : null;
+                src = (s && s.src) || '';
+            } catch (e) { /* ignore */ }
+            if (!src) return '';
+            let u;
+            try { u = new URL(src, window.location.href); } catch (e) { return ''; }
+            const m = u.pathname.match(/\/([a-f0-9-]{36})\//i);
+            if (!m) return '';
+            const qs = new URLSearchParams();
+            ['token', 'expires', 'token_path', 'library_id'].forEach(k => {
+                const v = u.searchParams.get(k);
+                if (v != null) qs.set(k, v);
+            });
+            const q = qs.toString();
+            return `${u.origin}/${m[1]}/seek/_${i}.jpg${q ? '?' + q : ''}`;
+        }
+
+        // ---- sprite sheet loading ---------------------------------------------------
+        function evictIfNeeded() {
+            while (sheets.size > MAX_SHEETS_IN_MEMORY) {
+                const oldestKey = sheets.keys().next().value;
+                const old = sheets.get(oldestKey);
+                if (old && old.img) { old.img.onload = null; old.img.onerror = null; old.img.src = ''; }
+                sheets.delete(oldestKey);
+            }
+        }
+
+        function requestSheet(i) {
+            let entry = sheets.get(i);
+            if (entry) {                       // LRU: move to newest position
+                sheets.delete(i);
+                sheets.set(i, entry);
+                return entry;
+            }
+            entry = { img: new Image(), status: 'loading', tries: 0 };
+            sheets.set(i, entry);
+            evictIfNeeded();
+            startLoad(i, entry);
+            return entry;
+        }
+
+        function startLoad(i, entry) {
+            const url = buildSheetUrl(i);
+            if (!url) { failSheet(entry); return; }
+            const img = entry.img;
+            img.onload = () => {
+                if (destroyed || legacy) return;
+                entry.status = 'ready';
+                anySheetLoaded = true;
+                if (currentHoverTime != null) renderForTime(currentHoverTime);
+            };
+            img.onerror = () => {
+                if (destroyed || legacy) return;
+                entry.tries++;
+                if (entry.tries < 2) {
+                    // One retry with a freshly-read source URL (covers token rotation)
+                    setTimeout(() => {
+                        if (!destroyed && !legacy && sheets.get(i) === entry) startLoad(i, entry);
+                    }, 700);
+                } else {
+                    failSheet(entry);
+                }
+            };
+            img.decoding = 'async';
+            img.src = url;
+        }
+
+        function failSheet(entry) {
+            entry.status = 'error';
+            // Nothing has ever loaded → sprites are not available for this video.
+            if (!anySheetLoaded) { fallbackToLegacy(); return; }
+            if (currentHoverTime != null) renderForTime(currentHoverTime);
+        }
+
+        function fallbackToLegacy() {
+            if (legacy || destroyed) return;
+            detachListeners();
+            sheets.forEach(e => { if (e.img) { e.img.onload = null; e.img.onerror = null; e.img.src = ''; } });
+            sheets.clear();
+            canvas.style.display = 'none';
+            if (shimmerEl) shimmerEl.style.display = 'none';
+            try { legacy = setupSeekPreviewScrubberLegacy(opts); }
+            catch (e) { legacy = { destroy() {} }; }
+        }
+
+        // ---- drawing ----------------------------------------------------------------
+        function hideVisual() {
+            canvas.style.display = 'none';
+            if (shimmerEl) shimmerEl.style.display = 'none';
+        }
+
+        function renderForTime(time) {
+            if (destroyed || legacy) return;
+            const interval = frameInterval();
+            const dur = safeDuration();
+            const maxFrame = dur > 0 ? Math.max(0, Math.ceil(dur / interval) - 1) : Infinity;
+            const frame = Math.min(Math.max(0, Math.floor(time / interval)), maxFrame);
+            const sheetIdx = Math.floor(frame / FRAMES_PER_SHEET);
+
+            const entry = requestSheet(sheetIdx);
+            if (entry.status === 'error') { hideVisual(); return; }
+            if (entry.status !== 'ready') {
+                if (shimmerEl) shimmerEl.style.display = 'block';   // sheet still downloading
+                return;
+            }
+
+            const img = entry.img;
+            const W = img.naturalWidth, H = img.naturalHeight;
+            if (!W || !H) { if (shimmerEl) shimmerEl.style.display = 'block'; return; }
+
+            // Work out the grid from the real image size (robust for short videos / last sheet)
+            const cols = W >= 1700 ? 6 : Math.max(1, Math.round(W / 300));
+            const cellW = W / cols;
+            let aspect = 9 / 16;
+            try {
+                const p = getSafePlayer();
+                const vw = p.videoWidth(), vh = p.videoHeight();
+                if (vw > 0 && vh > 0) aspect = vh / vw;
+            } catch (e) { /* default 16:9 */ }
+            const rows = Math.max(1, Math.round(H / (cellW * aspect)));
+            const cellH = H / rows;
+
+            let idx = frame % FRAMES_PER_SHEET;
+            idx = Math.min(idx, cols * rows - 1);
+            const col = idx % cols, row = Math.floor(idx / cols);
+
+            // cover-crop the cell into the 16:9 preview box (1px inset avoids neighbour bleed)
+            const pad = 1;
+            const scale = Math.max(CW / cellW, CH / cellH);
+            const sw = CW / scale, sh = CH / scale;
+            const sx = col * cellW + (cellW - sw) / 2 + pad;
+            const sy = row * cellH + (cellH - sh) / 2 + pad;
+            try {
+                ctx.drawImage(img, sx, sy, Math.max(1, sw - pad * 2), Math.max(1, sh - pad * 2), 0, 0, CW, CH);
+            } catch (e) { hideVisual(); return; }
+            canvas.style.display = 'block';
+            if (shimmerEl) shimmerEl.style.display = 'none';
+
+            // Quietly prefetch the neighbouring sheet when the cursor nears a sheet edge
+            const lastSheet = isFinite(maxFrame) ? Math.floor(maxFrame / FRAMES_PER_SHEET) : sheetIdx;
+            const inSheet = frame % FRAMES_PER_SHEET;
+            if (inSheet >= 28 && sheetIdx < lastSheet) requestSheet(sheetIdx + 1);
+            else if (inSheet < 8 && sheetIdx > 0) requestSheet(sheetIdx - 1);
+        }
+
+        // ---- warm-up: have the sheet for the current position ready before first hover ----
+        function warmUp() {
+            if (destroyed || legacy) return;
+            const d = safeDuration();
+            if (!(d > 0)) return;
+            try {
+                const p = getSafePlayer();
+                const t = (p && p.currentTime()) || 0;
+                const interval = frameInterval();
+                requestSheet(Math.floor(Math.floor(t / interval) / FRAMES_PER_SHEET));
+                requestSheet(0);
+            } catch (e) { /* never break playback */ }
+        }
+
+        // ---- hover plumbing ----------------------------------------------------------
+        function controlsFormatTime(seconds) {
+            if (!isFinite(seconds) || seconds < 0) return '0:00';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            return h > 0
+                ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+                : `${m}:${String(s).padStart(2, '0')}`;
+        }
+
+        const onMouseMove = (e) => {
+            if (destroyed || legacy) return;
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+
+            const rect = progressBar.getBoundingClientRect();
+            if (rect.width <= 0) return;
+            const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            const dur = activePlayer.duration();
+            if (!isFinite(dur) || dur <= 0) return;   // duration not known yet
+            const time = percent * dur;
+
+            thumbnailTime.textContent = controlsFormatTime(time);
+            // Keep the 160px preview box fully inside the wrapper near the edges
+            const clampedPercent = Math.max(0.13, Math.min(0.87, percent));
+            progressThumbnail.style.left = `${clampedPercent * 100}%`;
+            progressThumbnail.style.display = 'block';   // CSS opacity animates it
+
+            currentHoverTime = time;
+            renderForTime(time);   // sprite crop — no network once the sheet is loaded
+        };
+
+        const onMouseEnter = () => { warmUp(); };
+
+        const onMouseLeave = () => {
+            if (legacy) return;
+            progressThumbnail.style.display = 'none';
+            currentHoverTime = null;
+            if (shimmerEl) shimmerEl.style.display = 'none';
+        };
+
+        function detachListeners() {
+            progressBar.removeEventListener('mousemove', onMouseMove);
+            progressBar.removeEventListener('mouseenter', onMouseEnter);
+            progressBar.removeEventListener('mouseleave', onMouseLeave);
+            try { if (player && player.off) player.off('loadedmetadata', warmUp); } catch (e) { /* ignore */ }
+        }
+
+        progressBar.addEventListener('mousemove', onMouseMove);
+        progressBar.addEventListener('mouseenter', onMouseEnter);
+        progressBar.addEventListener('mouseleave', onMouseLeave);
+
+        // Start fetching the first sheets as soon as the video's metadata is known
+        try {
+            if (safeDuration() > 0) warmUp();
+            else if (player && player.one) player.one('loadedmetadata', warmUp);
+        } catch (e) { /* ignore */ }
+
+        const destroy = () => {
+            if (destroyed) return;
+            destroyed = true;
+            try {
+                detachListeners();
+                sheets.forEach(e => { if (e.img) { e.img.onload = null; e.img.onerror = null; e.img.src = ''; } });
+                sheets.clear();
+                if (legacy) legacy.destroy();
             } catch (e) { /* never break teardown */ }
         };
 
@@ -5843,7 +6129,6 @@ if (document.getElementById('appContainer')) {
                 setTimeout(() => {
                     if (modal && !modal.isDisposed) {
                         modal.requestFullscreen().catch(err => {
-                            console.log('Auto-fullscreen not allowed:', err);
                             // Fallback: show message to click fullscreen button
                         });
                     }
