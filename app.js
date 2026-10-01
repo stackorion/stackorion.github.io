@@ -3999,6 +3999,12 @@ if (document.getElementById('appContainer')) {
             groups[cat].push({ link, tierName });
         });
 
+        // Each tier render starts with the pill bar on "All", so the stored category
+        // selection must start clear too (otherwise a previous tier's category leaks
+        // into this tier's rows while the UI shows "All").
+        appState.currentCategoryId = null;
+        appState.currentCategoryPath = [];
+
         // ─── 3. CATEGORY PILL BAR — Iteration 5: TWO-ROW (parent + child) + breadcrumb ─
         // Build a flat list of categories from the links' category_path field.
         // Each link has category_path: ['Vanc', 'Elina'] (root → leaf).
