@@ -2606,6 +2606,14 @@ class UIManager {
 
         const images = Array.isArray(galleryData.images) ? galleryData.images : [];
         const isMobile = this.isMobileGalleryLayout();
+        const total = images.length;
+        const photoWord = total === 1 ? 'photo' : 'photos';
+
+        // ── Progressive loading settings (tweak these numbers to taste) ──────────
+        const MOBILE_AHEAD = 3;          // mobile: how many slides AHEAD of the current one are fetched
+        const MOBILE_BEHIND = 1;         // mobile: how many slides behind are kept ready
+        const DESKTOP_ROWS_PER_BATCH = 3;// desktop: grid rows added per "page" (always full rows)
+        const LOAD_MORE_MARGIN = 500;    // desktop: start the next page this many px before the bottom
 
         this.mainContent.innerHTML = `
             <div class="view-header">
@@ -2616,6 +2624,7 @@ class UIManager {
                 <div class="gallery-info" style="margin-bottom: 20px;">
                     <h3>${esc(galleryData.title)}</h3>
                     <p>${esc(galleryData.description || '')}</p>
+                    ${total ? `<p class="gallery-total">${total} ${photoWord}</p>` : ''}
                 </div>
                 <div class="gallery-grid pswp-gallery" id="galleryGrid"></div>
             </div>
@@ -2626,7 +2635,7 @@ class UIManager {
 
         const galleryGrid = document.getElementById('galleryGrid');
 
-        if (!images.length) {
+        if (!total) {
             galleryGrid.outerHTML = '<p class="gallery-empty">No images in this gallery yet.</p>';
             return;
         }
@@ -2641,52 +2650,80 @@ class UIManager {
             refreshCount: 0,
             observer: null,
             navObserver: null,
+            footerObserver: null,
             lightbox: null,
             onPageHide: null,
-            items: [],                // [{ id, item, link, img }]
+            ahead: MOBILE_AHEAD,
+            behind: MOBILE_BEHIND,
+            rendered: 0,              // desktop: how many cards are currently in the grid
+            ensureRendered: null,
+            // One entry per image in the gallery. DOM refs are filled in when the card is created
+            // (mobile: all cards exist as empty placeholders; desktop: cards are added page by page).
+            entries: images.map((image, i) => ({
+                id: image.id,
+                url: image.url,
+                item: null, link: null, img: null,
+                requested: false,     // true once img.src has been set (= network request started)
+                // Data handed to PhotoSwipe, so the lightbox can swipe through the WHOLE gallery
+                // even when the grid has only rendered the first page.
+                ds: {
+                    src: image.url,
+                    alt: image.title || `Image ${i + 1}`,
+                    width: 1000,
+                    height: 1500,
+                    estimated: true,
+                    thumbCropped: true,
+                    element: null
+                }
+            })),
+            dataSource: null,
             // 📊 Gallery analytics session data
             openedAt: Date.now(),
             sessionId: 'gal_' + Date.now() + '_' + Math.random().toString(36).slice(2, 11),
-            totalImages: images.length,
+            totalImages: total,
             flushed: false            // close-event sent guard
         };
+        state.dataSource = state.entries.map(e => e.ds);
 
         // 📊 Log the gallery OPEN immediately (server records the session start)
         this.logGalleryOpen(state);
 
-        const eagerCount = 2;         // only the first couple of images load immediately
+        // Builds one card. It does NOT start downloading the image (see galleryRequestImage).
+        const createItem = (index) => {
+            const image = images[index];
+            const entry = state.entries[index];
 
-        images.forEach((image, index) => {
             const item = document.createElement('div');
             item.className = 'gallery-item';
             item.dataset.index = index;
 
             const link = document.createElement('a');
-            link.href = image.url;
+            link.href = entry.url;
             link.target = '_blank';
             link.rel = 'noopener';
-            link.dataset.cropped = 'true';   // thumbnails use object-fit: cover (lets PhotoSwipe animate correctly)
 
             const img = document.createElement('img');
             img.alt = image.title || `Image ${index + 1}`;
             img.decoding = 'async';
             img.draggable = false;
-            if (index < eagerCount) {
-                img.loading = 'eager';
-                if (index === 0) img.setAttribute('fetchpriority', 'high');
-            } else {
-                img.loading = 'lazy';
-            }
+            // Mobile: we decide exactly when each slide loads. Desktop: first two eager, rest lazy.
+            img.loading = (isMobile || index < 2) ? 'eager' : 'lazy';
+            if (index === 0 && !isMobile) img.setAttribute('fetchpriority', 'high');
+
+            const spinner = document.createElement('div');
+            spinner.className = 'gallery-spinner';
 
             img.addEventListener('load', () => {
                 if (img.naturalWidth && img.naturalHeight) {
                     // Real size becomes available for PhotoSwipe as soon as the image has loaded
-                    link.dataset.pswpWidth = String(img.naturalWidth);
-                    link.dataset.pswpHeight = String(img.naturalHeight);
+                    entry.ds.width = img.naturalWidth;
+                    entry.ds.height = img.naturalHeight;
+                    entry.ds.estimated = false;
                     state.refRatio = img.naturalWidth / img.naturalHeight;
                 }
                 img.dataset.done = '1';
                 img.classList.add('loaded');
+                spinner.remove();
                 item.classList.remove('is-error');
                 const err = item.querySelector('.gallery-error');
                 if (err) err.remove();
@@ -2694,6 +2731,7 @@ class UIManager {
 
             img.addEventListener('error', () => {
                 img.classList.add('loaded');     // un-hide so the error state is visible
+                spinner.remove();
                 this.handleGalleryImageError(state, item, img);
             });
 
@@ -2704,11 +2742,106 @@ class UIManager {
             link.appendChild(img);
             link.appendChild(caption);
             item.appendChild(link);
-            galleryGrid.appendChild(item);
-            state.items.push({ id: image.id, item, link, img });
+            item.appendChild(spinner);
 
-            img.src = image.url;             // set last, after listeners are attached
-        });
+            entry.item = item;
+            entry.link = link;
+            entry.img = img;
+            entry.ds.element = link;
+            return item;
+        };
+
+        // Adds cards [rendered .. rendered+count) to the grid
+        const renderBatch = (count, autoLoad) => {
+            const start = state.rendered;
+            const end = Math.min(start + count, total);
+            const frag = document.createDocumentFragment();
+            for (let i = start; i < end; i++) frag.appendChild(createItem(i));
+            galleryGrid.appendChild(frag);
+            state.rendered = end;
+            for (let i = start; i < end; i++) {
+                if (state.observer) state.observer.observe(state.entries[i].item);
+                if (autoLoad) this.galleryRequestImage(state, i);
+            }
+            if (state.updateFooter) state.updateFooter();
+        };
+
+        if (isMobile) {
+            // Mobile: the swipe slider needs every slide to exist (counter, scroll-snap, saved
+            // position) - they are cheap empty placeholders. Only a small window of images around
+            // the current slide is actually downloaded; it moves forward as the user swipes.
+            renderBatch(total, false);
+            const startIdx = this.getSavedGalleryIndex(slug, total);
+            this.galleryLoadAround(state, startIdx);
+        } else {
+            // Desktop: the grid grows page by page (full rows) as the user scrolls down.
+            const columns = () => {
+                try {
+                    const n = getComputedStyle(galleryGrid).gridTemplateColumns.split(' ').filter(Boolean).length;
+                    return n > 0 ? n : 4;
+                } catch (e) { return 4; }
+            };
+            const batchSize = () => Math.max(6, columns() * DESKTOP_ROWS_PER_BATCH);
+
+            const footer = document.createElement('div');
+            footer.className = 'gallery-footer';
+            const status = document.createElement('div');
+            status.className = 'gallery-footer-status';
+            const moreBtn = document.createElement('button');
+            moreBtn.type = 'button';
+            moreBtn.className = 'gallery-load-more';
+            footer.appendChild(status);
+            footer.appendChild(moreBtn);
+            galleryGrid.insertAdjacentElement('afterend', footer);
+
+            state.updateFooter = () => {
+                const remaining = total - state.rendered;
+                if (remaining <= 0) {
+                    status.textContent = `All ${total} ${photoWord} loaded`;
+                    moreBtn.hidden = true;
+                    if (state.footerObserver) { state.footerObserver.disconnect(); state.footerObserver = null; }
+                } else {
+                    status.textContent = `Showing ${state.rendered} of ${total} ${photoWord}`;
+                    moreBtn.hidden = false;
+                    moreBtn.textContent = `Load ${Math.min(batchSize(), remaining)} more`;
+                }
+            };
+
+            // Keeps adding pages while the footer is close to the screen (stops by itself once
+            // the footer is far enough below the fold, or when everything is shown)
+            const maybeLoadMore = () => {
+                if (this._galleryState !== state || state.rendered >= total) return;
+                if (footer.getBoundingClientRect().top < window.innerHeight + LOAD_MORE_MARGIN) {
+                    renderBatch(batchSize(), true);
+                    requestAnimationFrame(maybeLoadMore);
+                }
+            };
+            moreBtn.addEventListener('click', () => renderBatch(batchSize(), true));
+
+            state.ensureRendered = (n) => {
+                const target = Math.min(n, total);
+                while (state.rendered < target) renderBatch(batchSize(), true);
+            };
+
+            // First page (if the customer is returning to a saved position, include it)
+            const cols = columns();
+            const startIdx = this.getSavedGalleryIndex(slug, total);
+            const first = Math.ceil(Math.max(batchSize(), startIdx + 1) / cols) * cols;
+            renderBatch(first, true);
+
+            if ('IntersectionObserver' in window) {
+                state.footerObserver = new IntersectionObserver((entries) => {
+                    if (entries.some(en => en.isIntersecting)) maybeLoadMore();
+                }, { rootMargin: `0px 0px ${LOAD_MORE_MARGIN}px 0px` });
+                state.footerObserver.observe(footer);
+            } else {
+                // Very old browsers: fall back to scroll events
+                const onScroll = () => maybeLoadMore();
+                window.addEventListener('scroll', onScroll, { passive: true });
+                state.footerScroll = onScroll;
+            }
+            state.maybeLoadMore = maybeLoadMore;
+        }
 
         // Tapping a broken image retries it instead of opening the lightbox
         galleryGrid.addEventListener('click', (e) => {
@@ -2729,7 +2862,8 @@ class UIManager {
             this.initDesktopGridExtras(state, galleryGrid);
         }
         // Both layouts: come back to the image you left on
-        this.restoreGalleryPosition(state, galleryGrid, images.length);
+        this.restoreGalleryPosition(state, galleryGrid, total);
+        if (state.maybeLoadMore) requestAnimationFrame(state.maybeLoadMore);
 
         // If the view is replaced (navigating elsewhere in the app), clean up automatically
         state.navObserver = new MutationObserver(() => {
@@ -2743,6 +2877,31 @@ class UIManager {
         window.addEventListener('pagehide', state.onPageHide);
     }
 
+    // Starts downloading one image (only the first time it is asked for)
+    galleryRequestImage(state, index) {
+        const entry = state && state.entries[index];
+        if (!entry || entry.requested || !entry.img) return;
+        entry.requested = true;
+        entry.img.src = entry.url;
+    }
+
+    // Mobile slider: make sure the current slide, a few ahead and one behind are loading
+    galleryLoadAround(state, index) {
+        if (!state || !state.isMobile) return;
+        const from = Math.max(0, index - state.behind);
+        const to = Math.min(state.entries.length - 1, index + state.ahead);
+        for (let i = from; i <= to; i++) this.galleryRequestImage(state, i);
+    }
+
+    getSavedGalleryIndex(slug, total) {
+        if (!slug) return 0;
+        try {
+            const saved = JSON.parse(sessionStorage.getItem('gallery_pos:' + slug) || 'null');
+            if (!saved || Date.now() - saved.t > 30 * 60 * 1000) return 0;
+            return Math.min(Math.max(parseInt(saved.i, 10) || 0, 0), total - 1);
+        } catch (e) { return 0; }
+    }
+
     teardownGallery() {
         const state = this._galleryState;
         document.querySelectorAll('.mobile-gallery-counter, .mobile-gallery-hint').forEach(el => el.remove());
@@ -2750,6 +2909,8 @@ class UIManager {
         this.flushGalleryViews(state);
         if (state.observer) state.observer.disconnect();
         if (state.navObserver) state.navObserver.disconnect();
+        if (state.footerObserver) state.footerObserver.disconnect();
+        if (state.footerScroll) window.removeEventListener('scroll', state.footerScroll);
         if (state.onPageHide) {
             document.removeEventListener('visibilitychange', state.onPageHide);
             window.removeEventListener('pagehide', state.onPageHide);
@@ -2850,11 +3011,15 @@ class UIManager {
             if (!response.ok || data.status !== 'success' || !data.gallery) return;
             if (this._galleryState !== state) return;     // user already left this gallery
             const fresh = new Map(data.gallery.images.map(im => [im.id, im.url]));
-            state.items.forEach(({ id, link, img }) => {
-                const url = fresh.get(id);
+            state.entries.forEach((entry) => {
+                const url = fresh.get(entry.id);
                 if (!url) return;
-                link.href = url;
-                if (!img.dataset.done) img.src = url;     // only reload the ones that never loaded
+                entry.url = url;
+                entry.ds.src = url;                       // lightbox uses the fresh link too
+                if (entry.link) entry.link.href = url;
+                // only retry images that were already requested but never loaded
+                // (images we haven't started yet will simply use the new url)
+                if (entry.requested && entry.img && !entry.img.dataset.done) entry.img.src = url;
             });
         } catch (e) {
             console.warn('Gallery URL refresh failed', e);
@@ -2968,6 +3133,7 @@ class UIManager {
                     counter.textContent = `${idx + 1} / ${total}`;
                     currentIdx = idx;
                     if (interacted) state.viewed.add(idx);
+                    this.galleryLoadAround(state, idx);      // fetch the next few slides in the background
                     this.saveGalleryPosition(state, idx);
                 }
             });
@@ -2987,8 +3153,7 @@ class UIManager {
 
         try {
             const lightbox = new PhotoSwipeLightbox({
-                gallery: '#galleryGrid',
-                children: 'a',
+                dataSource: state.dataSource,
                 pswpModule: PhotoSwipe,
                 bgOpacity: 1,
                 spacing: 0.05,
@@ -3005,23 +3170,16 @@ class UIManager {
                     ? { top: 0, bottom: 0, left: 0, right: 0 }
                     : { top: 20, bottom: 20, left: 20, right: 20 },
                 arrowKeys: true,
-                preload: [1, 2]
+                preload: isMobile ? [1, 2] : [1, 3]      // [previous, next] slides kept ready in the background
             });
             state.lightbox = lightbox;
 
             // Images are lazy-loaded, so a slide's real size may not be known yet.
             // Use the real size when we have it, otherwise a best guess (corrected on load below).
-            lightbox.addFilter('domItemData', (itemData, element, linkEl) => {
-                const w = parseInt(linkEl.dataset.pswpWidth, 10);
-                const h = parseInt(linkEl.dataset.pswpHeight, 10);
-                if (w && h) {
-                    itemData.width = w;
-                    itemData.height = h;
-                    itemData.estimated = false;
-                } else {
+            lightbox.addFilter('itemData', (itemData) => {
+                if (itemData && itemData.estimated) {
                     itemData.width = 1000;
                     itemData.height = Math.round(1000 / (state.refRatio || 2 / 3));
-                    itemData.estimated = true;
                 }
                 return itemData;
             });
@@ -3033,6 +3191,8 @@ class UIManager {
                 const el = content.element;
                 if (!el || !el.naturalWidth || !el.naturalHeight) return;
                 content.data.estimated = false;
+                content.data.width = el.naturalWidth;      // remembered for the next time this image is opened
+                content.data.height = el.naturalHeight;
                 content.width = slide.width = el.naturalWidth;
                 content.height = slide.height = el.naturalHeight;
                 slide.calculateSize();
@@ -3040,6 +3200,20 @@ class UIManager {
                 slide.zoomAndPanToInitial();
                 slide.applyCurrentZoomPan();
                 slide.updateContentSize(true);
+            });
+
+            // Open the lightbox on click. It is fed the FULL list of images (not just the cards
+            // currently in the grid), so swiping continues past the first page; PhotoSwipe itself
+            // only downloads the image being viewed plus the few next to it.
+            galleryGrid.addEventListener('click', (e) => {
+                const link = e.target.closest && e.target.closest('a');
+                if (!link || !galleryGrid.contains(link)) return;
+                const item = link.closest('.gallery-item');
+                if (!item || item.classList.contains('is-error')) return;
+                const idx = parseInt(item.dataset.index, 10);
+                if (isNaN(idx)) return;
+                e.preventDefault();
+                lightbox.loadAndOpen(idx, state.dataSource);
             });
 
             // ── Back button support (Android hardware Back / iPhone swipe-back / browser Back) ──
@@ -3084,6 +3258,8 @@ class UIManager {
             lightbox.on('close', () => {
                 if (lightbox.pswp) this.saveGalleryPosition(state, lightbox.pswp.currIndex);
                 if (lightbox.pswp) {
+                    // Desktop: the image the customer ended on may be beyond the grid's current page
+                    if (!isMobile && state.ensureRendered) state.ensureRendered(lightbox.pswp.currIndex + 1);
                     const target = galleryGrid.children[lightbox.pswp.currIndex];
                     if (isMobile && target) {
                         // Mobile: put the slider on the image the customer ended on
