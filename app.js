@@ -41,7 +41,7 @@ const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1
 //   - Desktop: video.js + http-streaming initialize exactly as before; we
 //     just await the library before calling videojs().
 // All URLs are version-pinned (no floating @latest) so browsers can cache
-// them long-term and the CDN payload can never change underneath us.
+// them long-term and the library payload can never change underneath us.
 // ============================================================================
 const VideoLibraryLoader = {
     sources: {
@@ -2117,6 +2117,16 @@ class Router {
         this.appState.contentPage = 1;  // reset to first page
         this.uiManager.renderContentSkeleton(tierName, platformName);
 
+        // ⚡ PERF (Tier Load Speedup): Cache HIT → skip the network round-trip
+        // entirely. The cache stores the full link set for this tier, so
+        // category filtering keeps working exactly as before.
+        const cacheStore = (typeof cacheManager !== 'undefined' && cacheManager) ? cacheManager : window.cacheManager;
+        const cachedContent = cacheStore ? cacheStore.getCachedLinks(tierId) : null;
+        if (cachedContent) {
+            this.displayFetchedContent(platformId, tierId, tierName, platformName, cachedContent);
+            return;
+        }
+
         try {
             const token = this.authManager.getToken();
 
@@ -2130,47 +2140,11 @@ class Router {
             const data = await response.json();
 
             if (data && data.status === 'success' && data.content) {
-                this.appState.currentContent = data.content;
-                this.appState.filterState = { view: 'All', type: 'All', query: '' };
-
-                // FIX: no pagination — all links loaded in one request
-                this.appState.contentHasMore = false;
-                this.appState.contentTotalCount = Object.values(data.content || {}).flat().length;
-
-                // Build content HTML
-                this.mainContent.innerHTML = `
-                    <div class="view-header">
-                        <button id="backButton" class="back-button">← Back to Tiers</button>
-                        <h2>${tierName} <span class="header-breadcrumb">/ ${platformName}</span></h2>
-                    </div>
-                    <div id="filterContainer" class="filter-container"></div>
-                    <div id="linksContentContainer"></div>`;
-
-                this.searchContainer.style.display = 'block';
-                this.searchInput.placeholder = `Search in ${tierName || 'Content'} (or use global search above)`;
-                this.searchInput.value = '';
-
-                // Iteration 5: fetch category tree for this platform (cached)
-                await this.ensureCategoryTree(platformId);
-
-                // Attach back button listener
-                const backButton = document.getElementById('backButton');
-                if (backButton) {
-                    backButton.addEventListener('click', () => {
-                        history.pushState({view: 'tiers', platformId}, '', `?view=tiers&platform_id=${platformId}`);
-                        this.navigate();
-                    });
-                }
-
-                // Render content (initial page)
-                renderContent(data.content, platformId, true);
-
-                // Setup filters (includes page size selector)
-                setupFilters(data.content);
-
-                // Setup copy buttons
-                setupCopyButtonDelegation();
-
+                // ⚡ PERF: stash payload so re-entering this tier within the
+                // TTL renders instantly without touching the network.
+                const cacheStore2 = (typeof cacheManager !== 'undefined' && cacheManager) ? cacheManager : window.cacheManager;
+                if (cacheStore2) cacheStore2.setCachedLinks(tierId, data.content);
+                this.displayFetchedContent(platformId, tierId, tierName, platformName, data.content);
             } else {
                 if (typeof response !== 'undefined' && (response.status === 401 || response.status === 403)) {
                     safeStorage.clear();
@@ -2183,6 +2157,53 @@ class Router {
             console.error("Content fetch error:", error);
             this.uiManager.showError("An error occurred while fetching content.");
         }
+    }
+
+    // ⚡ PERF (Tier Load Speedup): shared render path for cached + fresh data.
+    // Extracted from fetchAndDisplayContent so the network path and the cache
+    // path both render through identical logic (filters, events, buttons).
+    displayFetchedContent(platformId, tierId, tierName, platformName, content) {
+        this.appState.currentContent = content;
+        this.appState.filterState = { view: 'All', type: 'All', query: '' };
+
+        // FIX: no pagination — all links loaded in one request
+        this.appState.contentHasMore = false;
+        this.appState.contentTotalCount = Object.values(content || {}).flat().length;
+
+        // Build content HTML
+        this.mainContent.innerHTML = `
+            <div class="view-header">
+                <button id="backButton" class="back-button">← Back to Tiers</button>
+                <h2>${tierName} <span class="header-breadcrumb">/ ${platformName}</span></h2>
+            </div>
+            <div id="filterContainer" class="filter-container"></div>
+            <div id="linksContentContainer"></div>`;
+
+        this.searchContainer.style.display = 'block';
+        this.searchInput.placeholder = `Search in ${tierName || 'Content'} (or use global search above)`;
+        this.searchInput.value = '';
+
+        // ⚡ PERF: Don't block first paint on the category tree request — kick
+        // it off in the background; setupFilters awaits the promise itself.
+        const categoryTreePromise = this.ensureCategoryTree(platformId);
+
+        // Attach back button listener
+        const backButton = document.getElementById('backButton');
+        if (backButton) {
+            backButton.addEventListener('click', () => {
+                history.pushState({view: 'tiers', platformId}, '', `?view=tiers&platform_id=${platformId}`);
+                this.navigate();
+            });
+        }
+
+        // Render content (initial page) — progressive row rendering inside
+        renderContent(content, platformId, true);
+
+        // Setup filters (includes page size selector)
+        setupFilters(content, categoryTreePromise);
+
+        // Setup copy buttons
+        setupCopyButtonDelegation();
     }
 
     // Iteration 5: fetch + cache category tree for a platform
@@ -2622,8 +2643,16 @@ class UIManager {
             navObserver: null,
             lightbox: null,
             onPageHide: null,
-            items: []                 // [{ id, item, link, img }]
+            items: [],                // [{ id, item, link, img }]
+            // 📊 Gallery analytics session data
+            openedAt: Date.now(),
+            sessionId: 'gal_' + Date.now() + '_' + Math.random().toString(36).slice(2, 11),
+            totalImages: images.length,
+            flushed: false            // close-event sent guard
         };
+
+        // 📊 Log the gallery OPEN immediately (server records the session start)
+        this.logGalleryOpen(state);
 
         const eagerCount = 2;         // only the first couple of images load immediately
 
@@ -2729,18 +2758,69 @@ class UIManager {
         this._galleryState = null;
     }
 
-    // Sends "customer viewed N images" analytics once, then clears the counter
-    flushGalleryViews(state) {
-        if (!state || !state.slug || state.viewed.size === 0) return;
+    // 📊 GALLERY ANALYTICS — sends the "open" event the moment a gallery is
+    // rendered. Fire-and-forget; failures never affect the customer.
+    logGalleryOpen(state) {
+        if (!state || !state.slug) return;
         const token = safeStorage.getItem('lustroom_jwt');
-        const count = state.viewed.size;
-        state.viewed.clear();
         if (!token) return;
+
+        // Respect the global analytics kill-switch (same as video analytics)
+        const configRaw = safeStorage.getItem('system_config');
+        if (configRaw) {
+            try {
+                const config = JSON.parse(configRaw);
+                if (config.collect_analytics === 'false') return;
+            } catch (e) { /* malformed config — allow through */ }
+        }
+
         fetch(`${API_BASE_URL}/gallery/log_view`, {
             method: 'POST',
             keepalive: true,
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ gallery_slug: state.slug, images_viewed_count: count })
+            body: JSON.stringify({
+                gallery_slug: state.slug,
+                event: 'open',
+                images_total_count: state.totalImages || 0,
+                session_id: state.sessionId
+            })
+        }).catch(() => {});
+    }
+
+    // 📊 Sends the "close" event once per gallery session: how many images were
+    // viewed, for how long, out of how many. Then clears the counter.
+    flushGalleryViews(state) {
+        if (!state || !state.slug) return;
+        const token = safeStorage.getItem('lustroom_jwt');
+        if (!token) return;
+
+        const count = state.viewed.size;
+        const durationSeconds = state.openedAt ? Math.max(0, Math.round((Date.now() - state.openedAt) / 1000)) : 0;
+
+        // Respect the global analytics kill-switch (same as video analytics)
+        const configRaw = safeStorage.getItem('system_config');
+        if (configRaw) {
+            try {
+                const config = JSON.parse(configRaw);
+                if (config.collect_analytics === 'false') return;
+            } catch (e) { /* malformed config — allow through */ }
+        }
+
+        // Cumulative: the server keeps max(images viewed) / latest duration for this
+        // session, so repeated flushes (lightbox close, tab hidden, leaving) are safe.
+
+        fetch(`${API_BASE_URL}/gallery/log_view`, {
+            method: 'POST',
+            keepalive: true,
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+                gallery_slug: state.slug,
+                event: 'close',
+                images_viewed_count: count,
+                images_total_count: state.totalImages || 0,
+                duration_seconds: durationSeconds,
+                session_id: state.sessionId
+            })
         }).catch(() => {});
     }
 
@@ -2817,8 +2897,10 @@ class UIManager {
 
     // Desktop-only: remember grid scroll position while the customer browses.
     // Uses a thin intersection band near the top of the viewport to find the
-    // topmost visible card. Purely positional - it never touches
-    // state.viewed, so gallery analytics behaviour stays exactly as before.
+    // topmost visible card.
+    // 📊 Gallery analytics: cards scrolled into view also count as "viewed"
+    // (previously only mobile-slider + lightbox views were counted, so desktop
+    // browsing produced zero image-view data).
     initDesktopGridExtras(state, galleryGrid) {
         if (!('IntersectionObserver' in window) || !galleryGrid) return;
         const visible = new Set();
@@ -2838,8 +2920,12 @@ class UIManager {
             entries.forEach(entry => {
                 const idx = parseInt(entry.target.dataset.index, 10);
                 if (isNaN(idx)) return;
-                if (entry.isIntersecting) visible.add(idx);
-                else visible.delete(idx);
+                if (entry.isIntersecting) {
+                    visible.add(idx);
+                    state.viewed.add(idx);   // 📊 count grid browsing as viewing
+                } else {
+                    visible.delete(idx);
+                }
             });
             if (raf === null) raf = requestAnimationFrame(saveCurrent);
         }, { rootMargin: '0px 0px -75% 0px', threshold: 0 });
@@ -3886,11 +3972,15 @@ if (document.getElementById('appContainer')) {
         }
 
         // ── 1. HERO — first item spans full width ────────────────────────────────
+        // ⚡ PERF: precompute link → tierName once (was O(n²) per-link lookups)
+        const tierNameByLink = new Map();
+        for (const t of Object.keys(contentData)) {
+            (contentData[t] || []).forEach(l => tierNameByLink.set(l, t));
+        }
+        const firstTierName = Object.keys(contentData)[0];
+
         const heroLink      = allLinks[0];
-        // Find which tierName this link belongs to (needed for PlayerFactory)
-        const heroTierName  = Object.keys(contentData).find(t =>
-            contentData[t].some(l => l === heroLink)
-        ) || Object.keys(contentData)[0];
+        const heroTierName  = tierNameByLink.get(heroLink) || firstTierName;
 
         const heroSection = document.createElement('div');
         heroSection.className = 'category-section hero-section';
@@ -3903,9 +3993,7 @@ if (document.getElementById('appContainer')) {
 
         allLinks.slice(1).forEach(link => {
             const cat      = link.category || 'General Content';
-            const tierName = Object.keys(contentData).find(t =>
-                contentData[t].some(l => l === link)
-            ) || Object.keys(contentData)[0];
+            const tierName = tierNameByLink.get(link) || firstTierName;
 
             if (!groups[cat]) groups[cat] = [];
             groups[cat].push({ link, tierName });
@@ -4039,10 +4127,23 @@ if (document.getElementById('appContainer')) {
         }
 
         // ── 4. NETFLIX-STYLE ROWS WITH ARROW NAVIGATION ─────────────────────────
-        for (const [category, items] of Object.entries(groups)) {
+        // ⚡ PERF (Tier Load Speedup): rows build PROGRESSIVELY.
+        //   • Hero + category bars + first rows render immediately (fast first paint)
+        //   • Below-the-fold rows start as lightweight skeleton placeholders
+        //   • Placeholders materialize when scrolled near (IntersectionObserver)
+        //     OR one-by-one during browser idle time — whichever comes first
+        //   • Any filter/search interaction force-builds all pending rows so
+        //     results stay exact (see flushPendingRows)
+        const IMMEDIATE_ROW_COUNT = 3;
+
+        // Builds one full category row (cards + arrows) — extracted verbatim
+        // from the old synchronous loop.
+        function buildCategoryRow(category, items) {
             const row = document.createElement('div');
             row.className = 'category-row category-section';
             row.setAttribute('data-category', category);
+            const firstPath = (items[0] && items[0].link && items[0].link.category_path) || [];
+            if (firstPath.length > 0) row.dataset.parentCategory = firstPath[0];
 
             const header = document.createElement('h2');
             header.className = 'category-header';
@@ -4101,11 +4202,151 @@ if (document.getElementById('appContainer')) {
             wrapper.appendChild(track);
             wrapper.appendChild(btnRight);
             row.appendChild(wrapper);
-            linksContentContainer.appendChild(row);
 
             // Initial arrow state after DOM paint
             requestAnimationFrame(updateArrows);
+            return row;
         }
+
+        // Lightweight placeholder shown until the real row is built.
+        function makeLazyRowPlaceholder(category, items) {
+            const row = document.createElement('div');
+            row.className = 'category-row category-section category-row-lazy';
+            row.setAttribute('data-category', category);
+            const firstPath = (items[0] && items[0].link && items[0].link.category_path) || [];
+            if (firstPath.length > 0) row.dataset.parentCategory = firstPath[0];
+
+            const header = document.createElement('h2');
+            header.className = 'category-header';
+            header.textContent = category;
+            row.appendChild(header);
+
+            const skel = document.createElement('div');
+            skel.className = 'lazy-row-skeleton';
+            skel.innerHTML = '<div class="skeleton-row-card"><div class="skeleton skeleton-thumb"></div><div class="skeleton skeleton-line"></div></div>'.repeat(4);
+            row.appendChild(skel);
+            return row;
+        }
+
+        const rowEntries = Object.entries(groups);
+        const pendingRows = [];               // entries not yet materialized
+        let rowObserver = null;
+        let idleBuildHandle = null;
+
+        // Applies the CURRENT filter state (view/type/search + category path)
+        // to a freshly built row so late-built cards respect active filters.
+        const applyCurrentFiltersToRow = (row) => {
+            const fs = appState.filterState || { view: 'All', type: 'All', query: '' };
+            const query = (fs.query || '').toLowerCase();
+            row.querySelectorAll('.link-card').forEach(card => {
+                const isRecentContent = card.dataset.recentStatus === 'true';
+                const isViewMatch = fs.view === 'All' || (fs.view === 'Recent' && isRecentContent);
+                const isTypeMatch = fs.type === 'All' || card.dataset.contentType === fs.type;
+                const isQueryMatch = query === '' || (card.dataset.searchText || '').includes(query);
+                card.style.display = (isViewMatch && isTypeMatch && isQueryMatch) ? '' : 'none';
+            });
+
+            // Category-path visibility (mirrors applyCategoryFilter row logic)
+            const path = appState.currentCategoryId || '';
+            if (path) {
+                const rowCategory = row.dataset.category || '';
+                if (path.includes('/')) {
+                    row.style.display = (rowCategory === path.split('/')[1]) ? '' : 'none';
+                } else {
+                    const anyCardMatches = Array.from(row.querySelectorAll('.link-card')).some(card => {
+                        const cardPath = card.dataset.categoryPath || '';
+                        return cardPath.split('||').some(p => p.startsWith(path + '/') || p === path);
+                    });
+                    row.style.display = (rowCategory === path || row.dataset.parentCategory === path || anyCardMatches) ? '' : 'none';
+                }
+            }
+        };
+
+        const detachRowSchedulers = () => {
+            if (rowObserver) { rowObserver.disconnect(); rowObserver = null; }
+            if (idleBuildHandle !== null) {
+                if ('requestIdleCallback' in window) cancelIdleCallback(idleBuildHandle);
+                else clearTimeout(idleBuildHandle);
+                idleBuildHandle = null;
+            }
+        };
+
+        const mountRow = (entry, placeholderEl) => {
+            const [category, items] = entry;
+            const row = buildCategoryRow(category, items);
+            if (placeholderEl && placeholderEl.parentNode) {
+                placeholderEl.replaceWith(row);
+            } else {
+                linksContentContainer.appendChild(row);
+            }
+            applyCurrentFiltersToRow(row);
+        };
+
+        const buildNextIdleRow = () => {
+            idleBuildHandle = null;
+            if (!pendingRows.length) { detachRowSchedulers(); return; }
+            const next = pendingRows.shift();
+            mountRow(next.entry, next.placeholder);
+            if (pendingRows.length) scheduleIdleBuild();
+            else detachRowSchedulers();
+        };
+
+        const scheduleIdleBuild = () => {
+            if (idleBuildHandle !== null || !pendingRows.length) return;
+            if ('requestIdleCallback' in window) {
+                idleBuildHandle = requestIdleCallback(buildNextIdleRow, { timeout: 1500 });
+            } else {
+                idleBuildHandle = setTimeout(buildNextIdleRow, 150);
+            }
+        };
+
+        // Build ALL pending rows synchronously. Called when the user engages
+        // search/filters so results are always computed over the full set.
+        const flushPendingRows = () => {
+            if (!pendingRows.length) { detachRowSchedulers(); return; }
+            detachRowSchedulers();
+            while (pendingRows.length) {
+                const next = pendingRows.shift();
+                mountRow(next.entry, next.placeholder);
+            }
+        };
+
+        // Expose to sibling filter functions (applyFilters / applyCategoryFilter)
+        if (isInitial) {
+            window.__activeContentRows = { flushPendingRows };
+        }
+
+        rowEntries.forEach((entry, index) => {
+            if (index < IMMEDIATE_ROW_COUNT) {
+                mountRow(entry, null);
+            } else {
+                const placeholder = makeLazyRowPlaceholder(entry[0], entry[1]);
+                placeholder.__rowEntry = entry;
+                linksContentContainer.appendChild(placeholder);
+                pendingRows.push({ entry, placeholder });
+
+                if ('IntersectionObserver' in window) {
+                    if (!rowObserver) {
+                        rowObserver = new IntersectionObserver((obsEntries, obs) => {
+                            obsEntries.forEach(en => {
+                                if (!en.isIntersecting) return;
+                                const el = en.target;
+                                obs.unobserve(el);
+                                const idx = pendingRows.findIndex(p => p.placeholder === el);
+                                if (idx !== -1) {
+                                    const [p] = pendingRows.splice(idx, 1);
+                                    mountRow(p.entry, el);
+                                    if (!pendingRows.length) detachRowSchedulers();
+                                }
+                            });
+                        }, { rootMargin: '500px 0px' });
+                    }
+                    rowObserver.observe(placeholder);
+                }
+            }
+        });
+
+        if (pendingRows.length) scheduleIdleBuild();
 
         // Flag for empty-state check
         if (allLinks.length === 0 && isInitial) {
@@ -4121,6 +4362,12 @@ if (document.getElementById('appContainer')) {
     // Iteration 5: apply category filter — shows/hides category rows based on
     // the selected path. Path format: '' (all) | 'Vanc' | 'Vanc/Elina'
     function applyCategoryFilter(path) {
+        // ⚡ PERF: materialize any lazily-pending rows first so the filter
+        // always runs over the complete row/card set.
+        if (window.__activeContentRows) {
+            try { window.__activeContentRows.flushPendingRows(); } catch (e) { /* non-fatal */ }
+        }
+
         appState.currentCategoryId = path || null;
         const container = document.getElementById('linksContentContainer');
         if (!container) return;
@@ -4293,10 +4540,16 @@ if (document.getElementById('appContainer')) {
     }
 
     // --- Setup filters with Recently Added support (Iteration 4: + page size) ---
-    function setupFilters(contentData) {
+    function setupFilters(contentData, categoryTreePromise) {
         const filterContainer = document.getElementById('filterContainer');
         if (!filterContainer) return;
         filterContainer.innerHTML = '';  // Iteration 4: clear before re-adding
+
+        // ⚡ PERF: the (optional) category tree promise is pre-warmed in the
+        // background by the router — swallow errors so it never surfaces.
+        if (categoryTreePromise && typeof categoryTreePromise.catch === 'function') {
+            categoryTreePromise.catch(() => {});
+        }
 
         const contentTypes = new Set();
         Object.values(contentData).flat().forEach(link => contentTypes.add(link.content_type || 'Video'));
@@ -4381,6 +4634,12 @@ if (document.getElementById('appContainer')) {
 
     // --- Apply filters with search support ---
     function applyFilters() {
+        // ⚡ PERF: materialize any lazily-pending rows first so the filter
+        // always runs over the complete card set.
+        if (window.__activeContentRows) {
+            try { window.__activeContentRows.flushPendingRows(); } catch (e) { /* non-fatal */ }
+        }
+
         const { view, type, query } = appState.filterState;
 
         let hasVisibleContent = false;
@@ -4456,6 +4715,339 @@ if (document.getElementById('appContainer')) {
     // --- PREMIUM VIDEO PLAYER (PRODUCTION v2.1 MOBILE FIX) ---
     // Note: This function is now primarily called by DesktopPlayer via the Factory.
     // It is async: video.js is lazy-loaded on first call (see VideoLibraryLoader).
+    // ==============================================================================
+    // ⚡ SEEK PREVIEW SCRUBBER — real frame previews on progress-bar hover.
+    // A hidden "scrubber" <video> plays the SAME HLS stream at the LOWEST
+    // rendition. On hover we seek it to the hovered time, draw the frame to a
+    // canvas and show it above the progress bar (YouTube-style). Frames are
+    // cached in 2s buckets (LRU-capped). Desktop only — touch devices have no
+    // hover and use their native controls. Every failure path degrades
+    // gracefully to the old time-only tooltip; playback is never affected.
+    // ==============================================================================
+    function setupSeekPreviewScrubber({ modal, player, progressBar, progressThumbnail, thumbnailTime, isMobileDevice }) {
+        const canvas = modal.querySelector('.premium-thumbnail-canvas');
+        const shimmerEl = modal.querySelector('.premium-thumbnail-loading');
+        if (!canvas || !progressThumbnail || !thumbnailTime) return { destroy() {} };
+
+        // Hover previews are meaningless on touch screens
+        const canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+        if (isMobileDevice || !canHover) return { destroy() {} };
+
+        const ctx = canvas.getContext('2d');
+        const CW = canvas.width, CH = canvas.height;
+        const BUCKET_SECONDS = 2;          // one cached frame per 2s of timeline
+        const MAX_CACHE_ENTRIES = 150;     // LRU cap (~300s of distinct previews)
+
+        const frameCache = new Map();      // bucketStart -> { canvas }
+        let scrubber = null;               // hidden <video>
+        let hls = null;                    // hls.js instance (if used)
+        let disabled = false;              // hard failure → time-only tooltip
+        let seeking = false;
+        let pendingSeekTime = null;        // latest hovered time while a seek is in flight
+        let displayedBucket = null;        // bucket currently painted on the visible canvas
+        let currentHoverTime = null;
+        let destroyed = false;
+        let resyncAttempted = false;   // one free token-refresh resync, then give up
+
+        // ⚡ hls.js is lazily loaded on desktop (mobile-only today), so kick the
+        // download off NOW in parallel with playback. Until it arrives — or if
+        // the browser can play HLS natively — the preview simply stays a
+        // time-only tooltip. Nothing blocks.
+        let hlsLibReady = typeof Hls !== 'undefined';
+        const nativeHlsOk = (() => {
+            try { return !!document.createElement('video').canPlayType('application/vnd.apple.mpegurl'); }
+            catch (e) { return false; }
+        })();
+        if (!hlsLibReady && !nativeHlsOk && typeof VideoLibraryLoader !== 'undefined') {
+            VideoLibraryLoader.ensureHls().then(ok => { hlsLibReady = !!ok; }).catch(() => {});
+        }
+
+        const getSafePlayer = () => {
+            try {
+                if (!player) return null;
+                // Only reject when video.js explicitly reports a disposed state
+                if (typeof player.isDisposed === 'function' && player.isDisposed()) return null;
+                return player;
+            } catch (e) { return null; }
+        };
+
+        // ---- hidden scrubber video ------------------------------------------------
+        function createScrubber() {
+            const v = document.createElement('video');
+            v.className = 'seek-preview-scrubber';
+            v.muted = true;
+            v.defaultMuted = true;
+            v.playsInline = true;
+            v.preload = 'auto';
+            v.crossOrigin = 'anonymous';   // required so frames can be drawn to the canvas
+            v.setAttribute('aria-hidden', 'true');
+            v.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;left:-9999px;top:0;';
+            modal.appendChild(v);
+
+            v.addEventListener('seeked', onScrubberSeeked);
+            v.addEventListener('error', onScrubberError);
+
+            const src = getSafePlayer() ? getSafePlayer().currentSource() : null;
+            const url = (src && src.src) || '';
+            if (!url) { disablePreview(); return v; }
+
+            attachSource(v, url);
+            return v;
+        }
+
+        function attachSource(v, url) {
+            const isHls = /\.m3u8(\?|$)/i.test(url) || url.includes('m3u8');
+            if (isHls && typeof Hls !== 'undefined' && Hls.isSupported()) {
+                try {
+                    hls = new Hls({
+                        autoLevelCapping: 0,   // ⚡ lowest rendition only — minimal bandwidth
+                        startLevel: 0,
+                        capLevelToPlayerSize: false,
+                        maxBufferLength: 8,
+                        maxMaxBufferLength: 24,
+                        enableWorker: true,
+                        lowLatencyMode: false
+                    });
+                    hls.loadSource(url);
+                    hls.attachMedia(v);
+                    hls.on(Hls.Events.ERROR, (_evt, data) => {
+                        if (data && data.fatal) handleSourceFailure();
+                    });
+                } catch (e) {
+                    handleSourceFailure();
+                }
+            } else if (isHls && v.canPlayType('application/vnd.apple.mpegurl')) {
+                v.src = url;               // native HLS fallback (Safari)
+            } else {
+                v.src = url;               // progressive file
+            }
+        }
+
+        function handleSourceFailure() {
+            // One resync attempt using the main player's (possibly refreshed)
+            // source — covers the 5-minute signed-token rotation. Then disable.
+            if (!resyncAttempted) {
+                resyncAttempted = true;
+                const p = getSafePlayer();
+                const refreshed = p ? p.currentSource() : null;
+                if (refreshed && refreshed.src && scrubber) {
+                    try {
+                        if (hls) { hls.destroy(); hls = null; }
+                        attachSource(scrubber, refreshed.src);
+                        return;
+                    } catch (e) { /* fall through */ }
+                }
+            }
+            disablePreview();
+        }
+
+        function onScrubberError() {
+            // Media error on the scrubber element itself
+            if (scrubber && scrubber.error) handleSourceFailure();
+        }
+
+        function disablePreview() {
+            disabled = true;
+            if (shimmerEl) shimmerEl.style.display = 'none';
+            if (canvas) canvas.style.display = 'none';
+        }
+
+        // ---- frame painting -------------------------------------------------------
+        function paintFrameTo(canvasEl, videoEl) {
+            const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+            if (!vw || !vh) return false;
+            const c2d = canvasEl.getContext('2d');
+            // cover-crop so any aspect ratio fills the 16:9 preview box cleanly
+            const scale = Math.max(CW / vw, CH / vh);
+            const sw = CW / scale, sh = CH / scale;
+            const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
+            try {
+                c2d.drawImage(videoEl, sx, sy, sw, sh, 0, 0, CW, CH);
+                return true;
+            } catch (e) {
+                // Tainted canvas (CORS) — never retry, fall back to time-only
+                disablePreview();
+                return false;
+            }
+        }
+
+        function onScrubberSeeked() {
+            seeking = false;
+            if (!scrubber) return;
+            const t = scrubber.currentTime;
+            const bucket = Math.floor(t / BUCKET_SECONDS) * BUCKET_SECONDS;
+
+            // Paint + cache
+            const cacheCanvas = document.createElement('canvas');
+            cacheCanvas.width = CW; cacheCanvas.height = CH;
+            if (paintFrameTo(cacheCanvas, scrubber)) {
+                // LRU: re-insert to move to newest position
+                if (frameCache.has(bucket)) frameCache.delete(bucket);
+                frameCache.set(bucket, { canvas: cacheCanvas });
+                if (frameCache.size > MAX_CACHE_ENTRIES) {
+                    const oldest = frameCache.keys().next().value;
+                    frameCache.delete(oldest);
+                }
+                if (bucket === Math.floor((currentHoverTime || -1) / BUCKET_SECONDS) * BUCKET_SECONDS) {
+                    blitFrame(bucket);
+                }
+            }
+
+            // Chain the next queued hover position, if any
+            if (pendingSeekTime != null) {
+                const next = pendingSeekTime;
+                pendingSeekTime = null;
+                requestFrameAt(next);
+            }
+        }
+
+        function blitFrame(bucket) {
+            const entry = frameCache.get(bucket);
+            if (!entry) return;
+            const c2d = ctx;
+            c2d.clearRect(0, 0, CW, CH);
+            c2d.drawImage(entry.canvas, 0, 0);
+            canvas.style.display = 'block';
+            if (shimmerEl) shimmerEl.style.display = 'none';
+            displayedBucket = bucket;
+        }
+
+        function requestFrameAt(time) {
+            if (disabled || !scrubber) return;
+            if (!isFinite(time) || time < 0) return;
+
+            const dur = scrubber.duration;
+            if (isFinite(dur) && dur > 0) time = Math.min(time, Math.max(dur - 0.25, 0));
+
+            const bucket = Math.floor(time / BUCKET_SECONDS) * BUCKET_SECONDS;
+
+            // Cached? → instant paint
+            if (frameCache.has(bucket)) {
+                blitFrame(bucket);
+                return;
+            }
+
+            if (seeking) {
+                pendingSeekTime = time;   // latest hover wins; chained after seeked
+                return;
+            }
+
+            if (scrubber.readyState >= 1 && isFinite(scrubber.duration)) {
+                seeking = true;
+                if (shimmerEl && displayedBucket !== bucket) shimmerEl.style.display = 'block';
+                try {
+                    scrubber.currentTime = bucket + 0.1;   // nudge off keyframe boundary
+                } catch (e) {
+                    seeking = false;
+                    disablePreview();
+                }
+            }
+            // readyState too low → metadata still loading; the next mousemove
+            // retries, and nothing breaks visibly.
+        }
+
+        function ensureScrubber() {
+            if (disabled) return;
+            if (!scrubber) {
+                // Need hls.js (desktop Chrome/Firefox can't play HLS natively)
+                // or native HLS support before the scrubber can work at all.
+                if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+                    hlsLibReady = true;
+                } else if (!nativeHlsOk && !hlsLibReady) {
+                    return;   // library still downloading; retry on next hover
+                }
+                scrubber = createScrubber();
+            }
+        }
+
+        // ---- hover plumbing ---------------------------------------------------------
+        let lastMoveTs = 0;
+        const onMouseMove = (e) => {
+            if (disabled) return;
+            const activePlayer = getSafePlayer();
+            if (!activePlayer) return;
+
+            const rect = progressBar.getBoundingClientRect();
+            if (rect.width <= 0) return;
+            const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            const dur = activePlayer.duration();
+            if (!isFinite(dur) || dur <= 0) return;   // duration not known yet
+            const time = percent * dur;
+
+            // keep the old behaviour: move the tooltip + show the time
+            thumbnailTime.textContent = controlsFormatTime(time);
+            // 🛠 UI AUDIT FIX: clamp the preview box so it stays fully inside
+            // the video wrapper near the left/right edges (it is 160px wide;
+            // half of that would otherwise clip outside at the extremes).
+            const clampedPercent = Math.max(0.13, Math.min(0.87, percent));
+            progressThumbnail.style.left = `${clampedPercent * 100}%`;
+            progressThumbnail.style.display = 'block';   // CSS opacity animates it
+
+            currentHoverTime = time;
+            ensureScrubber();
+            if (disabled) return;
+
+            // Throttle seek requests to one per ~70ms; cached frames paint instantly
+            const now = Date.now();
+            const bucket = Math.floor(time / BUCKET_SECONDS) * BUCKET_SECONDS;
+            if (frameCache.has(bucket)) {
+                blitFrame(bucket);
+            } else if (now - lastMoveTs > 70) {
+                lastMoveTs = now;
+                requestFrameAt(time);
+            } else {
+                // schedule a trailing request so the final position still loads
+                clearTimeout(onMouseMove._trailing);
+                onMouseMove._trailing = setTimeout(() => requestFrameAt(currentHoverTime || time), 90);
+            }
+        };
+
+        const onMouseLeave = () => {
+            progressThumbnail.style.display = 'none';
+            currentHoverTime = null;
+            displayedBucket = null;
+            pendingSeekTime = null;
+            if (shimmerEl) shimmerEl.style.display = 'none';
+            clearTimeout(onMouseMove._trailing);
+        };
+
+        // Local time formatter (mirrors PremiumControlsManager.formatTime)
+        function controlsFormatTime(seconds) {
+            if (!isFinite(seconds) || seconds < 0) return '0:00';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            return h > 0
+                ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+                : `${m}:${String(s).padStart(2, '0')}`;
+        }
+
+        progressBar.addEventListener('mousemove', onMouseMove);
+        progressBar.addEventListener('mouseleave', onMouseLeave);
+
+        const destroy = () => {
+            if (destroyed) return;
+            destroyed = true;
+            progressBar.removeEventListener('mousemove', onMouseMove);
+            progressBar.removeEventListener('mouseleave', onMouseLeave);
+            clearTimeout(onMouseMove._trailing);
+            try {
+                if (scrubber) {
+                    scrubber.removeEventListener('seeked', onScrubberSeeked);
+                    scrubber.removeEventListener('error', onScrubberError);
+                    try { scrubber.pause(); } catch (e) {}
+                    scrubber.removeAttribute('src');
+                    try { scrubber.load(); } catch (e) {}
+                    if (scrubber.parentNode) scrubber.parentNode.removeChild(scrubber);
+                }
+                if (hls) { hls.destroy(); hls = null; }
+                frameCache.clear();
+            } catch (e) { /* never break teardown */ }
+        };
+
+        return { destroy };
+    }
+
     async function openVideoPlayer(link, tierId) {
         // Extract video ID and library ID
         const videoIdMatch = link.url.match(/\/([a-f0-9-]{36})\//);
@@ -4471,7 +5063,10 @@ if (document.getElementById('appContainer')) {
         
         const numericTierId = link.tier_id || 1;
         analyticsTracker.setVideoTierMapping(videoId, numericTierId);
-        
+
+        // ⚡ SEEK PREVIEW: handle to the hover-preview engine (desktop only)
+        let seekPreview = { destroy() {} };
+
         // Create modal
         const modal = document.createElement('div');
         modal.className = 'premium-player-modal';
@@ -4561,8 +5156,10 @@ if (document.getElementById('appContainer')) {
                             <div class="premium-progress-buffered"></div>
                             <div class="premium-progress-played"></div>
                             <div class="premium-progress-handle" style="position:absolute; top:50%; width:12px; height:12px; background:#fff; border-radius:50%; transform:translate(-50%, -50%); margin-top:-1px;"></div>
-                            <div class="premium-progress-thumbnail" style="display: none; position:absolute; bottom:20px; left:0; background:#000; border:2px solid #fff; padding:2px;">
-                                <div class="premium-thumbnail-time" style="color:white; font-size:12px;">0:00</div>
+                            <div class="premium-progress-thumbnail">
+                                <canvas class="premium-thumbnail-canvas" width="160" height="90" style="position:absolute; inset:0; width:100%; height:100%; display:none;"></canvas>
+                                <div class="premium-thumbnail-loading" style="position:absolute; inset:0; display:none; background:linear-gradient(110deg, #101010 8%, #232323 18%, #101010 33%); background-size:200% 100%; animation:thumbShimmer 1.1s linear infinite;"></div>
+                                <div class="premium-thumbnail-time">0:00</div>
                             </div>
                         </div>
                     </div>
@@ -4794,7 +5391,21 @@ if (document.getElementById('appContainer')) {
             gestureIndicator: modal.querySelector('.premium-gesture-indicator'),
             shortcutsTooltip: modal.querySelector('.premium-shortcuts-tooltip')
         };
-        
+
+        // ⚡ SEEK PREVIEW: real frame previews when hovering the progress bar.
+        // Desktop only (touch devices have no hover). Runs on the same HLS URL
+        // at the lowest rendition; degrades gracefully to the time tooltip.
+        if (!isMobile && controlsManager.elements.progressBar && controlsManager.elements.progressThumbnail) {
+            seekPreview = setupSeekPreviewScrubber({
+                modal,
+                player,
+                progressBar: controlsManager.elements.progressBar,
+                progressThumbnail: controlsManager.elements.progressThumbnail,
+                thumbnailTime: controlsManager.elements.thumbnailTime,
+                isMobileDevice: isMobile
+            });
+        }
+
         // ✅ FIX 5: Mobile-specific touch improvements
         if (isMobile) {
             // Disable default touch actions on video element
@@ -5352,25 +5963,8 @@ if (document.getElementById('appContainer')) {
             }, { passive: false });
         }
         
-        // Progress bar hover - show thumbnail preview
-        controlsManager.elements.progressBar.addEventListener('mousemove', (e) => {
-            const activePlayer = getSafePlayer();
-            if (!activePlayer) return;
-            
-            const rect = controlsManager.elements.progressBar.getBoundingClientRect();
-            const percent = (e.clientX - rect.left) / rect.width;
-            const time = percent * activePlayer.duration();
-            
-            if (isFinite(time)) {
-                controlsManager.elements.thumbnailTime.textContent = controlsManager.formatTime(time);
-                controlsManager.elements.progressThumbnail.style.left = `${percent * 100}%`;
-                controlsManager.elements.progressThumbnail.style.display = 'block';
-            }
-        });
-        
-        controlsManager.elements.progressBar.addEventListener('mouseleave', () => {
-            controlsManager.elements.progressThumbnail.style.display = 'none';
-        });
+        // Progress bar hover — the ⚡ SEEK PREVIEW engine owns these events
+        // (real frame capture above the bar). Nothing else to do here.
         
         // Settings menu
         controlsManager.elements.settingsBtn.addEventListener('click', (e) => {
@@ -5550,7 +6144,10 @@ if (document.getElementById('appContainer')) {
         const closePlayer = () => {
             // ✅ NEW: Clear session tracking
             analyticsTracker.clearSession(videoId);
-            
+
+            // ⚡ SEEK PREVIEW: tear down the hidden scrubber + frame cache
+            try { seekPreview.destroy(); } catch (e) { /* never break close */ }
+
             // Stop token refresh
             tokenRefreshManager.stopRefresh(videoId);
             

@@ -1,4 +1,11 @@
 /* Define CSS custom properties for theming */
+/* 🛠 UI AUDIT FIX: predictable sizing everywhere — prevents the .container
+   (width:95% + horizontal padding) from exceeding the viewport and causing
+   a page-wide horizontal scrollbar on mobile and tablet. */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
 :root {
     --transition-duration: 0.3s;
     --transition-timing: cubic-bezier(0.4, 0, 0.2, 1);
@@ -131,6 +138,8 @@ header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;              /* 🛠 UI AUDIT FIX: wrap on narrow phones */
+    gap: 8px;
     border-bottom: 1px solid var(--color-border-secondary);
     padding-bottom: 10px;
     margin-bottom: 30px;
@@ -865,6 +874,10 @@ button:disabled {
     margin-bottom: 10px;
     color: var(--color-text-link);
     transition: color var(--transition-duration);
+    /* 🛠 UI AUDIT FIX: long unbroken words (URLs, single-word titles) were
+       hard-clipped by the card's overflow:hidden with no wrap at all. */
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .link-card.locked h3 {
@@ -875,6 +888,9 @@ button:disabled {
     margin-bottom: 5px;
     color: var(--color-text-secondary);
     transition: color var(--transition-duration);
+    /* 🛠 UI AUDIT FIX: see h3 — wrap long unbroken strings instead of clipping */
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .link-card a {
@@ -1151,6 +1167,43 @@ button:disabled {
 
 .skeleton-card .skeleton-text.short {
     width: 60%;
+}
+
+/* ============================================================
+   ⚡ PERF (Tier Load Speedup) — lazy category-row placeholders.
+   Below-the-fold rows render as skeletons first and materialize
+   when scrolled near or during browser idle time.
+   ============================================================ */
+.category-row-lazy {
+    min-height: 220px;
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px;
+}
+
+.lazy-row-skeleton {
+    display: flex;
+    gap: 12px;
+    overflow: hidden;
+    padding: 2px 0;
+}
+
+.skeleton-row-card {
+    flex: 0 0 220px;
+    max-width: 220px;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: var(--color-background-skeleton);
+    border: 1px solid var(--color-border-card);
+}
+
+.skeleton-row-card .skeleton-thumb {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+}
+
+.skeleton-row-card .skeleton-line {
+    height: 12px;
+    margin: 10px;
 }
 
 /* --- Theme Toggle Styles --- */
@@ -1663,7 +1716,9 @@ button:disabled {
 /* Caption Area - Bottom Overlay */
 .pswp__caption {
     background: linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%) !important;
-    padding: 30px 20px 20px !important;
+    /* 🛠 UI AUDIT FIX: add the iOS home-indicator inset so captions are never
+       sitting underneath it on notched iPhones. */
+    padding: 30px 20px calc(20px + env(safe-area-inset-bottom, 0px)) !important;
     backdrop-filter: none !important;
 }
 
@@ -1843,12 +1898,18 @@ button:disabled {
     padding: 0 15px;
     position: relative;
     z-index: 10; /* Lowered: was blocking header buttons on mobile */
-    overflow: visible; /* Don't clip */
+    /* 🛠 UI AUDIT FIX: was overflow:visible — allowed slide bleed + horizontal
+       page scroll on mobile. Clipped now that the swiper itself is safe. */
+    overflow: hidden;
 }
 
 .announcement-swiper {
     border-radius: 8px;
-    overflow: visible !important; /* Allow buttons to show */
+    /* 🛠 UI AUDIT FIX: was overflow:visible !important — adjacent Swiper
+       slides bled outside the banner over surrounding content and widened
+       the page on phones. Swiper's default clipping is restored; the nav
+       buttons still overhang via their own absolute positioning. */
+    overflow: hidden;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
@@ -2311,6 +2372,12 @@ body.theme-dark .announcement-error {
     flex: 1;
     text-align: center;
     padding: 0 20px;
+    /* 🛠 UI AUDIT FIX: long titles wrapped inside the absolutely-positioned
+       header and covered the video. Truncate to one line instead. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0; /* allow the flex item to shrink so ellipsis can engage */
 }
 
 .premium-header-spacer {
@@ -2436,6 +2503,11 @@ body.theme-dark .announcement-error {
 .premium-progress-bar:hover .premium-progress-thumbnail {
     opacity: 1;
     transform: translateX(-50%) translateY(-12px) scale(1);
+}
+
+/* ⚡ Seek preview shimmer (shown while the hovered frame is being fetched) */
+@keyframes thumbShimmer {
+    to { background-position-x: -200%; }
 }
 
 .premium-thumbnail-time {
@@ -3709,10 +3781,11 @@ body.theme-dark .announcement-error {
    Removed on modal close via classList.remove('player-active')
    ============================================================================ */
 body.player-active {
+    /* 🛠 UI AUDIT FIX: removed position:fixed/width/height — that pattern
+       snapped the page to the top on iOS when the player opened and lost
+       scroll position on close. overflow:hidden alone locks scrolling and
+       the JS already restores the exact scroll offset on close. */
     overflow: hidden;
-    position: fixed;
-    width: 100%;
-    height: 100%;
 }
 
 /* ============================================================================
@@ -3928,7 +4001,10 @@ body.player-active {
     
     /* Gallery Counter Overlay - Top Right */
     .mobile-gallery-counter {
-        position: fixed;
+        /* 🛠 UI AUDIT FIX: was position:fixed — the counter floated over the
+           whole page (including the header) when scrolling away from the
+           gallery. Anchor it to the slider instead. */
+        position: absolute;
         top: 20px;
         right: 20px;
         background: rgba(0, 0, 0, 0.8);
@@ -4212,7 +4288,10 @@ body.player-active {
 
 .content-type-badge {
     position: absolute;
-    top: 12px;
+    /* 🛠 UI AUDIT FIX: was top:12px right:12px — the exact same corner as
+       .new-badge, so any "New" card had the type pill painted directly on
+       top of the NEW pill. Stack it BELOW the NEW badge instead. */
+    top: 44px;
     right: 12px;
     font-size: 0.7em;
     font-weight: 700;
@@ -4250,6 +4329,14 @@ body.player-active {
 .hero-card .content-type-badge {
     top: 14px;
     right: 90px; /* clear of the ::after "Latest" label */
+}
+
+/* 🛠 UI AUDIT FIX: on hero cards the NEW badge collided with the "★ Latest"
+   pill (same corner). Drop the NEW badge below it, mirroring the EA badge
+   offset. */
+.hero-card .new-badge {
+    top: 46px;
+    right: 14px;
 }
 
 
@@ -4505,9 +4592,14 @@ body.player-active {
     padding: 6px 10px;
     border: 1px solid #d1d5db;
     border-radius: 6px;
-    font-size: 0.88rem;
-    background: white;
+    /* 🛠 UI AUDIT FIX: was 0.88rem (~14px) — iOS Safari auto-zooms any focused
+       control under 16px. Also use the themed card background instead of a
+       hardcoded white chip (dark mode). */
+    font-size: 16px;
+    background: var(--color-background-card, white);
+    color: var(--color-text-primary, inherit);
     cursor: pointer;
+    max-width: 100%;
 }
 
 .page-size-group .filter-select:focus {
@@ -4708,5 +4800,79 @@ body.player-active {
     }
     .mobile-gallery-hint {
         animation: none !important;
+    }
+}
+
+/* ============================================================================
+   🛠 UI/UX AUDIT PATCHES (responsive fixes) — appended as a single block
+   so every cross-device fix is easy to find and review.
+   ============================================================================ */
+
+/* ── Phones ≤768px: header stacking, tap targets, badge stacking ── */
+@media (max-width: 768px) {
+    /* Header: stack title above the action buttons instead of squeezing
+       both onto one line (title + 4 buttons cannot fit at 375px). */
+    header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .header-actions {
+        flex-wrap: wrap;
+        gap: 8px;
+        max-width: 100%;
+    }
+
+    h1 {
+        font-size: 1.4rem;
+        overflow-wrap: break-word;
+    }
+
+    /* Tap targets: bump interactive controls to ~44px (Apple HIG). */
+    .scroll-arrow {
+        width: 44px;
+        height: 44px;
+    }
+
+    .cat-pill {
+        padding: 10px 16px;
+    }
+
+    .copy-btn {
+        padding: 10px 14px;
+    }
+
+    .announcement-dismiss {
+        width: 40px;
+        height: 40px;
+    }
+
+    /* Badge stacking on cards: NEW badge sits at top:8px on mobile —
+       place the Video/Gallery type pill BELOW it instead of on top. */
+    .content-type-badge {
+        top: 36px;
+        right: 8px;
+    }
+}
+
+/* ── Very narrow phones ≤480px: Early Access badge no longer spills ── */
+@media (max-width: 480px) {
+    .early-access-badge {
+        top: 36px;
+        max-width: 70%;
+    }
+
+    .early-access-badge .ea-badge-text,
+    .early-access-badge .ea-badge-sub {
+        white-space: normal;   /* wrap instead of painting outside the pill */
+        text-align: right;
+    }
+}
+
+/* ── Touch devices: the hover-only seek preview must never get stuck ── */
+@media (hover: none) {
+    .premium-progress-thumbnail {
+        display: none !important;
     }
 }
