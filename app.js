@@ -3703,30 +3703,36 @@ if (document.getElementById('appContainer')) {
         const allLinks = Object.values(contentData).flat();
         if (allLinks.length === 0) return;
 
-        // For each new link, find its category row (by category name) and
+        // For each new link, find its category row (by FULL category path) and
         // append the card to the scroll track. If the row doesn't exist yet,
         // create a new row.
         allLinks.forEach(link => {
-            const cat = link.category || 'General Content';
+            const path = (link.category_path && link.category_path.length)
+                ? link.category_path
+                : (link.category ? [link.category] : []);
+            const cat = path.length ? path.join('/') : 'General Content';
             const tierName = Object.keys(contentData).find(t =>
                 contentData[t].some(l => l === link)
             ) || Object.keys(contentData)[0];
 
-            // Find existing row for this category
+            // Find existing row for this category path
             let row = linksContentContainer.querySelector(
-                `.category-row[data-category="${CSS.escape(cat)}"]`
+                `.category-row[data-category-path="${CSS.escape(cat)}"]`
             );
 
             if (!row) {
-                // Create new row for this category
+                // Create new row for this category path
+                const parts = cat.split('/');
+                const isSub = parts.length > 1;
                 row = document.createElement('div');
-                row.className = 'category-row category-section';
-                row.setAttribute('data-category', cat);
-                row.dataset.parentCategory = (link.category_path && link.category_path[0]) || cat;
+                row.className = 'category-row category-section' + (isSub ? ' subcategory-row' : '');
+                row.setAttribute('data-category', parts[parts.length - 1]);
+                row.dataset.categoryPath = cat;
+                row.dataset.parentCategory = parts[0];
 
                 const header = document.createElement('h2');
                 header.className = 'category-header';
-                header.textContent = cat;
+                header.textContent = isSub ? parts.join(' ▸ ') : parts[0];
                 row.appendChild(header);
 
                 const wrapper = document.createElement('div');
@@ -4171,22 +4177,48 @@ if (document.getElementById('appContainer')) {
         heroSection.appendChild(buildCard(heroLink, heroTierName, true));
         linksContentContainer.appendChild(heroSection);
 
-        // ── 2. GROUP remaining links by category ────────────────────────────────
-        const groups = {}; // { categoryName: [ { link, tierName } ] }
+        // ── 2. GROUP remaining links by FULL category path ─────────────────────
+        // Keyed "Root" or "Root/Sub" — NEVER by the bare leaf name. Two different
+        // categories can each own a sub called "misc"; grouping by leaf name
+        // would merge them into one confusing mixed row.
+        const groups = {}; // { 'Root' | 'Root/Sub': [ { link, tierName } ] }
 
         allLinks.slice(1).forEach(link => {
-            const cat      = link.category || 'General Content';
+            const path = (link.category_path && link.category_path.length)
+                ? link.category_path
+                : (link.category ? [link.category] : []);
+            const key      = path.length ? path.join('/') : 'General Content';
             const tierName = tierNameByLink.get(link) || firstTierName;
 
-            if (!groups[cat]) groups[cat] = [];
-            groups[cat].push({ link, tierName });
+            if (!groups[key]) groups[key] = [];
+            groups[key].push({ link, tierName });
         });
 
-        // Each tier render starts with the pill bar on "All", so the stored category
-        // selection must start clear too (otherwise a previous tier's category leaks
-        // into this tier's rows while the UI shows "All").
+        // Every tier render starts in BROWSE MODE: no category selected, no rows
+        // shown — the user picks a category pill first (or searches). Clear any
+        // previous tier's selection so it can't leak into this one.
         appState.currentCategoryId = null;
         appState.currentCategoryPath = [];
+
+        // Link counts per root / per sub — shown on the picker pills so the
+        // deliberately quiet start state still says where the content lives.
+        const rootLinkCounts = new Map();
+        const subLinkCounts = new Map();
+        allLinks.forEach(link => {
+            const path = (link.category_path && link.category_path.length)
+                ? link.category_path
+                : (link.category ? [link.category] : []);
+            if (!path.length) return;
+            const root = path[0];
+            rootLinkCounts.set(root, (rootLinkCounts.get(root) || 0) + 1);
+            if (path.length > 1) {
+                const subKey = root + '/' + path[1];
+                subLinkCounts.set(subKey, (subLinkCounts.get(subKey) || 0) + 1);
+            }
+        });
+        if (groups['General Content']) {
+            rootLinkCounts.set('General Content', groups['General Content'].length);
+        }
 
         // ─── 3. CATEGORY PILL BAR — Iteration 5: TWO-ROW (parent + child) + breadcrumb ─
         // Build a flat list of categories from the links' category_path field.
@@ -4206,7 +4238,15 @@ if (document.getElementById('appContainer')) {
         });
 
         const parentList = Array.from(parentCategories).sort();
+        // Uncategorized links would be unreachable in browse mode without their
+        // own pill — give them a "General Content" pill (with count).
+        if (groups['General Content'] && !parentList.includes('General Content')) {
+            parentList.push('General Content');
+        }
         const hasMultipleParents = parentList.length > 1 || Object.keys(childCategoriesByParent).length > 0;
+        // Stored globally so the filter/breadcrumb handlers outside this closure
+        // know which interaction model the current tier uses.
+        appState.categoryBrowseActive = hasMultipleParents;
 
         if (hasMultipleParents) {
             // Breadcrumb (shows current selection path)
@@ -4226,22 +4266,25 @@ if (document.getElementById('appContainer')) {
             });
             linksContentContainer.appendChild(breadcrumb);
 
-            // Row 1: parent categories
+            // Row 1: parent categories — NO "All" pill. The tier opens with
+            // nothing selected (picker state): pills + counts + hint only.
+            // Clicking a pill is what loads that category's content.
             const parentBar = document.createElement('div');
             parentBar.className = 'category-pill-bar parent-bar';
             parentBar.id = 'parentCategoryBar';
 
-            const allParentPill = document.createElement('button');
-            allParentPill.className = 'cat-pill active';
-            allParentPill.textContent = 'All';
-            allParentPill.dataset.parent = '__all__';
-            parentBar.appendChild(allParentPill);
-
             parentList.forEach(parent => {
                 const pill = document.createElement('button');
                 pill.className = 'cat-pill';
+                pill.title = parent === 'General Content'
+                    ? 'Links that are not in any category'
+                    : `Show everything in "${parent}"`;
                 pill.textContent = parent;
                 pill.dataset.parent = parent;
+                const count = document.createElement('span');
+                count.className = 'pill-count';
+                count.textContent = String(rootLinkCounts.get(parent) || 0);
+                pill.appendChild(count);
                 parentBar.appendChild(pill);
             });
 
@@ -4254,7 +4297,7 @@ if (document.getElementById('appContainer')) {
                 // Update child bar
                 updateChildBar(selectedParent);
                 // Apply filter
-                applyCategoryFilter(selectedParent === '__all__' ? '' : selectedParent);
+                applyCategoryFilter(selectedParent);
             });
 
             linksContentContainer.appendChild(parentBar);
@@ -4288,6 +4331,25 @@ if (document.getElementById('appContainer')) {
 
             linksContentContainer.appendChild(childBar);
 
+            // Picker-state hint: shown while no category is selected. Content
+            // rows replace it the moment a pill (or a search) is used.
+            const browseHint = document.createElement('div');
+            browseHint.className = 'browse-hint';
+            browseHint.id = 'browseHint';
+            const hintIcon = document.createElement('div');
+            hintIcon.className = 'browse-hint-icon';
+            hintIcon.textContent = '👆';
+            const hintText = document.createElement('div');
+            hintText.className = 'browse-hint-main';
+            hintText.textContent = 'Pick a category above to browse its content';
+            const hintSub = document.createElement('div');
+            hintSub.className = 'browse-hint-sub';
+            hintSub.textContent = 'Subcategories appear after you pick a category — or use search to find anything across the whole tier.';
+            browseHint.appendChild(hintIcon);
+            browseHint.appendChild(hintText);
+            browseHint.appendChild(hintSub);
+            linksContentContainer.appendChild(browseHint);
+
             // Helper: update the child bar based on selected parent
             function updateChildBar(selectedParent) {
                 const childBarEl = document.getElementById('childCategoryBar');
@@ -4310,6 +4372,10 @@ if (document.getElementById('appContainer')) {
                     pill.className = 'cat-pill';
                     pill.textContent = child;
                     pill.dataset.child = child;
+                    const count = document.createElement('span');
+                    count.className = 'pill-count';
+                    count.textContent = String(subLinkCounts.get(selectedParent + '/' + child) || 0);
+                    pill.appendChild(count);
                     childBarEl.appendChild(pill);
                 });
             }
@@ -4327,16 +4393,21 @@ if (document.getElementById('appContainer')) {
 
         // Builds one full category row (cards + arrows) — extracted verbatim
         // from the old synchronous loop.
+        // category = full path key ("Root" or "Root/Sub"). Subcategory rows get
+        // a distinct look and a "Root ▸ Sub" header so same-named subs under
+        // different categories can never be confused with each other.
         function buildCategoryRow(category, items) {
+            const parts = String(category).split('/');
+            const isSub = parts.length > 1;
             const row = document.createElement('div');
-            row.className = 'category-row category-section';
-            row.setAttribute('data-category', category);
-            const firstPath = (items[0] && items[0].link && items[0].link.category_path) || [];
-            if (firstPath.length > 0) row.dataset.parentCategory = firstPath[0];
+            row.className = 'category-row category-section' + (isSub ? ' subcategory-row' : '');
+            row.setAttribute('data-category', parts[parts.length - 1]);
+            row.dataset.categoryPath = category;
+            row.dataset.parentCategory = parts[0];
 
             const header = document.createElement('h2');
             header.className = 'category-header';
-            header.textContent = category;
+            header.textContent = isSub ? parts.join(' ▸ ') : parts[0];
             row.appendChild(header);
 
             // Wrapper holds left arrow + track + right arrow
@@ -4399,15 +4470,17 @@ if (document.getElementById('appContainer')) {
 
         // Lightweight placeholder shown until the real row is built.
         function makeLazyRowPlaceholder(category, items) {
+            const parts = String(category).split('/');
+            const isSub = parts.length > 1;
             const row = document.createElement('div');
-            row.className = 'category-row category-section category-row-lazy';
-            row.setAttribute('data-category', category);
-            const firstPath = (items[0] && items[0].link && items[0].link.category_path) || [];
-            if (firstPath.length > 0) row.dataset.parentCategory = firstPath[0];
+            row.className = 'category-row category-section category-row-lazy' + (isSub ? ' subcategory-row' : '');
+            row.setAttribute('data-category', parts[parts.length - 1]);
+            row.dataset.categoryPath = category;
+            row.dataset.parentCategory = parts[0];
 
             const header = document.createElement('h2');
             header.className = 'category-header';
-            header.textContent = category;
+            header.textContent = isSub ? parts.join(' ▸ ') : parts[0];
             row.appendChild(header);
 
             const skel = document.createElement('div');
@@ -4435,19 +4508,21 @@ if (document.getElementById('appContainer')) {
                 card.style.display = (isViewMatch && isTypeMatch && isQueryMatch) ? '' : 'none';
             });
 
-            // Category-path visibility (mirrors applyCategoryFilter row logic)
+            // Category-path visibility (mirrors applyCategoryFilter row logic,
+            // matched on the row's FULL path — "Root" or "Root/Sub")
             const path = appState.currentCategoryId || '';
+            const browseNeutral = fs.view === 'All' && fs.type === 'All' && query === '';
             if (path) {
-                const rowCategory = row.dataset.category || '';
+                const rowPath = row.dataset.categoryPath || row.dataset.category || '';
+                const rowRoot = rowPath.split('/')[0];
                 if (path.includes('/')) {
-                    row.style.display = (rowCategory === path.split('/')[1]) ? '' : 'none';
+                    row.style.display = (rowPath === path || rowPath.startsWith(path + '/')) ? '' : 'none';
                 } else {
-                    const anyCardMatches = Array.from(row.querySelectorAll('.link-card')).some(card => {
-                        const cardPath = card.dataset.categoryPath || '';
-                        return cardPath.split('||').some(p => p.startsWith(path + '/') || p === path);
-                    });
-                    row.style.display = (rowCategory === path || row.dataset.parentCategory === path || anyCardMatches) ? '' : 'none';
+                    row.style.display = (rowRoot === path.split('/')[0]) ? '' : 'none';
                 }
+            } else if (browseNeutral) {
+                // Browse mode, nothing picked yet — freshly mounted rows stay hidden
+                row.style.display = 'none';
             }
         };
 
@@ -4500,42 +4575,66 @@ if (document.getElementById('appContainer')) {
             }
         };
 
-        // Expose to sibling filter functions (applyFilters / applyCategoryFilter)
+        // Expose to sibling filter functions (applyFilters / applyCategoryFilter).
+        // mountRowsForRoot: browse-mode helper — materializes ONLY the selected
+        // category's rows from the pending queue, without building the rest.
         if (isInitial) {
-            window.__activeContentRows = { flushPendingRows };
+            const entryRoot = (entry) => String(entry[0] || '').split('/')[0];
+            const mountRowsForRoot = (rootName) => {
+                if (!rootName) return;
+                for (let i = pendingRows.length - 1; i >= 0; i--) {
+                    if (entryRoot(pendingRows[i].entry) === rootName) {
+                        const p = pendingRows.splice(i, 1)[0];
+                        mountRow(p.entry, p.placeholder);
+                    }
+                }
+                if (!pendingRows.length) detachRowSchedulers();
+            };
+            window.__activeContentRows = { flushPendingRows, mountRowsForRoot };
         }
 
-        rowEntries.forEach((entry, index) => {
-            if (index < IMMEDIATE_ROW_COUNT) {
-                mountRow(entry, null);
-            } else {
-                const placeholder = makeLazyRowPlaceholder(entry[0], entry[1]);
-                placeholder.__rowEntry = entry;
-                linksContentContainer.appendChild(placeholder);
-                pendingRows.push({ entry, placeholder });
+        if (hasMultipleParents) {
+            // BROWSE MODE (category-first): the tier opens on the picker state —
+            // NO rows in the DOM at all. Rows materialize when the user picks a
+            // category (mountRowsForRoot) or searches/filters (flushPendingRows).
+            // Fastest possible first paint, zero clutter, and the two-"misc"
+            // confusion can't happen because rows only ever appear inside one
+            // selected category.
+            rowEntries.forEach(entry => pendingRows.push({ entry, placeholder: null }));
+        } else {
+            // Single-category tier (no pill bar) — show the content directly.
+            rowEntries.forEach((entry, index) => {
+                if (index < IMMEDIATE_ROW_COUNT) {
+                    mountRow(entry, null);
+                } else {
+                    const placeholder = makeLazyRowPlaceholder(entry[0], entry[1]);
+                    placeholder.__rowEntry = entry;
+                    linksContentContainer.appendChild(placeholder);
+                    pendingRows.push({ entry, placeholder });
 
-                if ('IntersectionObserver' in window) {
-                    if (!rowObserver) {
-                        rowObserver = new IntersectionObserver((obsEntries, obs) => {
-                            obsEntries.forEach(en => {
-                                if (!en.isIntersecting) return;
-                                const el = en.target;
-                                obs.unobserve(el);
-                                const idx = pendingRows.findIndex(p => p.placeholder === el);
-                                if (idx !== -1) {
-                                    const [p] = pendingRows.splice(idx, 1);
-                                    mountRow(p.entry, el);
-                                    if (!pendingRows.length) detachRowSchedulers();
-                                }
-                            });
-                        }, { rootMargin: '500px 0px' });
+                    if ('IntersectionObserver' in window) {
+                        if (!rowObserver) {
+                            rowObserver = new IntersectionObserver((obsEntries, obs) => {
+                                obsEntries.forEach(en => {
+                                    if (!en.isIntersecting) return;
+                                    const el = en.target;
+                                    obs.unobserve(el);
+                                    const idx = pendingRows.findIndex(p => p.placeholder === el);
+                                    if (idx !== -1) {
+                                        const [p] = pendingRows.splice(idx, 1);
+                                        mountRow(p.entry, el);
+                                        if (!pendingRows.length) detachRowSchedulers();
+                                    }
+                                });
+                            }, { rootMargin: '500px 0px' });
+                        }
+                        rowObserver.observe(placeholder);
                     }
-                    rowObserver.observe(placeholder);
                 }
-            }
-        });
+            });
 
-        if (pendingRows.length) scheduleIdleBuild();
+            if (pendingRows.length) scheduleIdleBuild();
+        }
 
         // Flag for empty-state check
         if (allLinks.length === 0 && isInitial) {
@@ -4548,18 +4647,32 @@ if (document.getElementById('appContainer')) {
         }
     }
 
-    // Iteration 5: apply category filter — shows/hides category rows based on
-    // the selected path. Path format: '' (all) | 'Vanc' | 'Vanc/Elina'
+    // Iteration 5 + browse mode: apply category filter — shows/hides category
+    // rows based on the selected path. Path format: '' (nothing picked —
+    // picker state) | 'Vanc' | 'Vanc/Elina'. Rows match on their FULL path
+    // ("Vanc/misc"), so two categories that both own a "misc" sub stay fully
+    // separate. In browse mode nothing renders until a pill is clicked; while
+    // a search/filter is active, category selection is lifted instead.
     function applyCategoryFilter(path) {
-        // ⚡ PERF: materialize any lazily-pending rows first so the filter
-        // always runs over the complete row/card set.
-        if (window.__activeContentRows) {
-            try { window.__activeContentRows.flushPendingRows(); } catch (e) { /* non-fatal */ }
-        }
-
         appState.currentCategoryId = path || null;
         const container = document.getElementById('linksContentContainer');
         if (!container) return;
+
+        const fs = appState.filterState || { view: 'All', type: 'All', query: '' };
+        const browseMode = appState.categoryBrowseActive
+            && (fs.view || 'All') === 'All' && (fs.type || 'All') === 'All' && !(fs.query || '');
+
+        if (!browseMode) {
+            // Search/filter active — it needs the whole card set in the DOM.
+            if (window.__activeContentRows) {
+                try { window.__activeContentRows.flushPendingRows(); } catch (e) { /* non-fatal */ }
+            }
+        } else if (path) {
+            // Browse mode — materialize ONLY the selected category's rows.
+            if (window.__activeContentRows && window.__activeContentRows.mountRowsForRoot) {
+                window.__activeContentRows.mountRowsForRoot(path.split('/')[0]);
+            }
+        }
 
         // Update breadcrumb
         const breadcrumb = document.getElementById('categoryBreadcrumb');
@@ -4588,36 +4701,45 @@ if (document.getElementById('appContainer')) {
             }
         }
 
-        // Filter category rows
-        const rows = container.querySelectorAll('.category-row');
-        rows.forEach(row => {
-            const rowCategory = row.dataset.category || '';
-            if (!path) {
-                row.style.display = '';
-            } else if (path.includes('/')) {
-                // Path is parent/child — show only the exact match
-                row.style.display = (rowCategory === path.split('/')[1]) ? '' : 'none';
+        const hint = document.getElementById('browseHint');
+
+        if (browseMode && !path) {
+            // Picker state — hide every row, show the hint, reset the pills.
+            container.querySelectorAll('.category-row').forEach(row => { row.style.display = 'none'; });
+            if (hint) hint.style.display = '';
+            document.querySelectorAll('#parentCategoryBar .cat-pill').forEach(p => p.classList.remove('active'));
+            const childBarEl = document.getElementById('childCategoryBar');
+            if (childBarEl) childBarEl.style.display = 'none';
+            return;
+        }
+
+        if (hint) hint.style.display = 'none';
+
+        // Filter category rows by FULL path
+        const selectedRoot = path.split('/')[0];
+        container.querySelectorAll('.category-row').forEach(row => {
+            const rowPath = row.dataset.categoryPath || row.dataset.category || '';
+            const rowRoot = rowPath.split('/')[0];
+            let show;
+            if (path.includes('/')) {
+                // Path is parent/child — exact sub match (or anything nested deeper)
+                show = (rowPath === path || rowPath.startsWith(path + '/'));
             } else {
-                // Path is parent — show all rows under this parent
-                // (matches the parent name in category_path[0] of any link in the row)
-                row.style.display = (rowCategory === path || row.dataset.parentCategory === path) ? '' : 'none';
+                // Path is parent — the parent's own row + all of its sub rows
+                show = (rowRoot === selectedRoot);
             }
+            row.style.display = show ? '' : 'none';
         });
 
-        // Also filter individual cards within rows (for the "All under parent" case)
-        if (path && !path.includes('/')) {
-            container.querySelectorAll('.category-row').forEach(row => {
-                if (row.style.display === 'none') return;
-                const cards = row.querySelectorAll('.link-card');
-                let anyVisible = false;
-                cards.forEach(card => {
-                    const cardPath = card.dataset.categoryPath || '';
-                    const pathParts = cardPath.split('||');
-                    const matches = pathParts.some(p => p.startsWith(path + '/') || p === path);
-                    card.style.display = matches ? '' : 'none';
-                    if (matches) anyVisible = true;
-                });
-                row.style.display = anyVisible ? '' : 'none';
+        // Keep the pill bars in sync (breadcrumb clicks change selection too)
+        document.querySelectorAll('#parentCategoryBar .cat-pill').forEach(p => {
+            p.classList.toggle('active', p.dataset.parent === selectedRoot);
+        });
+        const childBarEl = document.getElementById('childCategoryBar');
+        if (childBarEl && childBarEl.style.display !== 'none') {
+            const childName = path.includes('/') ? path.split('/')[1] : '__all__';
+            childBarEl.querySelectorAll('.cat-pill').forEach(p => {
+                p.classList.toggle('active', (p.dataset.child || '__all__') === childName);
             });
         }
     }
@@ -4855,24 +4977,32 @@ if (document.getElementById('appContainer')) {
             if (shouldShow) hasVisibleContent = true;
         });
 
+        // Row visibility: while a search/filter is active every row with
+        // matching cards shows (search spans the whole tier). Returning to
+        // neutral filters hands control back to the browse-mode selection.
+        const browseMode = appState.categoryBrowseActive
+            && view === 'All' && type === 'All' && query === '';
+        const selectedPath = appState.currentCategoryId || '';
+
         document.querySelectorAll('.category-row').forEach(section => {
             const hasVisibleCards = section.querySelector('.link-card:not([style*="display: none"])');
-            if (!hasVisibleCards) {
-                section.style.display = 'none';
-            } else {
-                const pillBar = document.getElementById('categoryPillBar');
-                if (pillBar) {
-                    const activePill = pillBar.querySelector('.cat-pill.active');
-                    const chosen = activePill ? activePill.dataset.cat : '__all__';
-                    const cat = section.dataset.category;
-                    section.style.display = (chosen === '__all__' || cat === chosen) ? '' : 'none';
-                } else {
-                    section.style.display = '';
-                }
+            let show = !!hasVisibleCards;
+            if (browseMode) {
+                const rowPath = section.dataset.categoryPath || section.dataset.category || '';
+                const rowRoot = rowPath.split('/')[0];
+                show = show && !!selectedPath && (selectedPath.includes('/')
+                    ? (rowPath === selectedPath || rowPath.startsWith(selectedPath + '/'))
+                    : rowRoot === selectedPath.split('/')[0]);
             }
+            section.style.display = show ? '' : 'none';
         });
 
-        if (!hasVisibleContent) {
+        const browseHint = document.getElementById('browseHint');
+        if (browseHint) browseHint.style.display = (browseMode && !selectedPath) ? '' : 'none';
+
+        // In the browse picker state (no category chosen, neutral filters)
+        // "nothing visible" is the design — the hint explains it. Don't cry wolf.
+        if (!hasVisibleContent && !(browseMode && !selectedPath)) {
             const linksContentContainer = document.getElementById('linksContentContainer');
             if (linksContentContainer && !document.getElementById('searchEmptyMessage')) {
                 const emptyMsg = document.createElement('div');
@@ -7350,4 +7480,4 @@ if (document.getElementById('appContainer')) {
     window.addEventListener('beforeunload', () => {
         cleanupAllVideoPlayers();
     });
-}
+}
