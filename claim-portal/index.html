@@ -317,6 +317,12 @@ async function safeJson(response) {
 // Send uncaught client errors to the backend security log (fire-and-forget)
 function __reportClientError(message, source, line, column, stack) {
     try {
+        // Benign browser noise: see the note in app.js — no line, column
+        // or stack, not an app fault. Keep it out of the dashboard.
+        if (/^ResizeObserver loop/i.test(String(message || ''))) {
+            console.debug('[benign error suppressed]', message);
+            return;
+        }
         fetch(API_BASE_URL + '/client-error', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

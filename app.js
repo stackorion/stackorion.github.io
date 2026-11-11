@@ -327,6 +327,16 @@ async function safeJson(response) {
 let _lastErrReport = { msg: '', at: 0 };
 function reportClientError(payload) {
     try {
+        // Benign browser noise: Chrome fires this window-level error whenever a
+        // ResizeObserver callback changes layout so fast that follow-up size
+        // notifications spill into the next animation frame. It carries no
+        // line, column or stack and is not an app fault (Swiper, the video
+        // player and the lazy-render rows all resize during normal use).
+        // Keep it out of the dashboard so real errors stay visible.
+        if (/^ResizeObserver loop/i.test(String(payload.message || ''))) {
+            console.debug('[benign error suppressed]', payload.message);
+            return;
+        }
         const now = Date.now();
         const msg = String(payload.message || 'unknown');
         if (msg === _lastErrReport.msg && (now - _lastErrReport.at) < 10000) return;
