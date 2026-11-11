@@ -128,6 +128,174 @@ const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1
     };
 })();
 
+// ── TierLoadUX ─────────────────────────────────────────────────────────────
+// First visit to a tier can hang for up to a minute while the backend
+// service wakes up. A bare skeleton gives no real feedback, so users
+// think the site is stuck. This mounts an obvious, brand-aware loading
+// panel whenever a real network fetch starts. It stays invisible for
+// the first 500ms so fast loads never flash it, then fades in with an
+// elapsed timer and reassurance messages that rotate as time passes.
+// The wake-retry overlay above still handles failures and retries.
+var TierLoadUX = (function () {
+    var STAGES = [
+        [0,  'Preparing your content\u2026'],
+        [8,  'First visit can take up to a minute \u2014 thanks for waiting.'],
+        [25, 'Still connecting\u2026 almost there.'],
+        [50, 'Finishing up \u2014 thank you for your patience.']
+    ];
+    var cssInjected = false;
+    var active = null;
+
+    function injectCss() {
+        if (cssInjected) return;
+        cssInjected = true;
+        var st = document.createElement('style');
+        st.textContent =
+            '.tlux-panel{opacity:0;max-width:520px;margin:28px auto 32px;padding:52px 24px 40px;' +
+            'border-radius:10px;text-align:center;display:flex;flex-direction:column;align-items:center;' +
+            'border:1px solid var(--tlux-border,rgba(127,127,127,.18));background:var(--tlux-bg,rgba(127,127,127,.05))}' +
+            '.tlux-panel.tlux-on{animation:tlux-in .45s cubic-bezier(.2,.7,.3,1) both}' +
+            '@keyframes tlux-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}' +
+            '.tlux-ring{width:44px;height:44px;border-radius:50%;margin-bottom:20px;' +
+            'border:3px solid var(--tlux-track,rgba(127,127,127,.22));border-top-color:var(--tlux-accent,#c9a87c);' +
+            'animation:tlux-spin .9s linear infinite}' +
+            '@keyframes tlux-spin{to{transform:rotate(360deg)}}' +
+            '.tlux-title{font-size:16px;font-weight:600;letter-spacing:.2px;color:var(--tlux-text,#333);margin-bottom:8px}' +
+            '.tlux-msg{font-size:13px;line-height:1.5;color:var(--tlux-muted,#888);min-height:20px;margin-bottom:22px;' +
+            'transition:opacity .25s ease}' +
+            '.tlux-msg.tlux-fade{opacity:0}' +
+            '.tlux-bar{width:220px;max-width:70%;height:3px;border-radius:2px;overflow:hidden;' +
+            'background:var(--tlux-track,rgba(127,127,127,.22));margin-bottom:12px}' +
+            '.tlux-bar i{display:block;height:100%;width:40%;border-radius:2px;' +
+            'background:var(--tlux-accent,#c9a87c);animation:tlux-slide 1.4s ease-in-out infinite}' +
+            '@keyframes tlux-slide{0%{transform:translateX(-110%)}100%{transform:translateX(320%)}}' +
+            '.tlux-elapsed{font-size:10px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase;' +
+            'color:var(--tlux-muted,#999);font-variant-numeric:tabular-nums}' +
+            '@media (prefers-reduced-motion: reduce){.tlux-ring,.tlux-bar i{animation:none}}';
+        (document.head || document.documentElement).appendChild(st);
+    }
+
+    function cssVar(name) {
+        try {
+            var v = getComputedStyle(document.body).getPropertyValue(name).trim();
+            if (!v) v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+            return v;
+        } catch (e) { return ''; }
+    }
+
+    function detectTheme() {
+        var dark = false, accent = '';
+        try {
+            if (document.body.classList.contains('theme-dark')) dark = true;
+            accent = cssVar('--mk-gold') || cssVar('--color-accent-primary') || '';
+            if (!dark) {
+                var bg = getComputedStyle(document.body).backgroundColor || '';
+                var m = bg.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+                if (m) {
+                    var lum = 0.2126 * (+m[1]) + 0.7152 * (+m[2]) + 0.0722 * (+m[3]);
+                    if (lum < 110) dark = true;
+                }
+            }
+        } catch (e) {}
+        return { dark: dark, accent: accent };
+    }
+
+    function mount(container, label) {
+        if (!container) return null;
+        destroyActive();
+        injectCss();
+        var th = detectTheme();
+        var el = document.createElement('div');
+        el.className = 'tlux-panel';
+        if (th.dark) {
+            el.style.setProperty('--tlux-bg', 'rgba(255,255,255,.045)');
+            el.style.setProperty('--tlux-border', 'rgba(255,255,255,.12)');
+            el.style.setProperty('--tlux-track', 'rgba(255,255,255,.16)');
+            el.style.setProperty('--tlux-text', '#e8e8ee');
+            el.style.setProperty('--tlux-muted', '#9aa0ac');
+        } else {
+            el.style.setProperty('--tlux-bg', 'rgba(255,255,255,.55)');
+            el.style.setProperty('--tlux-border', 'rgba(17,16,9,.08)');
+            el.style.setProperty('--tlux-track', 'rgba(17,16,9,.10)');
+            el.style.setProperty('--tlux-text', '#33322b');
+            el.style.setProperty('--tlux-muted', '#8f867d');
+        }
+        if (th.accent) el.style.setProperty('--tlux-accent', th.accent);
+        el.innerHTML =
+            '<div class="tlux-ring"></div>' +
+            '<div class="tlux-title"></div>' +
+            '<div class="tlux-msg"></div>' +
+            '<div class="tlux-bar"><i></i></div>' +
+            '<div class="tlux-elapsed"></div>';
+        el.querySelector('.tlux-title').textContent = 'Loading ' + (label || 'content') + '\u2026';
+
+        var anchor = container.querySelector('.view-header') || container.querySelector('h2');
+        if (anchor && anchor.parentNode === container) anchor.insertAdjacentElement('afterend', el);
+        else container.insertBefore(el, container.firstChild);
+
+        var msgEl = el.querySelector('.tlux-msg');
+        var elapsedEl = el.querySelector('.tlux-elapsed');
+        var start = Date.now();
+        var stageIdx = 0;
+        msgEl.textContent = STAGES[0][1];
+        elapsedEl.textContent = 'just now';
+
+        // Invisible for the first 500ms so quick loads never see a flash;
+        // only then does it replace the bare skeleton placeholders.
+        var visTimer = setTimeout(function () {
+            if (!el.isConnected) return;
+            var c = el.parentNode;
+            if (c) {
+                var ph = c.querySelectorAll('.tier-group, .tiers-grid, .platforms-grid, ' +
+                    '.platform-card-skeleton, .tier-card-skeleton, .skeleton-card, ' +
+                    '.gallery-item-skeleton, .gallery-container');
+                for (var k = 0; k < ph.length; k++) {
+                    if (ph[k].parentNode) ph[k].parentNode.removeChild(ph[k]);
+                }
+            }
+            el.classList.add('tlux-on');
+        }, 500);
+
+        var timer = setInterval(function () {
+            if (!el.isConnected) {   // content rendered — clean up quietly
+                clearInterval(timer);
+                if (active === handle) active = null;
+                return;
+            }
+            var s = Math.floor((Date.now() - start) / 1000);
+            elapsedEl.textContent = s + 's elapsed';
+            var idx = 0;
+            for (var j = 0; j < STAGES.length; j++) { if (s >= STAGES[j][0]) idx = j; }
+            if (idx !== stageIdx) {
+                stageIdx = idx;
+                msgEl.classList.add('tlux-fade');
+                setTimeout(function () {
+                    msgEl.textContent = STAGES[stageIdx][1];
+                    msgEl.classList.remove('tlux-fade');
+                }, 250);
+            }
+        }, 1000);
+
+        var handle = {
+            el: el,
+            destroy: function () {
+                clearTimeout(visTimer);
+                clearInterval(timer);
+                if (el.parentNode) el.parentNode.removeChild(el);
+                if (active === handle) active = null;
+            }
+        };
+        active = handle;
+        return handle;
+    }
+
+    function destroyActive() {
+        if (active) active.destroy();
+    }
+
+    return { mount: mount, destroyActive: destroyActive };
+})();
+
 // Fullscreen helpers: Safari needs prefixed names and may not return promises
 function safeFs(el) {
     const fn = el && (el.requestFullscreen || el.webkitRequestFullscreen);
@@ -2202,6 +2370,9 @@ class Router {
             return Promise.resolve(this.appState.platforms);
         }
 
+        // Fresh page load / deep link: this fetch runs before any skeleton
+        // exists, so mount the loader now (a no-op when data is cached).
+        TierLoadUX.mount(this.mainContent, 'your library');
         const response = await fetch(`${API_BASE_URL}/platforms`);
         const data = await safeJson(response);
 
@@ -2218,6 +2389,7 @@ class Router {
             return Promise.resolve(this.appState.tiers[platformId]);
         }
 
+        TierLoadUX.mount(this.mainContent, 'content');
         const token = this.authManager.getToken();
         const response = await fetch(`${API_BASE_URL}/platforms/${platformId}/tiers`, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -2292,6 +2464,11 @@ class Router {
             return;
         }
 
+        // UX: the first visit can hang up to a minute while the backend
+        // wakes up. TierLoadUX stays hidden for 500ms so fast loads never
+        // flash it, then swaps the bare skeleton for an obvious loader.
+        TierLoadUX.mount(this.mainContent, tierName || 'content');
+
         try {
             const token = this.authManager.getToken();
 
@@ -2328,6 +2505,7 @@ class Router {
     // Extracted from fetchAndDisplayContent so the network path and the cache
     // path both render through identical logic (filters, events, buttons).
     displayFetchedContent(platformId, tierId, tierName, platformName, content) {
+        TierLoadUX.destroyActive();
         this.appState.currentContent = content;
         this.appState.filterState = { view: 'All', type: 'All', query: '' };
 
@@ -2469,6 +2647,7 @@ class Router {
         }
 
         this.uiManager.renderContentSkeleton('Search', platformId ? 'All Platforms' : 'All Platforms');
+        TierLoadUX.mount(this.mainContent, 'search results');
 
         try {
             const token = this.authManager.getToken();
@@ -2577,6 +2756,7 @@ class Router {
     // ✅ NEW: Gallery fetching method
     async fetchAndDisplayGallery(slug) {
         this.uiManager.renderGallerySkeleton();
+        TierLoadUX.mount(this.mainContent, 'gallery');
         
         try {
             const token = this.authManager.getToken();
@@ -2612,6 +2792,7 @@ class UIManager {
     }
     
     showError(message, container = this.mainContent) {
+        TierLoadUX.destroyActive();
         container.innerHTML = `<div class="error-message">${message}</div>`;
     }
     
