@@ -201,6 +201,38 @@
     
     <script>
         const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
+// Safari throws its generic SyntaxError on non-JSON bodies; parse defensively
+async function safeJson(response) {
+    try {
+        const text = await response.text();
+        if (!text || !text.trim()) throw new Error('The service is starting up. Please try again shortly.');
+        return JSON.parse(text);
+    } catch (e) {
+        if (e instanceof SyntaxError || /starting up/.test(e.message || '')) {
+            throw new Error(response.ok ? 'The service is starting up. Please try again shortly.' : 'Service temporarily unavailable. Please try again shortly.');
+        }
+        throw e;
+    }
+}
+// Send uncaught client errors to the backend security log (fire-and-forget)
+function __reportClientError(message, source, line, column, stack) {
+    try {
+        fetch(API_BASE_URL + '/client-error', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            keepalive: true,
+            body: JSON.stringify({ site: 'lustroom', page: location.pathname + location.search, message: String(message || 'unknown').slice(0, 300), source: source || '', line: line || 0, column: column || 0, stack: String(stack || '').slice(0, 1200) })
+        }).catch(function() {});
+    } catch (err) {}
+}
+window.addEventListener('error', function(e) {
+    __reportClientError(e.message, e.filename ? e.filename.split('/').pop() : '', e.lineno, e.colno, e.error && e.error.stack);
+});
+window.addEventListener('unhandledrejection', function(e) {
+    var r = e.reason;
+    __reportClientError(r && r.message ? r.message : String(r), 'unhandledrejection', 0, 0, r && r.stack);
+});
+
         
         const form = document.getElementById('claimForm');
         const input = document.getElementById('claimCode');
@@ -257,7 +289,7 @@
                     body: JSON.stringify({ code: code })
                 });
                 
-                const data = await response.json();
+                const data = await safeJson(response);
                 
                 if (response.ok && data.status === 'success') {
                     // ✅ NEW: Redirect to signup page with handoff token

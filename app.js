@@ -25,6 +25,69 @@ const safeStorage = {
 
 // Configuration - IMPORTANT: This MUST match your live backend URL
 const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1";
+// Safari throws its generic SyntaxError on non-JSON bodies (error pages, empty 502s);
+// parse defensively and surface a friendly message instead
+async function safeJson(response) {
+    try {
+        const text = await response.text();
+        if (!text || !text.trim()) {
+            throw new Error('The service is starting up. Please try again shortly.');
+        }
+        return JSON.parse(text);
+    } catch (e) {
+        if (e instanceof SyntaxError || /starting up/.test(e.message || '')) {
+            throw new Error(response.ok
+                ? 'The service is starting up. Please try again shortly.'
+                : 'Service temporarily unavailable (' + response.status + '). Please try again shortly.');
+        }
+        throw e;
+    }
+}
+
+// Send uncaught client errors to the backend security log (fire-and-forget)
+let _lastErrReport = { msg: '', at: 0 };
+function reportClientError(payload) {
+    try {
+        const now = Date.now();
+        const msg = String(payload.message || 'unknown');
+        if (msg === _lastErrReport.msg && (now - _lastErrReport.at) < 10000) return;
+        _lastErrReport = { msg: msg, at: now };
+        fetch(API_BASE_URL + '/client-error', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            keepalive: true,
+            body: JSON.stringify(payload)
+        }).catch(() => {});
+    } catch (e) { /* never re-report */ }
+}
+registerGlobalErrorReporter('lustroom');
+function registerGlobalErrorReporter(site) {
+    const send = (message, extra) => {
+        reportClientError(Object.assign({
+            site: site,
+            page: location.pathname + location.search,
+            message: String(message || 'unknown').slice(0, 300)
+        }, extra));
+    };
+    window.addEventListener('error', (e) => {
+        send(e.message, {
+            source: e.filename ? e.filename.split('/').pop() : '',
+            line: e.lineno || 0,
+            column: e.colno || 0,
+            stack: (e.error && e.error.stack) ? String(e.error.stack).slice(0, 1200) : ''
+        });
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+        const r = e.reason;
+        send(r && r.message ? r.message : String(r), {
+            source: 'unhandledrejection',
+            line: 0,
+            column: 0,
+            stack: (r && r.stack) ? String(r.stack).slice(0, 1200) : ''
+        });
+    });
+}
+
 
 // ============================================================================
 // VIDEO LIBRARY LAZY LOADER
@@ -286,7 +349,7 @@ class CacheManager {
         this.profileFetchPromise = fetch(`${API_BASE_URL}/profile`, {
             headers: { 'Authorization': `Bearer ${token}` }
         })
-        .then(response => response.json())
+        .then(response => safeJson(response))
         .then(data => {
             if (data.status === 'success') {
                 // Cache the result
@@ -473,7 +536,7 @@ class VideoTokenRefreshManager {
                 })
             });
 
-            const data = await response.json();
+            const data = await safeJson(response);
 
             if (response.ok && data.status === 'success') {
                 // ✅ FIX: Double-check player validity before updating source
@@ -618,7 +681,7 @@ class SessionRefreshManager {
                 }
             });
 
-            const data = await response.json();
+            const data = await safeJson(response);
 
             if (response.ok && data.status === 'success') {
                 // Update stored token
@@ -765,7 +828,7 @@ class VideoAnalyticsTracker {
                 body: JSON.stringify({ events: batch })
             });
 
-            const data = await response.json();
+            const data = await safeJson(response);
 
             // ✅ Fix 2 (Feedback Loop): Server tells browser the current switch state
             if (data.collect_analytics) {
@@ -1793,7 +1856,7 @@ if (document.getElementById('loginForm')) {
                 body: JSON.stringify({ email: email, password: password }),
             });
 
-            const data = await response.json();
+            const data = await safeJson(response);
             
             if (response.ok && data.status === 'success' && data.access_token) {
                 // Save token and basic user info
@@ -2029,7 +2092,7 @@ class Router {
         }
 
         const response = await fetch(`${API_BASE_URL}/platforms`);
-        const data = await response.json();
+        const data = await safeJson(response);
 
         if (response.ok && data.status === 'success' && data.platforms) {
             this.appState.platforms = data.platforms;
@@ -2048,7 +2111,7 @@ class Router {
         const response = await fetch(`${API_BASE_URL}/platforms/${platformId}/tiers`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        const data = await response.json();
+        const data = await safeJson(response);
 
         if (response.ok && data.status === 'success' && data.tiers) {
             this.appState.tiers[platformId] = data.tiers;
@@ -2128,7 +2191,7 @@ class Router {
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            const data = await response.json();
+            const data = await safeJson(response);
 
             if (data && data.status === 'success' && data.content) {
                 // ⚡ PERF: stash payload so re-entering this tier within the
@@ -2208,7 +2271,7 @@ class Router {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!resp.ok) return null;
-            const data = await resp.json();
+            const data = await safeJson(resp);
             if (data.status === 'success' && data.categories) {
                 this.appState.categoryTree[platformId] = data.categories;
                 return data.categories;
@@ -2241,7 +2304,7 @@ class Router {
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            const data = await response.json();
+            const data = await safeJson(response);
 
             if (data && data.status === 'success' && data.content) {
                 // Merge new content into currentContent
@@ -2303,7 +2366,7 @@ class Router {
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            const data = await response.json();
+            const data = await safeJson(response);
 
             if (data && data.status === 'success') {
                 this.appState.searchHasMore = data.pagination?.has_next || false;
@@ -2356,7 +2419,7 @@ class Router {
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            const data = await response.json();
+            const data = await safeJson(response);
 
             if (data && data.status === 'success') {
                 this.appState.searchHasMore = data.pagination?.has_next || false;
@@ -2409,7 +2472,7 @@ class Router {
             const response = await fetch(`${API_BASE_URL}/gallery/${slug}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            const data = await response.json();
+            const data = await safeJson(response);
             
             if (response.ok && data.status === 'success' && data.gallery) {
                 this.uiManager.renderGallery(data.gallery);
@@ -2998,7 +3061,7 @@ class UIManager {
             const response = await fetch(`${API_BASE_URL}/gallery/${encodeURIComponent(state.slug)}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            const data = await response.json();
+            const data = await safeJson(response);
             if (!response.ok || data.status !== 'success' || !data.gallery) return;
             if (this._galleryState !== state) return;     // user already left this gallery
             const fresh = new Map(data.gallery.images.map(im => [im.id, im.url]));
