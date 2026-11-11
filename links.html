@@ -127,9 +127,9 @@
 
     <!-- PhotoSwipe + Swiper + app.js: deferred so they never block first paint.
          Execution order is preserved (defer runs scripts in document order). -->
-    <script defer src="https://unpkg.com/photoswipe@5.3.7/dist/umd/photoswipe.umd.min.js"></script>
-    <script defer src="https://unpkg.com/photoswipe@5.3.7/dist/umd/photoswipe-lightbox.umd.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+    <script defer crossorigin="anonymous" src="https://unpkg.com/photoswipe@5.3.7/dist/umd/photoswipe.umd.min.js"></script>
+    <script defer crossorigin="anonymous" src="https://unpkg.com/photoswipe@5.3.7/dist/umd/photoswipe-lightbox.umd.min.js"></script>
+    <script defer crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
     <!-- hls.js, video.js and @videojs/http-streaming are NO LONGER loaded here.
          They are lazy-loaded by VideoLibraryLoader in app.js the first time a
          video is opened (and pre-warmed on idle), so people just browsing

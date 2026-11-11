@@ -127,6 +127,17 @@ const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1
         return __wakeAttempt(input, init, 0);
     };
 })();
+
+// Fullscreen helpers: Safari needs prefixed names and may not return promises
+function safeFs(el) {
+    const fn = el && (el.requestFullscreen || el.webkitRequestFullscreen);
+    try { return Promise.resolve(fn ? fn.call(el) : undefined); } catch (e) { return Promise.resolve(); }
+}
+function exitFs() {
+    const fn = document.exitFullscreen || document.webkitExitFullscreen;
+    try { return Promise.resolve(fn ? fn.call(document) : undefined); } catch (e) { return Promise.resolve(); }
+}
+function fsEl() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
 async function safeJson(response) {
     try {
         const text = await response.text();
@@ -160,7 +171,7 @@ function reportClientError(payload) {
         }).catch(() => {});
     } catch (e) { /* never re-report */ }
 }
-registerGlobalErrorReporter('lustroom');
+registerGlobalErrorReporter('BZ');
 function registerGlobalErrorReporter(site) {
     const send = (message, extra) => {
         reportClientError(Object.assign({
@@ -3454,7 +3465,7 @@ class UIManager {
             // Extra toolbar buttons (desktop only; phones use PhotoSwipe's touch gestures)
             if (!isMobile) {
                 lightbox.on('uiRegister', () => {
-                    if (document.documentElement.requestFullscreen) {
+                    if (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen) {
                         lightbox.pswp.ui.registerElement({
                             name: 'fullscreen-button',
                             order: 9,
@@ -3462,10 +3473,10 @@ class UIManager {
                             title: 'Fullscreen',
                             html: '<svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
                             onClick: () => {
-                                if (!document.fullscreenElement) {
-                                    lightbox.pswp.element.requestFullscreen().catch(() => {});
+                                if (!fsEl()) {
+                                    safeFs(lightbox.pswp.element).catch(() => {});
                                 } else {
-                                    document.exitFullscreen();
+                                    exitFs();
                                 }
                             }
                         });
@@ -6277,7 +6288,7 @@ if (document.getElementById('appContainer')) {
                 
                 // Handle Android fullscreen events
                 const fullscreenHandler = () => {
-                    if (document.fullscreenElement === videoElement) {
+                    if (fsEl() === videoElement) {
                         stateManager.isFullscreen = true;
                     } else {
                         stateManager.isFullscreen = false;
@@ -6421,7 +6432,7 @@ if (document.getElementById('appContainer')) {
                 // Small delay to ensure modal is fully rendered
                 setTimeout(() => {
                     if (modal && !modal.isDisposed) {
-                        modal.requestFullscreen().catch(err => {
+                        safeFs(modal).catch(err => {
                             // Fallback: show message to click fullscreen button
                         });
                     }
@@ -6880,7 +6891,7 @@ if (document.getElementById('appContainer')) {
         // ✅ FIXED: Better fullscreen handling
         const handleFullscreenChange = () => {
             const wasFullscreen = stateManager.isFullscreen;
-            stateManager.isFullscreen = !!document.fullscreenElement;
+            stateManager.isFullscreen = !!fsEl();
             
             // Update fullscreen state but don't auto-close
             // Let user explicitly close with close button
@@ -6905,13 +6916,13 @@ if (document.getElementById('appContainer')) {
         const fullscreenBtn = modal.querySelector('.premium-fullscreen-btn');
         if (fullscreenBtn) {
             fullscreenBtn.addEventListener('click', () => {
-                if (!document.fullscreenElement) {
+                if (!fsEl()) {
                     // Request fullscreen on the MODAL, not just video
-                    modal.requestFullscreen().catch(err => {
+                    safeFs(modal).catch(err => {
                         console.error('Fullscreen error:', err);
                     });
                 } else {
-                    document.exitFullscreen();
+                    exitFs();
                 }
             });
         }
@@ -6950,8 +6961,8 @@ if (document.getElementById('appContainer')) {
             }
             
             // Exit fullscreen if active
-            if (document.fullscreenElement) {
-                document.exitFullscreen().catch(() => {});
+            if (fsEl()) {
+                exitFs().catch(() => {});
             }
             
             // ✅ FIXED: More thorough player disposal
@@ -7054,10 +7065,10 @@ if (document.getElementById('appContainer')) {
                     break;
                 case 'f':
                     e.preventDefault();
-                    if (!document.fullscreenElement) {
-                        modal.requestFullscreen().catch(() => {});
+                    if (!fsEl()) {
+                        safeFs(modal).catch(() => {});
                     } else {
-                        document.exitFullscreen();
+                        exitFs();
                     }
                     break;
                 case '?':

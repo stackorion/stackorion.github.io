@@ -219,7 +219,7 @@ function __reportClientError(message, source, line, column, stack) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             keepalive: true,
-            body: JSON.stringify({ site: 'lustroom', page: location.pathname + location.search, message: String(message || 'unknown').slice(0, 300), source: source || '', line: line || 0, column: column || 0, stack: String(stack || '').slice(0, 1200) })
+            body: JSON.stringify({ site: 'BZ', page: location.pathname + location.search, message: String(message || 'unknown').slice(0, 300), source: source || '', line: line || 0, column: column || 0, stack: String(stack || '').slice(0, 1200) })
         }).catch(function() {});
     } catch (err) {}
 }
