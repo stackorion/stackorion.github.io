@@ -331,6 +331,11 @@ function reportClientError(payload) {
             console.debug('[benign error suppressed]', payload.message);
             return;
         }
+        // Visitor browser extensions, not our code.
+        if (/runtime\.sendMessage|Extension context invalidated|chrome\.runtime|browser\.runtime/i.test(String(payload.message || ''))) {
+            console.debug('[benign error suppressed]', payload.message);
+            return;
+        }
         // Detail-less masked cross-origin errors carry no info.
         const __masked = String(payload.message || '');
         if (/^Script error\.?$/i.test(__masked) && !payload.stack && !payload.line && !payload.source) {
