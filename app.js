@@ -128,14 +128,8 @@ const API_BASE_URL = "https://api-gateway-96c7cdb8.kiaraoct34.workers.dev/api/v1
     };
 })();
 
-// ── TierLoadUX ─────────────────────────────────────────────────────────────
-// First visit to a tier can hang for up to a minute while the backend
-// service wakes up. A bare skeleton gives no real feedback, so users
-// think the site is stuck. This mounts an obvious, brand-aware loading
-// panel whenever a real network fetch starts. It stays invisible for
-// the first 500ms so fast loads never flash it, then fades in with an
-// elapsed timer and reassurance messages that rotate as time passes.
-// The wake-retry overlay above still handles failures and retries.
+// TierLoadUX: brand loading panel for slow first tier loads (cold backend can
+// take up to a minute). Hidden for the first 500ms so fast loads never flash.
 var TierLoadUX = (function () {
     var STAGES = [
         [0,  'Preparing your content\u2026'],
@@ -327,23 +321,17 @@ async function safeJson(response) {
 let _lastErrReport = { msg: '', at: 0 };
 function reportClientError(payload) {
     try {
-        // Benign browser noise: Chrome fires this window-level error whenever a
-        // ResizeObserver callback changes layout so fast that follow-up size
-        // notifications spill into the next animation frame. It carries no
-        // line, column or stack and is not an app fault (Swiper, the video
-        // player and the lazy-render rows all resize during normal use).
-        // Keep it out of the dashboard so real errors stay visible.
+        // Benign noise, keep out of the dashboard:
         if (/^ResizeObserver loop/i.test(String(payload.message || ''))) {
             console.debug('[benign error suppressed]', payload.message);
             return;
         }
-        // Masked cross-origin script errors: when an uncaught error happens
-        // inside a third-party <script> without CORS, the browser hides
-        // every detail and reports exactly "Script error." with line 0,
-        // column 0, no source and an empty stack. That payload carries zero
-        // actionable information, so keep it out of the dashboard as well.
-        // (Video libs are loaded with crossOrigin=anonymous, so real errors
-        // from them arrive with full details instead of this placeholder.)
+        // Player libs reject in-flight requests on teardown; cancellations, not faults.
+        if (/^The operation was aborted\.?$/i.test(String(payload.message || ''))) {
+            console.debug('[benign error suppressed]', payload.message);
+            return;
+        }
+        // Detail-less masked cross-origin errors carry no info.
         const __masked = String(payload.message || '');
         if (/^Script error\.?$/i.test(__masked) && !payload.stack && !payload.line && !payload.source) {
             console.debug('[benign error suppressed]', __masked);
@@ -429,11 +417,6 @@ const VideoLibraryLoader = {
                 node = document.createElement('script');
                 node.src = url;
                 node.async = true;
-                // unpkg and jsdelivr both send Access-Control-Allow-Origin, so
-                // with CORS mode enabled any uncaught error inside these CDN
-                // libraries reports its real message, file, line and stack to
-                // the dashboard instead of the browser masking it as the
-                // detail-less "Script error." placeholder.
                 node.crossOrigin = 'anonymous';
             }
             const timer = setTimeout(() => {
@@ -2492,9 +2475,7 @@ class Router {
             return;
         }
 
-        // UX: the first visit can hang up to a minute while the backend
-        // wakes up. TierLoadUX stays hidden for 500ms so fast loads never
-        // flash it, then swaps the bare skeleton for an obvious loader.
+        // First visit can take up to a minute on a cold backend.
         TierLoadUX.mount(this.mainContent, tierName || 'content');
 
         try {
