@@ -337,6 +337,18 @@ function reportClientError(payload) {
             console.debug('[benign error suppressed]', payload.message);
             return;
         }
+        // Masked cross-origin script errors: when an uncaught error happens
+        // inside a third-party <script> without CORS, the browser hides
+        // every detail and reports exactly "Script error." with line 0,
+        // column 0, no source and an empty stack. That payload carries zero
+        // actionable information, so keep it out of the dashboard as well.
+        // (Video libs are loaded with crossOrigin=anonymous, so real errors
+        // from them arrive with full details instead of this placeholder.)
+        const __masked = String(payload.message || '');
+        if (/^Script error\.?$/i.test(__masked) && !payload.stack && !payload.line && !payload.source) {
+            console.debug('[benign error suppressed]', __masked);
+            return;
+        }
         const now = Date.now();
         const msg = String(payload.message || 'unknown');
         if (msg === _lastErrReport.msg && (now - _lastErrReport.at) < 10000) return;
@@ -417,6 +429,12 @@ const VideoLibraryLoader = {
                 node = document.createElement('script');
                 node.src = url;
                 node.async = true;
+                // unpkg and jsdelivr both send Access-Control-Allow-Origin, so
+                // with CORS mode enabled any uncaught error inside these CDN
+                // libraries reports its real message, file, line and stack to
+                // the dashboard instead of the browser masking it as the
+                // detail-less "Script error." placeholder.
+                node.crossOrigin = 'anonymous';
             }
             const timer = setTimeout(() => {
                 this._promises[key] = null; // allow a retry on the next video open
