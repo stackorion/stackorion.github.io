@@ -336,6 +336,12 @@ function reportClientError(payload) {
             console.debug('[benign error suppressed]', payload.message);
             return;
         }
+        // Injected third-party code (extensions): errors carry no source URL.
+        const __src = String(payload.source || '');
+        if ((!__src || __src === 'undefined') && !/:\d+:\d+|:\/\/|\.js/.test(String(payload.stack || ''))) {
+            console.debug('[benign error suppressed]', payload.message);
+            return;
+        }
         // Detail-less masked cross-origin errors carry no info.
         const __masked = String(payload.message || '');
         if (/^Script error\.?$/i.test(__masked) && !payload.stack && !payload.line && !payload.source) {
