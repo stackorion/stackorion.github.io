@@ -304,14 +304,14 @@ async function safeJson(response) {
     try {
         const text = await response.text();
         if (!text || !text.trim()) {
-            throw new Error('The service is starting up. Please try again shortly.');
+            throw new Error('The service is starting up. Please try again in a minute.');
         }
         return JSON.parse(text);
     } catch (e) {
         if (e instanceof SyntaxError || /starting up/.test(e.message || '')) {
             throw new Error(response.ok
-                ? 'The service is starting up. Please try again shortly.'
-                : 'Service temporarily unavailable (' + response.status + '). Please try again shortly.');
+                ? 'The service is starting up. Please try again in a minute.'
+                : 'Please try again in a minute.');
         }
         throw e;
     }
