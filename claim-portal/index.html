@@ -317,9 +317,36 @@ async function safeJson(response) {
 // Send uncaught client errors to the backend security log (fire-and-forget)
 function __reportClientError(message, source, line, column, stack) {
     try {
-        // Benign browser noise: see the note in app.js — no line, column
-        // or stack, not an app fault. Keep it out of the dashboard.
-        if (/^ResizeObserver loop/i.test(String(message || ''))) {
+        // Benign noise, keep out of the dashboard (mirrors the filter in app.js):
+        var __m = String(message || '');
+        // Layout-loop notices: no line, column or stack, not an app fault.
+        if (/^ResizeObserver loop/i.test(__m)) {
+            console.debug('[benign error suppressed]', message);
+            return;
+        }
+        // Player libs reject in-flight requests on teardown; cancellations, not faults.
+        if (/^The operation was aborted\.?$/i.test(__m)) {
+            console.debug('[benign error suppressed]', message);
+            return;
+        }
+        // Visitor browser extensions, not our code.
+        if (/runtime\.sendMessage|Extension context invalidated|chrome\.runtime|browser\.runtime/i.test(__m)) {
+            console.debug('[benign error suppressed]', message);
+            return;
+        }
+        // Wallet extensions injecting window.ethereum (Safari reports their
+        // errors as "global code" on the page URL — e.g. selectedAddress).
+        if (/window\.ethereum|window\.web3|selectedAddress/i.test(__m)) {
+            console.debug('[benign error suppressed]', message);
+            return;
+        }
+        // Injected third-party code (extensions): errors carry no source URL.
+        if ((!source || source === 'undefined') && !/:\d+:\d+|:\/\/|\.js/.test(String(stack || ''))) {
+            console.debug('[benign error suppressed]', message);
+            return;
+        }
+        // Detail-less masked cross-origin errors carry no info.
+        if (/^Script error\.?$/i.test(__m) && !stack && !line && !source) {
             console.debug('[benign error suppressed]', message);
             return;
         }

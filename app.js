@@ -336,6 +336,12 @@ function reportClientError(payload) {
             console.debug('[benign error suppressed]', payload.message);
             return;
         }
+        // Wallet extensions injecting window.ethereum (Safari reports their
+        // errors as "global code" on the page URL — e.g. selectedAddress).
+        if (/window\.ethereum|window\.web3|selectedAddress/i.test(String(payload.message || ''))) {
+            console.debug('[benign error suppressed]', payload.message);
+            return;
+        }
         // Injected third-party code (extensions): errors carry no source URL.
         const __src = String(payload.source || '');
         if ((!__src || __src === 'undefined') && !/:\d+:\d+|:\/\/|\.js/.test(String(payload.stack || ''))) {
@@ -7855,4 +7861,4 @@ if (document.getElementById('appContainer')) {
     window.addEventListener('beforeunload', () => {
         cleanupAllVideoPlayers();
     });
-}
+}
