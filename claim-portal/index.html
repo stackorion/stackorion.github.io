@@ -443,7 +443,7 @@ window.addEventListener('unhandledrejection', function(e) {
                     if (response.status === 410) {
                         errorMessage = 'This code has already been used or has expired';
                     } else if (response.status === 404) {
-                        errorMessage = 'Invalid claim code. Please check and try again';
+                        errorMessage = 'We could not find that code. Double-check it against your latest activation email — older codes stop working when a new one is issued';
                     }
                     
                     showMessage(errorMessage, 'error');

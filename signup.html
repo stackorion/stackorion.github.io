@@ -265,57 +265,106 @@ window.addEventListener('unhandledrejection', function(e) {
         `);
         document.close();
         
-        // Exchange handoff token for provision session
-        fetch(`${API_BASE_URL}/auth/exchange-handoff`, {
-            method: 'POST',
-            headers: {
-                'X-Handoff-Token': handoffToken
+        // Exchange handoff token for provision session.
+        // 🛡️ Handoff tokens are SINGLE-USE on the server: a page refresh re-runs
+        // the exchange with a dead token. On any failure, first try to recover
+        // the provision session this tab already earned (valid 15 min); only
+        // show a clear error card (never a fake 404) when nothing is recoverable.
+        function exchangeHandoff() {
+            fetch(`${API_BASE_URL}/auth/exchange-handoff`, {
+                method: 'POST',
+                headers: {
+                    'X-Handoff-Token': handoffToken
+                }
+            })
+            .then(response => {
+                const status = response.status;
+                return safeJson(response).then(data => ({ status: status, data: data }));
+            })
+            .then(function (res) {
+                if (res.status === 200 && res.data.status === 'success') {
+                    // Keep both pieces in sessionStorage so a reload can recover
+                    // without burning another claim-code attempt.
+                    sessionStorage.setItem('provision_session', res.data.provision_session_id);
+                    if (res.data.user_email) {
+                        sessionStorage.setItem('provision_email', res.data.user_email);
+                    }
+                    // Success! Render signup form
+                    // user_email will be null for floating codes (VIP invites)
+                    renderSignupForm(res.data.user_email);
+                } else {
+                    throw Object.assign(new Error(res.data.message || 'Invalid handoff token'), { status: res.status });
+                }
+            })
+            .catch(function (error) {
+                // Recovery path: this tab already exchanged the token once (e.g. reload).
+                // The provision session is still valid server-side for 15 minutes.
+                const savedSession = sessionStorage.getItem('provision_session');
+                if (savedSession) {
+                    renderSignupForm(sessionStorage.getItem('provision_email') || null);
+                    return;
+                }
+                showHandoffError(error && error.status);
+            });
+        }
+        exchangeHandoff();
+
+        // Honest error card with retry — replaces the old stealth-404 that made
+        // visitors believe their claim code was invalid when it was not.
+        function showHandoffError(status) {
+            var title = 'Service Unavailable';
+            var detail = 'The service is waking up. Please wait a few seconds and try again.';
+            if (status === 401) {
+                title = 'Link Already Used';
+                detail = 'This activation link was already opened or has timed out. Your claim code itself is still valid — go back to the activation portal and enter it again.';
+            } else if (status === 429) {
+                title = 'Too Many Attempts';
+                detail = 'Too many attempts in a short time. Please wait one minute, then try again.';
             }
-        })
-        .then(response => safeJson(response))
-        .then(data => {
-            if (data.status === 'success') {
-                // Store provision session in sessionStorage
-                sessionStorage.setItem('provision_session', data.provision_session_id);
-                
-                // Success! Render signup form
-                // user_email will be null for floating codes (VIP invites)
-                renderSignupForm(data.user_email);
-            } else {
-                throw new Error(data.message || 'Invalid handoff token');
-            }
-        })
-        .catch(error => {
-            // Show error as stealth 404
             document.open();
             document.write(`
                 <!DOCTYPE html>
                 <html>
                 <head>
                     <meta charset="UTF-8">
-                    <title>404 - Page Not Found</title>
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Activation Error</title>
                     <style>
-                        body { 
+                        body {
                             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
                             margin: 0; padding: 0; background: #fff;
                         }
-                        .container { 
-                            max-width: 600px; margin: 0 auto; padding: 100px 40px; text-align: center; 
+                        .container {
+                            max-width: 600px; margin: 0 auto; padding: 60px 24px; text-align: center;
                         }
-                        h1 { font-size: 48px; margin-bottom: 10px; font-weight: 300; color: #24292e; }
-                        p { color: #586069; font-size: 16px; }
+                        h1 { font-size: 28px; margin-bottom: 10px; font-weight: 600; color: #24292e; }
+                        p { color: #586069; font-size: 16px; line-height: 1.6; }
+                        .actions { margin-top: 28px; }
+                        button {
+                            font-size: 15px; padding: 12px 22px; margin: 6px; border-radius: 6px;
+                            border: 1px solid #d0d7de; background: #f6f8fa; color: #24292e; cursor: pointer;
+                        }
+                        button.primary { background: #667eea; border-color: #667eea; color: #fff; }
                     </style>
                 </head>
                 <body>
                     <div class="container">
-                        <h1>404</h1>
-                        <p>This link has expired or is invalid.</p>
+                        <h1>${title}</h1>
+                        <p>${detail}</p>
+                        <div class="actions">
+                            <button class="primary" id="retryBtn">Try Again</button>
+                            <button id="backBtn">Back to Activation Portal</button>
+                        </div>
                     </div>
                 </body>
                 </html>
             `);
             document.close();
-        });
+            const retryBtn = document.getElementById('retryBtn');
+            const backBtn = document.getElementById('backBtn');
+            if (retryBtn) retryBtn.addEventListener('click', exchangeHandoff);
+            if (backBtn) backBtn.addEventListener('click', function () { history.back(); });
+        }
         
         // UPDATED FUNCTION WITH DEBUG LOGGING
         function renderSignupForm(userEmail) {
@@ -653,7 +702,11 @@ window.addEventListener('unhandledrejection', function(e) {
                                 }
                                 
                             } catch (error) {
-                                showMessage(error.message || 'An error occurred. Please try again.', 'error');
+                                let __err = (error && error.message) || 'An error occurred. Please try again.';
+                                if (/provision session/i.test(__err)) {
+                                    __err = 'Your setup session timed out. Please go back to the activation portal and enter your claim code again.';
+                                }
+                                showMessage(__err, 'error');
                                 
                                 // Re-enable form
                                 submitBtn.disabled = false;
