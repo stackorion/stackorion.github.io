@@ -190,6 +190,14 @@ window.addEventListener('unhandledrejection', function(e) {
         const handoffToken = params.get('handoff');
         
         if (!handoffToken) {
+            // 🛡️ No token in the URL — but if this tab already earned a provision
+            // session (e.g. the form submitted natively and dropped the fragment,
+            // or the visitor re-opened the page), recover it instead of showing
+            // the stealth 404. Session is server-validated for 15 minutes.
+            if (sessionStorage.getItem('provision_session')) {
+                renderSignupForm(sessionStorage.getItem('provision_email') || null);
+                return;
+            }
             // No handoff token → Stealth 404
             document.open();
             document.write(`
@@ -524,28 +532,28 @@ function __reportClientError(message, source, line, column, stack) {
             return;
         }
         // Player libs reject in-flight requests on teardown; cancellations, not faults.
-        if (/^The operation was aborted\.?$/i.test(__m)) {
+        if (/^The operation was aborted\\.?$/i.test(__m)) {
             console.debug('[benign error suppressed]', message);
             return;
         }
         // Visitor browser extensions, not our code.
-        if (/runtime\.sendMessage|Extension context invalidated|chrome\.runtime|browser\.runtime/i.test(__m)) {
+        if (/runtime\\.sendMessage|Extension context invalidated|chrome\\.runtime|browser\\.runtime/i.test(__m)) {
             console.debug('[benign error suppressed]', message);
             return;
         }
         // Wallet extensions injecting window.ethereum (Safari reports their
         // errors as "global code" on the page URL — e.g. selectedAddress).
-        if (/window\.ethereum|window\.web3|selectedAddress/i.test(__m)) {
+        if (/window\\.ethereum|window\\.web3|selectedAddress/i.test(__m)) {
             console.debug('[benign error suppressed]', message);
             return;
         }
         // Injected third-party code (extensions): errors carry no source URL.
-        if ((!source || source === 'undefined') && !/:\d+:\d+|:\/\/|\.js/.test(String(stack || ''))) {
+        if ((!source || source === 'undefined') && !/:\\d+:\\d+|:\\/\\/|\\.js/.test(String(stack || ''))) {
             console.debug('[benign error suppressed]', message);
             return;
         }
         // Detail-less masked cross-origin errors carry no info.
-        if (/^Script error\.?$/i.test(__m) && !stack && !line && !source) {
+        if (/^Script error\\.?$/i.test(__m) && !stack && !line && !source) {
             console.debug('[benign error suppressed]', message);
             return;
         }
