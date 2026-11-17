@@ -714,6 +714,9 @@ window.addEventListener('unhandledrejection', function(e) {
                                 if (/provision session/i.test(__err)) {
                                     __err = 'Your setup session timed out. Please go back to the activation portal and enter your claim code again.';
                                 }
+                                if (/failed to fetch|load failed|networkerror/i.test(__err)) {
+                                    __err = 'The service is still connecting. Please wait a minute and try again.';
+                                }
                                 showMessage(__err, 'error');
                                 
                                 // Re-enable form

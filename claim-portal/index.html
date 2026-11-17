@@ -457,7 +457,7 @@ window.addEventListener('unhandledrejection', function(e) {
                 
             } catch (error) {
                 console.error('Validation error:', error);
-                showMessage('Connection error. Please check your internet and try again.', 'error');
+                showMessage('The service is still connecting. Please wait a minute and try again.', 'error');
                 
                 // Re-enable form
                 submitBtn.disabled = false;
