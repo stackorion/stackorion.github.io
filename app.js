@@ -293,11 +293,14 @@ var TierLoadUX = (function () {
 // Fullscreen helpers: Safari needs prefixed names and may not return promises
 function safeFs(el) {
     const fn = el && (el.requestFullscreen || el.webkitRequestFullscreen);
-    try { return Promise.resolve(fn ? fn.call(el) : undefined); } catch (e) { return Promise.resolve(); }
+    // Native fullscreen rejections (denied / unsupported / already-fullscreen
+    // races) are expected browser behavior, never actionable — swallow them
+    // here so no call site can leak an unhandledrejection.
+    try { return Promise.resolve(fn ? fn.call(el) : undefined).catch(function() {}); } catch (e) { return Promise.resolve(); }
 }
 function exitFs() {
     const fn = document.exitFullscreen || document.webkitExitFullscreen;
-    try { return Promise.resolve(fn ? fn.call(document) : undefined); } catch (e) { return Promise.resolve(); }
+    try { return Promise.resolve(fn ? fn.call(document) : undefined).catch(function() {}); } catch (e) { return Promise.resolve(); }
 }
 function fsEl() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
 async function safeJson(response) {
@@ -352,6 +355,15 @@ function reportClientError(payload) {
         const __masked = String(payload.message || '');
         if (/^Script error\.?$/i.test(__masked) && !payload.stack && !payload.line && !payload.source) {
             console.debug('[benign error suppressed]', __masked);
+            return;
+        }
+        // Native-API rejections with no JS frame at all (empty stack — e.g.
+        // "The operation is not supported." from a media element inside a
+        // player lib, or an injected extension script): no JS frame exists to
+        // attribute or fix, so this is unfireable dashboard noise. Real JS
+        // errors always carry a stack and are still reported.
+        if (String(payload.source || '') === 'unhandledrejection' && !payload.stack) {
+            console.debug('[benign error suppressed]', payload.message);
             return;
         }
         const now = Date.now();

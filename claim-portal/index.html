@@ -347,6 +347,14 @@ function __reportClientError(message, source, line, column, stack) {
         }
         // Detail-less masked cross-origin errors carry no info.
         if (/^Script error\.?$/i.test(__m) && !stack && !line && !source) {
+            console.debug('[benign error suppressed]', __m);
+            return;
+        }
+        // Native-API rejections with no JS frame at all (empty stack — e.g.
+        // player-lib play() rejections or injected extension code): nothing
+        // to attribute or fix, so keep them off the dashboard. Real JS errors
+        // always carry a stack and still report.
+        if (source === 'unhandledrejection' && !stack) {
             console.debug('[benign error suppressed]', message);
             return;
         }
